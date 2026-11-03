@@ -1,0 +1,23 @@
+/* Bryntum Scheduler, styled to sit inside Sayso: its structural CSS, the Svalbard theme in light and
+   dark, and our type and accent on top. Loaded only by the made-to-order board. */
+@import '@bryntum/scheduler/fontawesome/css/fontawesome.css';
+@import '@bryntum/scheduler/fontawesome/css/solid.css';
+@import '@bryntum/scheduler/scheduler.css';
+@import '@bryntum/scheduler/svalbard-light.css';
+@import '@bryntum/scheduler/svalbard-dark.css' (prefers-color-scheme: dark);
+
+.production-board {
+  --b-primary: var(--say);
+  --b-font-family: var(--font-body);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  overflow: hidden;
+  font-family: var(--font-body);
+}
+.production-board .board-job { display: flex; flex-direction: column; gap: 2px; line-height: 1.3; }
+.production-board .board-job small { color: var(--ink-3); font-size: var(--t-xs); }
+/* Work that can't start yet: hatched, so it reads as "not real until paid". */
+.production-board .board-blocked .b-sch-event {
+  background-image: repeating-linear-gradient(135deg, transparent 0 6px, rgb(0 0 0 / 0.12) 6px 12px);
+}
+.production-board .board-payment .b-sch-event { cursor: default; }

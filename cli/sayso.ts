@@ -60,7 +60,7 @@ function parseArgs(argv: string[]): Args {
   return { positional, flags };
 }
 
-const VALUE_FLAGS = new Set(['url', 'key', 'reason', 'status', 'limit', 'name', 'text', 'file', 'currency', 'country', 'label', 'query', 'max-price', 'note', 'deposit', 'due']);
+const VALUE_FLAGS = new Set(['url', 'key', 'reason', 'status', 'limit', 'name', 'text', 'file', 'currency', 'country', 'label', 'query', 'max-price', 'note', 'deposit', 'due', 'make-days']);
 
 function flag(args: Args, name: string): string | undefined {
   const v = args.flags[name];
@@ -296,6 +296,27 @@ const commands: Record<string, { usage: string; summary: string; run: Command }>
       out(json, v, () => console.log(`${v.title}: ${v.price}`));
     },
   },
+  making: {
+    usage: 'sayso making [plan <job_id> <start> <end>]',
+    summary: 'Made-to-order work still to make, and whether PayPal says it is paid; or plan a job',
+    async run(args, config, json) {
+      const [sub, job, start, end] = args.positional;
+      if (sub === 'plan') {
+        if (!job || !start || !end) throw new CliError(this.usage, EXIT.usage);
+        const r = await tool(config, 'plan_job', { job_id: job, start, end });
+        out(json, r, () => console.log(`${r.job_id}: ${r.making.start} to ${r.making.end}${r.blocked_by_payment ? c.yellow(' (still waiting for payment)') : ''}`));
+        return;
+      }
+      if (sub) throw new CliError(this.usage, EXIT.usage);
+      const jobs = await tool(config, 'production_board', {});
+      out(json, jobs, () =>
+        table(
+          jobs.map((j: any) => ({ job: j.job_id, what: j.what, payment: j.payment, making: j.making })),
+          ['job', 'what', 'payment', 'making'],
+        ),
+      );
+    },
+  },
   market: {
     usage: 'sayso market <variant_id>',
     summary: 'What similar items sell for at other stores, against your price',
@@ -363,7 +384,7 @@ const commands: Record<string, { usage: string; summary: string; run: Command }>
     },
   },
   invoice: {
-    usage: 'sayso invoice <email> "<item>" <price> ["<item>" <price> ...] [--note "..."] [--deposit 31.00] [--due 0|10|15|30] [--name "Grace"]',
+    usage: 'sayso invoice <email> "<item>" <price> ["<item>" <price> ...] [--note "..."] [--deposit 31.00] [--due 0|10|15|30] [--make-days 12] [--name "Grace"]',
     summary: 'Invoice a custom order through PayPal (goes through the owner\'s say-so rules)',
     async run(args, config, json) {
       const [email, ...rest] = args.positional;
@@ -371,6 +392,7 @@ const commands: Record<string, { usage: string; summary: string; run: Command }>
       const items = [];
       for (let i = 0; i < rest.length; i += 2) items.push({ name: rest[i], price: rest[i + 1] });
       const due = flag(args, 'due');
+      const makeDays = flag(args, 'make-days');
       const r = await tool(config, 'send_invoice', {
         email,
         name: flag(args, 'name'),
@@ -378,6 +400,7 @@ const commands: Record<string, { usage: string; summary: string; run: Command }>
         note: flag(args, 'note'),
         deposit: flag(args, 'deposit'),
         due_in_days: due !== undefined ? Number(due) : undefined,
+        make_days: makeDays !== undefined ? Number(makeDays) : undefined,
       });
       if (json) return printJson(r);
       const code = printSayso(r);

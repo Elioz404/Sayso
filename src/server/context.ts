@@ -18,6 +18,7 @@ import { links, type Links } from '@/core/links.ts';
 import { MarketPrices } from '@/core/market.ts';
 import { Orders } from '@/core/orders.ts';
 import { PayPalClient } from '@/core/paypal/client.ts';
+import { MemoryPlanStore, Production, type PlanStore } from '@/core/production.ts';
 import { captureExecutor, refundExecutor, voidExecutor } from '@/core/paypal/executors.ts';
 import { invoiceExecutor } from '@/core/paypal/invoices.ts';
 import { policyLookup } from '@/core/policies.ts';
@@ -27,7 +28,7 @@ import { MemoryCartStore, MemoryCatalogStore, type CartStore, type CatalogStore 
 import type { ToolServices } from '@/core/tools/registry.ts';
 import { MemoryWalletStore, walletCheckoutExecutor, Wallets, type WalletStore } from '@/core/wallets.ts';
 import { notifyOwner } from './notify.ts';
-import { Db, PgAccessStore, PgCartStore, PgCatalogStore, PgGuardStore, PgPolicyStore, PgWalletStore } from './pg-stores.ts';
+import { Db, PgAccessStore, PgCartStore, PgCatalogStore, PgGuardStore, PgPlanStore, PgPolicyStore, PgWalletStore } from './pg-stores.ts';
 
 export interface Context {
   carts: CartStore;
@@ -42,6 +43,7 @@ export interface Context {
   saySo: SaySo;
   invoicing: Invoicing;
   wallets: Wallets;
+  production: Production;
   market?: MarketPrices;
   tools: ToolServices;
   links: Links;
@@ -74,6 +76,7 @@ async function create(): Promise<Context> {
   const policies: PolicyStore = db ? new PgPolicyStore(db) : new MemoryPolicyStore();
   const accessStore: AccessStore = db ? new PgAccessStore(db) : new MemoryAccessStore();
   const walletStore: WalletStore = db ? new PgWalletStore(db) : new MemoryWalletStore();
+  const plans: PlanStore = db ? new PgPlanStore(db) : new MemoryPlanStore();
   const access = new Access(accessStore, sessionSecret());
   const ai = modelFromEnv();
   const model = ai?.model;
@@ -100,13 +103,14 @@ async function create(): Promise<Context> {
   const orders = new Orders({ carts, guard, paypal });
   const saySo = new SaySo({ guard, policyFor, shops, model });
   const invoicing = new Invoicing({ guard, carts, shops, paypal });
+  const production = new Production({ carts, catalogs, guard, invoicing, plans });
   const wallets = new Wallets({ store: walletStore, policies, guard, commerce, paypal, links: site });
   const channel3 = Channel3.fromEnv();
   const market = channel3 && new MarketPrices(channel3);
-  const tools: ToolServices = { commerce, orders, saySo, invoicing, shops, catalogs, wallets, links: site, market };
+  const tools: ToolServices = { commerce, orders, saySo, invoicing, production, shops, catalogs, wallets, links: site, market };
 
   await seedDemo(catalogs, policies, access);
-  return { carts, catalogs, access, model, aiBudget: ai?.budget, guard, commerce, shops, orders, saySo, invoicing, wallets, market, tools, links: site };
+  return { carts, catalogs, access, model, aiBudget: ai?.budget, guard, commerce, shops, orders, saySo, invoicing, production, wallets, market, tools, links: site };
 }
 
 function sessionSecret(): string {

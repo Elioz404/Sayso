@@ -16,8 +16,8 @@ export interface FakePayPal {
   approveSetup(setupTokenId: string): void;
   paymentTokens: Map<string, Json>;
   invoices: Map<string, Json>;
-  /** Simulate the buyer paying an invoice. */
-  payInvoice(invoiceId: string): void;
+  /** Simulate the buyer paying an invoice, in full or only its deposit. */
+  payInvoice(invoiceId: string, part?: 'deposit'): void;
   /** Simulate the buyer clicking "Pay" on the PayPal approval page. */
   approve(orderId: string): void;
   /** Make every GET whose path starts with `prefix` fail (undefined: stop failing). */
@@ -220,8 +220,10 @@ export function fakePayPal(): FakePayPal {
     failReads(prefix) {
       failingReads = prefix;
     },
-    payInvoice(invoiceId) {
-      invoices.get(invoiceId)!.status = 'PAID';
+    payInvoice(invoiceId, part) {
+      const invoice = invoices.get(invoiceId)!;
+      invoice.status = part === 'deposit' ? 'PARTIALLY_PAID' : 'PAID';
+      invoice.payments = { transactions: [{ payment_date: new Date().toISOString().slice(0, 10) }] };
     },
     approveSetup(setupTokenId) {
       setupTokens.get(setupTokenId)!.status = 'APPROVED';

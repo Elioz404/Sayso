@@ -77,6 +77,46 @@ export const sellerTools: Tool[] = [
     },
   },
   {
+    name: 'production_board',
+    title: 'What to make',
+    description:
+      'Every made-to-order piece still to make, from paid orders and invoiced commissions: whether PayPal says it is paid, deposit paid or still waiting (blocked), and when it is planned. Start here for "what am I making this week?".',
+    side: 'seller',
+    annotations: { readOnlyHint: true },
+    inputSchema: { type: 'object', properties: {} },
+    async run(_input, ctx) {
+      return (await ctx.services.production.jobs(shop(ctx))).map((j) => ({
+        job_id: j.id,
+        what: j.title,
+        for: j.customer,
+        reference: j.reference,
+        payment: j.payment.state === 'waiting' ? `waiting for ${j.payment.amount}` : `${j.payment.state} (${j.payment.amount}) on ${j.payment.paidOn}`,
+        making: j.making ? `${j.making.start} to ${j.making.end}${j.making.by === 'owner' ? ' (planned)' : ''}` : 'not planned yet',
+        blocked_by_payment: j.blocked,
+      }));
+    },
+  },
+  {
+    name: 'plan_job',
+    title: 'Plan when to make something',
+    description: 'Set when a made-to-order job is made (start and end dates). Moves no money; payments stay as PayPal reports them.',
+    side: 'seller',
+    annotations: { idempotentHint: true },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        job_id: { type: 'string', maxLength: 120, description: 'From production_board' },
+        start: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'YYYY-MM-DD' },
+        end: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'YYYY-MM-DD, not before start' },
+      },
+      required: ['job_id', 'start', 'end'],
+    },
+    async run(input, ctx) {
+      const job = await ctx.services.production.plan(shop(ctx), input.job_id, { start: input.start, end: input.end });
+      return { job_id: job.id, making: job.making, blocked_by_payment: job.blocked };
+    },
+  },
+  {
     name: 'list_orders',
     title: 'List orders',
     description: 'Orders and carts, newest first. paid = charged; awaiting_owner = authorized, waiting for the owner\'s OK; awaiting_buyer = buyer has not approved in PayPal yet.',
@@ -158,6 +198,7 @@ export const sellerTools: Tool[] = [
         note: { type: 'string', maxLength: 1000, description: 'Shown to the buyer, e.g. "Cobalt glaze, ships in about 10 days"' },
         due_in_days: { type: 'integer', minimum: 0, maximum: 30, description: '0 (default) means due on receipt; 10, 15 or 30' },
         deposit: { ...money, description: 'Let the buyer pay this much first, e.g. half up front' },
+        make_days: { type: 'integer', minimum: 1, maximum: 180, description: 'Days of work once paid (or once the deposit is in). Puts it on the made-to-order board.' },
       },
       required: ['email', 'items'],
     },
@@ -166,7 +207,7 @@ export const sellerTools: Tool[] = [
       if (![0, 10, 15, 30].includes(due)) throw new ToolError('due_in_days must be 0, 10, 15 or 30');
       const record = await ctx.services.invoicing.send(
         shop(ctx),
-        { to: { email: input.email, name: input.name }, items: input.items, note: input.note, dueDays: due, deposit: input.deposit },
+        { to: { email: input.email, name: input.name }, items: input.items, note: input.note, dueDays: due, deposit: input.deposit, makeDays: input.make_days },
         actor(ctx),
       );
       return { ...sayso(record, ctx), invoice: record.result ? { number: record.result.number, status: record.result.status, payer_url: record.result.payer_url } : undefined };

@@ -42,7 +42,9 @@ If `sayso` is not installed, run it from the repo with `node cli/sayso.ts` inste
 | "Am I charging too little for the mugs?" | `sayso market <variant_id> --json`: the usual range at other stores and where your price sits (read-only) |
 | "Refunds over $30 should need my OK" | `sayso policy propose "refunds over $30 need my OK" --json` |
 | "Did I approve that refund?" | `sayso check <say_so_id> --json` |
-| "Grace wants a cobalt vase for $62, half up front" | `sayso invoice grace@example.com "Custom bud vase, cobalt" 62.00 --deposit 31.00 --json` |
+| "Grace wants a cobalt vase for $62, half up front, ready in 12 days" | `sayso invoice grace@example.com "Custom bud vase, cobalt" 62.00 --deposit 31.00 --make-days 12 --json` |
+| "What am I making this week?" | `sayso making --json`: made-to-order work, whether PayPal says it is paid, and when it is planned |
+| "Start Grace's vase on Monday" | `sayso making plan <job_id> 2026-11-16 2026-11-27 --json` (moves the plan only, never money) |
 | "Did Grace pay?" | `sayso invoices --json` |
 
 ## When something waits for the owner (exit code 3, `status: pending_approval`)

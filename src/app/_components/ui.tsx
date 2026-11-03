@@ -68,6 +68,12 @@ const PATHS: Record<string, ReactNode> = {
     </>
   ),
   activity: <path d="M3 12h4l3-7 4 14 3-7h4" />,
+  calendar: (
+    <>
+      <rect x="4" y="5" width="16" height="15" rx="2" />
+      <path d="M4 10h16M9 3v4M15 3v4" />
+    </>
+  ),
   external: <path d="M14 5h5v5M19 5l-8 8M18 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h4" />,
   out: <path d="M10 5H6a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h4M15 16l4-4-4-4M19 12H9" />,
   chain: (

@@ -200,6 +200,7 @@ export class Commerce {
     // Captured, or waiting for the owner's OK (captured later from the dashboard). Either way the
     // order is placed and its stock is held.
     stored.captureId = captureIdOf(record);
+    if (stored.captureId) stored.paidAt = new Date().toISOString();
     stored.cart = {
       ...stored.cart,
       status: 'COMPLETED',
@@ -222,7 +223,10 @@ export class Commerce {
 
     await this.lock.run(cartId, async () => {
       const stored = await this.stored(cartId);
-      if (placed(record)) stored.captureId = captureIdOf(record);
+      if (placed(record)) {
+        stored.captureId = captureIdOf(record);
+        if (stored.captureId) stored.paidAt ??= new Date().toISOString();
+      }
       else await this.release(stored, `Capture ${record.status}${record.status === 'rejected' ? ' by the owner' : ''}: ${reasons(record)}`, OPS_AGENT);
       stored.updatedAt = new Date().toISOString();
       await this.deps.carts.put(stored);

@@ -23,6 +23,8 @@ export interface InvoiceParams {
   dueDays: number;
   /** Lets the buyer pay this much first, e.g. a deposit before work starts. */
   depositMinor?: number;
+  /** Days of work promised once paid (or once the deposit is in), for the made-to-order board. */
+  makeDays?: number;
   shopName: string;
   [key: string]: unknown;
 }
@@ -33,6 +35,8 @@ export interface Invoice {
   detail: { invoice_number?: string; currency_code: string; metadata?: { recipient_view_url?: string } };
   amount?: { value: string; currency_code: string };
   due_amount?: { value: string; currency_code: string };
+  /** Payments recorded against the invoice, oldest first. */
+  payments?: { transactions?: { payment_date?: string; amount?: { value: string; currency_code: string } }[] };
 }
 
 const TERMS: Record<number, string> = { 0: 'DUE_ON_RECEIPT', 10: 'NET_10', 15: 'NET_15', 30: 'NET_30' };

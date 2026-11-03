@@ -16,6 +16,8 @@ export interface InvoicingDeps {
   carts: CartStore;
   shops: Shops;
   paypal: PayPalClient;
+  /** How long a non-final PayPal status is reused before reading it again. Default one minute. */
+  statusTtlMs?: number;
 }
 
 export interface InvoiceDraft {
@@ -24,6 +26,8 @@ export interface InvoiceDraft {
   note?: string;
   dueDays?: number;
   deposit?: string;
+  /** Days of work promised once the buyer pays (or pays the deposit). */
+  makeDays?: number;
 }
 
 export interface InvoiceView {
@@ -66,6 +70,7 @@ export class Invoicing {
       note: draft.note?.trim() || undefined,
       dueDays: draft.dueDays ?? 0,
       depositMinor: draft.deposit ? minor(draft.deposit, 'The deposit') : undefined,
+      makeDays: draft.makeDays,
       shopName: shop.name,
       newCounterparty: !(await this.hasPaid(shopId, email)),
     };
@@ -88,7 +93,7 @@ export class Invoicing {
     return Promise.all(
       records.map(async (r) => {
         const p = r.action.params as unknown as InvoiceParams;
-        const live = await this.status(r);
+        const live = await this.liveStatus(r);
         return {
           say_so_id: r.id,
           to: p.to.email,
@@ -107,15 +112,16 @@ export class Invoicing {
   private async hasPaid(shopId: string, email: string): Promise<boolean> {
     if (await this.deps.carts.paidBy(shopId, email)) return true;
     const sent = (await this.deps.guard.list(shopId, { kind: 'invoice.send', status: 'verified' })).filter((r) => r.action.counterparty === email);
-    for (const record of sent) if (PAID.has((await this.status(record))?.status ?? '')) return true;
+    for (const record of sent) if (PAID.has((await this.liveStatus(record))?.status ?? '')) return true;
     return false;
   }
 
-  private async status(record: GuardRecord): Promise<Invoice | undefined> {
+  /** The invoice as PayPal has it now (cached briefly), or undefined if it was never sent. */
+  async liveStatus(record: GuardRecord): Promise<Invoice | undefined> {
     const id = typeof record.result?.invoice_id === 'string' ? record.result.invoice_id : undefined;
     if (!id) return undefined;
     const cached = this.live.get(id);
-    if (cached && (FINAL.has(cached.invoice.status) || Date.now() - cached.at < STATUS_TTL_MS)) return cached.invoice;
+    if (cached && (FINAL.has(cached.invoice.status) || Date.now() - cached.at < (this.deps.statusTtlMs ?? STATUS_TTL_MS))) return cached.invoice;
     const invoice = await getInvoice(this.deps.paypal, id).catch(() => cached?.invoice);
     if (invoice) this.live.set(id, { invoice, at: Date.now() });
     return invoice;

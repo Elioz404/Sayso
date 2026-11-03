@@ -51,6 +51,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
               { href: '/owner', label: 'Overview', icon: 'home', count: pending },
               { href: '/owner/orders', label: 'Orders', icon: 'list' },
               { href: '/owner/catalog', label: 'Catalog', icon: 'box' },
+              { href: '/owner/production', label: 'Making', icon: 'calendar' },
               { href: '/owner/rules', label: 'Rules', icon: 'shield' },
               { href: '/owner/agents', label: 'Agents', icon: 'agent' },
               { href: '/owner/activity', label: 'Activity', icon: 'activity' },

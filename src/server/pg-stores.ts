@@ -8,6 +8,7 @@ import type { AccessStore, AgentKey } from '@/core/access.ts';
 import type { Catalog } from '@/core/catalog.ts';
 import type { Policy } from '@/core/guard/policy.ts';
 import type { PolicyStore } from '@/core/guard/policy-store.ts';
+import type { Plan, PlanStore } from '@/core/production.ts';
 import type { GuardRecord, GuardStore, RecordQuery, RecordStatus } from '@/core/guard/types.ts';
 import type { CartStore, CatalogStore, StoredCart } from '@/core/stores.ts';
 import type { Wallet, WalletStore } from '@/core/wallets.ts';
@@ -28,7 +29,7 @@ create unique index if not exists sayso_docs_slug on sayso_docs (kind, slug) whe
 create index if not exists sayso_docs_hash on sayso_docs (kind, hash) where hash is not null;
 `;
 
-type Kind = 'catalog' | 'cart' | 'guard' | 'owner' | 'key' | 'policy' | 'wallet' | 'wallet-key';
+type Kind = 'catalog' | 'cart' | 'guard' | 'owner' | 'key' | 'policy' | 'wallet' | 'wallet-key' | 'plan';
 type Queryable = pg.Pool | pg.PoolClient;
 
 interface Doc {
@@ -235,6 +236,24 @@ export class PgPolicyStore implements PolicyStore {
   }
   async put(policy: Policy) {
     await this.db.put({ kind: 'policy', id: policy.ownerId, owner: policy.ownerId, data: policy });
+  }
+}
+
+/** One document per shop holding its plans by job id; plans are few and always read together. */
+export class PgPlanStore implements PlanStore {
+  private readonly db: Db;
+  constructor(db: Db) {
+    this.db = db;
+  }
+  async list(shopId: string) {
+    return (await this.db.get<Record<string, Plan>>('plan', shopId)) ?? {};
+  }
+  async put(shopId: string, jobId: string, plan: Plan) {
+    await this.db.transaction(async (client) => {
+      const { rows } = await client.query("select data from sayso_docs where kind = 'plan' and id = $1 for update", [shopId]);
+      const plans = { ...(rows[0]?.data as Record<string, Plan> | undefined), [jobId]: plan };
+      await this.db.put({ kind: 'plan', id: shopId, owner: shopId, data: plans }, client);
+    });
   }
 }
 

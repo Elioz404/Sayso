@@ -15,6 +15,8 @@ export interface StoredCart {
   approvalUrl?: string;
   authorizationId?: string;
   captureId?: string;
+  /** When the capture went through: the buyer has paid. */
+  paidAt?: string;
   guardRecordId?: string;
   /** The order number the owner and the buyer see, e.g. SAY-7K2M9QXD. */
   merchantOrderNumber?: string;

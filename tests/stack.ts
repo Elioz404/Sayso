@@ -14,6 +14,7 @@ import { PayPalClient } from '../src/core/paypal/client.ts';
 import { captureExecutor, refundExecutor, voidExecutor } from '../src/core/paypal/executors.ts';
 import { invoiceExecutor } from '../src/core/paypal/invoices.ts';
 import { policyLookup } from '../src/core/policies.ts';
+import { MemoryPlanStore, Production } from '../src/core/production.ts';
 import { SaySo } from '../src/core/say-so.ts';
 import { Shops } from '../src/core/shops.ts';
 import { MemoryCartStore, MemoryCatalogStore } from '../src/core/stores.ts';
@@ -51,8 +52,9 @@ export async function stack(model?: ChatModel) {
   const shops = new Shops({ catalogs, access, paypal, model, links: site });
   const orders = new Orders({ carts, guard, paypal });
   const saySo = new SaySo({ guard, policyFor, shops, model });
-  const invoicing = new Invoicing({ guard, carts, shops, paypal });
-  const services: ToolServices = { commerce, orders, saySo, invoicing, shops, catalogs, wallets, links: site };
+  const invoicing = new Invoicing({ guard, carts, shops, paypal, statusTtlMs: 0 }); // tests change PayPal state between reads
+  const production = new Production({ carts, catalogs, guard, invoicing, plans: new MemoryPlanStore() });
+  const services: ToolServices = { commerce, orders, saySo, invoicing, production, shops, catalogs, wallets, links: site };
 
   await access.createOwner(demoCatalog.shop.id, 'sk_owner_demo');
   const { key } = await access.createAgentKey(demoCatalog.shop.id, 'laptop', 'sk_agent_demo');
@@ -68,7 +70,7 @@ export async function stack(model?: ChatModel) {
   const buyer: Partial<ToolContext> = { shopSlug: 'maya-ceramics' };
   const owner: Partial<ToolContext> = { agent: { shopId: demoCatalog.shop.id, keyId: key.id, label: key.label } };
 
-  return { pp, paypal, carts, catalogs, guardStore, policies, access, guard, commerce, shops, orders, saySo, invoicing, wallets, services, approvals, call, buyer, owner };
+  return { pp, paypal, carts, catalogs, guardStore, policies, access, guard, commerce, shops, orders, saySo, invoicing, production, wallets, services, approvals, call, buyer, owner };
 }
 
 export const address = { country_code: 'US', admin_area_1: 'TX', admin_area_2: 'Austin', postal_code: '78701', address_line_1: '100 Congress Ave' };

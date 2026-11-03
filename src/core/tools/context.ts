@@ -8,6 +8,7 @@ import type { Invoicing } from '../invoicing.ts';
 import type { Links } from '../links.ts';
 import type { MarketPrices } from '../market.ts';
 import type { Orders } from '../orders.ts';
+import type { Production } from '../production.ts';
 import type { SaySo } from '../say-so.ts';
 import type { Shops } from '../shops.ts';
 import type { CatalogStore } from '../stores.ts';
@@ -19,6 +20,7 @@ export interface ToolServices {
   orders: Orders;
   saySo: SaySo;
   invoicing: Invoicing;
+  production: Production;
   shops: Shops;
   catalogs: CatalogStore;
   wallets: Wallets;
