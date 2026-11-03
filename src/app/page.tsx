@@ -1,86 +1,53 @@
-// Skeleton owner view: the shop, agent-made carts and the Guard queue. Replaced on day 6 by the
-// AG Studio dashboard; kept simple so the end-to-end flow can be exercised from day 1.
-import { connection } from 'next/server';
-import { formatMoney } from '@/core/money.ts';
-import { ctx } from '@/server/context.ts';
-import { GuardActions } from './guard-actions.tsx';
+import { baseUrl } from '@/server/context.ts';
 
-export default async function Home() {
-  await connection();
-  const { catalogs, carts, guardStore } = ctx();
-  const catalog = await catalogs.bySlug('maya-ceramics');
-  const records = await guardStore.listSince('shop_maya', new Date(0));
-  if (!catalog) return <p>Demo shop missing.</p>;
-  const { shop } = catalog;
-
+export default function Home() {
+  const url = baseUrl();
   return (
-    <>
-      <h1>{shop.name}</h1>
-      <p className="muted">
-        Agent endpoint: <code>/api/shops/{shop.slug}/merchant-cart</code> (PayPal Agentic Commerce merchant-cart v1)
-      </p>
+    <main>
+      <section className="hero">
+        <h1>Sell to AI shoppers. Run your shop with your own AI agent. Nothing moves without your say-so.</h1>
+        <p>
+          Sayso turns a few photos and a price list into a shop that AI shopping agents can buy from through PayPal, and gives your
+          own agent a CLI and MCP tools to run it. Refunds, captures and rule changes follow your rules, and the big ones wait for
+          your OK on your phone.
+        </p>
+        <div className="row">
+          <a className="button primary" href="/start">Start selling</a>
+          <a className="button" href="/shop/maya-ceramics">See the demo shop</a>
+        </div>
+      </section>
 
-      <h2>Say-so queue and audit</h2>
-      <table>
-        <thead>
-          <tr><th>Record</th><th>Action</th><th>Amount</th><th>Status</th><th>Why</th><th /></tr>
-        </thead>
-        <tbody>
-          {records.length === 0 && (
-            <tr><td colSpan={6} className="muted">No agent actions yet.</td></tr>
-          )}
-          {records.map((r) => (
-            <tr key={r.id}>
-              <td><code>{r.id}</code></td>
-              <td>{r.action.kind}<br /><span className="muted">{r.action.actor.id}</span></td>
-              <td>{r.action.amount !== undefined ? formatMoney(r.action.amount, r.action.currency ?? 'USD') : '-'}</td>
-              <td className={`status ${r.status}`}>{r.status.replace('_', ' ')}</td>
-              <td>
-                {r.decision?.hits.map((h) => <div key={h.ruleId}>{h.message}</div>)}
-                {r.simulation?.effects.map((e) => <div key={e} className="muted">{e}</div>)}
-              </td>
-              <td>{r.status === 'pending_approval' && <GuardActions id={r.id} />}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="grid" style={{ marginTop: 28 }}>
+        <div className="card">
+          <h3>Buyer agents check out</h3>
+          <p className="small muted">
+            Your catalog speaks PayPal&apos;s agentic-commerce merchant-cart API and MCP. Agents get exact prices, shipping and tax,
+            fix stock problems with resolution options, and the buyer approves in PayPal.
+          </p>
+        </div>
+        <div className="card">
+          <h3>Your agent runs the shop</h3>
+          <p className="small muted">
+            <code>sayso status</code>, <code>sayso refund</code>, <code>sayso track</code>: from the terminal, any MCP client or an agent
+            skill. It holds a scoped key, never your PayPal credentials.
+          </p>
+        </div>
+        <div className="card">
+          <h3>You keep the say-so</h3>
+          <p className="small muted">
+            Every money move is simulated against live PayPal state, checked against your rules, verified after it runs and written to
+            a tamper-evident log. Agents can ask; only you approve.
+          </p>
+        </div>
+      </div>
 
-      <h2>Carts from agents</h2>
-      <table>
-        <thead>
-          <tr><th>Cart</th><th>Channel</th><th>Status</th><th>Total</th><th>Issues</th></tr>
-        </thead>
-        <tbody>
-          {carts.all().map((c) => (
-            <tr key={c.id}>
-              <td><code>{c.id}</code></td>
-              <td>{c.channel ?? '-'}</td>
-              <td>{c.cart.status}</td>
-              <td>{c.cart.totals?.total.value} {c.cart.totals?.total.currency_code}</td>
-              <td>{c.cart.validation_issues?.map((i) => <div key={i.message}>{i.code}: {i.user_message ?? i.message}</div>)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <h2>Try it from your own agent</h2>
+      <pre>{`# any MCP client, buyer side (no key needed)
+${url}/api/shops/maya-ceramics/mcp
 
-      <h2>Catalog</h2>
-      <table>
-        <thead>
-          <tr><th>Product</th><th>Variant</th><th>Price</th><th>Stock</th></tr>
-        </thead>
-        <tbody>
-          {catalog.products.flatMap((p) =>
-            p.variants.map((v) => (
-              <tr key={v.id}>
-                <td>{p.name}</td>
-                <td>{v.title} <code className="muted">{v.id}</code></td>
-                <td>{formatMoney(v.price, shop.currency)}</td>
-                <td>{v.madeToOrderDays !== undefined ? `made to order (${v.madeToOrderDays}d)` : v.inventory}</td>
-              </tr>
-            )),
-          )}
-        </tbody>
-      </table>
-    </>
+# the shop owner's side, from a terminal
+node cli/sayso.ts login --url ${url} --key sk_agent_...
+node cli/sayso.ts status`}</pre>
+    </main>
   );
 }

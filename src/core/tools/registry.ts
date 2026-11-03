@@ -425,7 +425,7 @@ export function sayso(record: GuardRecord, ctx: ToolContext) {
   const currency = record.action.currency ?? 'USD';
   const next: Record<string, string> = {
     pending_approval: `Waiting for the owner. Tell them what you asked for and why; they approve or reject at ${ctx.services.approvalsUrl}/${record.id}. You cannot approve it. Check back with get_say_so.`,
-    verified: 'Done and confirmed with PayPal.',
+    verified: record.action.kind === 'policy.update' ? 'Done: the new rules apply from now on.' : 'Done and confirmed with PayPal.',
     executed: 'Sent to PayPal; confirmation pending.',
     denied: 'Refused by the owner\'s rules. Do not retry the same action; explain why to the owner.',
     rejected: 'The owner said no.',
