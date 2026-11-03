@@ -1,28 +1,31 @@
 // Server-side wiring: one PayPal client, the stores, Guard, Commerce, Shops and Seller, shared by every
-// route. Kept on globalThis so Next.js dev hot-reloads don't reset in-memory state mid-demo.
+// route. Postgres when DATABASE_URL is set (Render), in-memory otherwise. Kept on globalThis so
+// Next.js dev hot-reloads don't reset state mid-demo. Always reach it through `await ready()`.
 
 import 'server-only';
 import { randomBytes } from 'node:crypto';
-import { Access, MemoryAccessStore } from '@/core/access.ts';
+import { Access, MemoryAccessStore, type AccessStore } from '@/core/access.ts';
 import { modelFromEnv, type ChatModel } from '@/core/ai/llm.ts';
-import { Commerce, MemoryCartStore, MemoryCatalogStore } from '@/core/commerce.ts';
+import { Commerce, MemoryCartStore, MemoryCatalogStore, type CartStore, type CatalogStore } from '@/core/commerce.ts';
 import { demoCatalog } from '@/core/demo-shop.ts';
 import { Guard, MemoryGuardStore } from '@/core/guard/engine.ts';
 import { defaultBuyerPolicy, defaultMerchantPolicy } from '@/core/guard/policy.ts';
-import { MemoryPolicyStore, policyUpdateExecutor } from '@/core/guard/policy-store.ts';
+import { MemoryPolicyStore, policyUpdateExecutor, type PolicyStore } from '@/core/guard/policy-store.ts';
+import type { GuardStore } from '@/core/guard/types.ts';
 import { PayPalClient } from '@/core/paypal/client.ts';
 import { captureExecutor, refundExecutor, voidExecutor } from '@/core/paypal/executors.ts';
 import { Seller } from '@/core/seller.ts';
 import { Shops } from '@/core/shops.ts';
 import type { ToolServices } from '@/core/tools/registry.ts';
 import { notifyOwner } from './notify.ts';
+import { Db, PgAccessStore, PgCartStore, PgCatalogStore, PgGuardStore, PgPolicyStore } from './pg-stores.ts';
 
 interface Context {
   paypal: PayPalClient;
-  carts: MemoryCartStore;
-  catalogs: MemoryCatalogStore;
-  guardStore: MemoryGuardStore;
-  policies: MemoryPolicyStore;
+  carts: CartStore;
+  catalogs: CatalogStore;
+  guardStore: GuardStore;
+  policies: PolicyStore;
   access: Access;
   model?: ChatModel;
   guard: Guard;
@@ -33,21 +36,32 @@ interface Context {
   baseUrl: string;
 }
 
-const globalForSayso = globalThis as unknown as { sayso?: Context; saysoBoot?: Promise<void> };
+const globalForSayso = globalThis as unknown as { sayso?: Promise<Context> };
 
 export function baseUrl(): string {
   return (process.env.PUBLIC_BASE_URL ?? 'http://localhost:3000').replace(/\/$/, '');
 }
 
-export function ctx(): Context {
-  if (globalForSayso.sayso) return globalForSayso.sayso;
+/** The shared context, created (and the database migrated and seeded) on first use. */
+export function ready(): Promise<Context> {
+  globalForSayso.sayso ??= create().catch((err) => {
+    globalForSayso.sayso = undefined; // let the next request retry, e.g. after the database wakes up
+    throw err;
+  });
+  return globalForSayso.sayso;
+}
 
+async function create(): Promise<Context> {
   const paypal = PayPalClient.fromEnv();
-  const carts = new MemoryCartStore();
-  const catalogs = new MemoryCatalogStore([demoCatalog]);
-  const guardStore = new MemoryGuardStore();
-  const policies = new MemoryPolicyStore([defaultMerchantPolicy(demoCatalog.shop.id)]);
-  const access = new Access(new MemoryAccessStore(), sessionSecret());
+  const db = process.env.DATABASE_URL ? new Db(process.env.DATABASE_URL) : undefined;
+  await db?.migrate();
+
+  const carts = db ? new PgCartStore(db) : new MemoryCartStore();
+  const catalogs = db ? new PgCatalogStore(db) : new MemoryCatalogStore([]);
+  const guardStore = db ? new PgGuardStore(db) : new MemoryGuardStore();
+  const policies = db ? new PgPolicyStore(db) : new MemoryPolicyStore();
+  const accessStore: AccessStore = db ? new PgAccessStore(db) : new MemoryAccessStore();
+  const access = new Access(accessStore, sessionSecret());
   const model = modelFromEnv();
   const url = baseUrl();
   const fallbackPolicy = (ownerId: string) => (ownerId.startsWith('shop_') ? defaultMerchantPolicy(ownerId) : defaultBuyerPolicy(ownerId));
@@ -69,16 +83,8 @@ export function ctx(): Context {
   const seller = new Seller({ carts, guard, guardStore, policies, commerce, shops, paypal, model });
   const tools: ToolServices = { commerce, seller, shops, catalogs, approvalsUrl: `${url}/approve` };
 
-  globalForSayso.sayso = { paypal, carts, catalogs, guardStore, policies, access, model, guard, commerce, shops, seller, tools, baseUrl: url };
-  globalForSayso.saysoBoot = bootDemoCredentials(access);
-  return globalForSayso.sayso;
-}
-
-/** Waits for the demo shop's credentials to be registered (first request after a cold start). */
-export async function ready(): Promise<Context> {
-  const context = ctx();
-  await globalForSayso.saysoBoot;
-  return context;
+  await seedDemo(catalogs, policies, access);
+  return { paypal, carts, catalogs, guardStore, policies, access, model, guard, commerce, shops, seller, tools, baseUrl: url };
 }
 
 function sessionSecret(): string {
@@ -89,14 +95,22 @@ function sessionSecret(): string {
 }
 
 /**
- * The demo shop gets fixed credentials from the environment so the hosted demo, the video and the
- * judges' instructions agree. Without them, random ones are printed once to the server log.
+ * The demo shop (Maya Ceramics) always exists. SAYSO_RESET_DEMO=true restores its stock and rules on
+ * boot, for recording the video. Its credentials come from the environment so the hosted demo and the
+ * judges' instructions agree; without them, random ones are printed once to the server log.
  */
-async function bootDemoCredentials(access: Access): Promise<void> {
+async function seedDemo(catalogs: CatalogStore, policies: PolicyStore, access: Access): Promise<void> {
   const shopId = demoCatalog.shop.id;
-  const owner = await access.createOwner(shopId, process.env.SAYSO_DEMO_OWNER_SECRET || undefined);
-  const { secret: agent } = await access.createAgentKey(shopId, 'demo agent', process.env.SAYSO_DEMO_AGENT_KEY || undefined);
-  if (!process.env.SAYSO_DEMO_OWNER_SECRET || !process.env.SAYSO_DEMO_AGENT_KEY) {
-    console.log(`[sayso] demo shop credentials for this run:\n  owner secret: ${owner}\n  agent key:    ${agent}`);
-  }
+  const reset = process.env.SAYSO_RESET_DEMO === 'true';
+  if (reset || !(await catalogs.byShopId(shopId))) await catalogs.save(structuredClone(demoCatalog));
+  if (reset || !(await policies.get(shopId))) await policies.put(defaultMerchantPolicy(shopId));
+
+  const ownerSecret = process.env.SAYSO_DEMO_OWNER_SECRET || undefined;
+  const agentSecret = process.env.SAYSO_DEMO_AGENT_KEY || undefined;
+  const owner = await access.createOwner(shopId, ownerSecret);
+  const hasKey = agentSecret ? Boolean(await access.agentFromHeader(`Bearer ${agentSecret}`)) : (await access.listKeys(shopId)).length > 0;
+  const agent = hasKey ? undefined : (await access.createAgentKey(shopId, 'demo agent', agentSecret)).secret;
+
+  if (!ownerSecret) console.log(`[sayso] demo shop owner secret for this run: ${owner}`);
+  if (agent && !agentSecret) console.log(`[sayso] demo shop agent key: ${agent}`);
 }

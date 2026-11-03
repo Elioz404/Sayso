@@ -1,8 +1,8 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  // Render runs `next start`; nothing special needed. Keep server-only code out of client bundles.
-  serverExternalPackages: [],
+  // Load pg from node_modules at runtime instead of bundling it (its native bindings are optional).
+  serverExternalPackages: ['pg'],
 };
 
 export default nextConfig;

@@ -1,6 +1,6 @@
 // PayPal sends the buyer here after they approve (return_url). We complete the merchant-cart checkout
 // server-side: re-check stock, authorize, capture through Guard.
-import { ctx } from '@/server/context.ts';
+import { ready } from '@/server/context.ts';
 import { HttpError } from '@/core/commerce.ts';
 
 type Search = { cart?: string; token?: string; PayerID?: string };
@@ -10,7 +10,7 @@ export default async function PayReturn({ searchParams }: { searchParams: Promis
   if (!cart || !token) return <p>Missing cart or PayPal token.</p>;
 
   try {
-    const result = await ctx().commerce.checkout(cart, {
+    const result = await (await ready()).commerce.checkout(cart, {
       items: [],
       payment_method: { type: 'paypal', token, payer_id: PayerID },
     });
