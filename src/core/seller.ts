@@ -35,6 +35,8 @@ export interface OrderSummary {
   buyer?: string;
   channel?: string;
   tracking?: StoredCart['tracking'];
+  /** Refunds confirmed with PayPal, e.g. "$25.00". */
+  refunded?: string;
   createdAt: string;
 }
 
@@ -46,14 +48,14 @@ export class Seller {
   }
 
   async orders(shopId: string, filter?: OrderSummary['status']): Promise<OrderSummary[]> {
-    const carts = await this.deps.carts.listByShop(shopId);
-    return carts.map(summarize).filter((o) => !filter || o.status === filter);
+    const [carts, records] = await Promise.all([this.deps.carts.listByShop(shopId), this.deps.guardStore.listSince(shopId, new Date(0))]);
+    return carts.map((c) => summarize(c, records)).filter((o) => !filter || o.status === filter);
   }
 
   async order(shopId: string, cartId: string): Promise<{ order: OrderSummary; cart: StoredCart; records: GuardRecord[] }> {
     const cart = await this.cart(shopId, cartId);
     const records = (await this.deps.guardStore.listSince(shopId, new Date(0))).filter((r) => r.action.params?.cartId === cartId);
-    return { order: summarize(cart), cart, records };
+    return { order: summarize(cart, records), cart, records };
   }
 
   /** Refund all or part of a paid order. Goes through Guard: may run now, wait for the owner, or be denied. */
@@ -177,7 +179,11 @@ export class Seller {
   }
 }
 
-function summarize(c: StoredCart): OrderSummary {
+function summarize(c: StoredCart, records: GuardRecord[] = []): OrderSummary {
+  const currency = c.cart.totals?.total.currency_code ?? 'USD';
+  const refunded = records
+    .filter((r) => r.action.kind === 'refund.create' && r.status === 'verified' && r.action.params?.cartId === c.id)
+    .reduce((sum, r) => sum + (r.action.amount ?? (r.result?.amount ? toMinor(r.result.amount as { currency_code: string; value: string }) : 0)), 0);
   const total = c.cart.totals ? formatMoney(toMinor(c.cart.totals.total), c.cart.totals.total.currency_code) : undefined;
   const status: OrderSummary['status'] =
     c.cart.status === 'COMPLETED'
@@ -198,6 +204,7 @@ function summarize(c: StoredCart): OrderSummary {
     buyer: c.cart.customer?.email_address,
     channel: c.channel,
     tracking: c.tracking,
+    refunded: refunded ? formatMoney(refunded, currency) : undefined,
     createdAt: c.createdAt,
   };
 }

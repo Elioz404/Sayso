@@ -28,6 +28,7 @@ export interface OrderRow {
   status: string;
   total: string;
   totalMinor: number;
+  refunded: string;
   items: string;
   buyer: string;
   via: string;
@@ -58,6 +59,7 @@ export function OrdersGrid({ rows }: { rows: OrderRow[] }) {
       { field: 'created', headerName: 'Placed', sort: 'desc', minWidth: 150 },
       { field: 'status', cellRenderer: Pill, minWidth: 140 },
       { field: 'total', comparator: (_a, _b, x, y) => (x.data?.totalMinor ?? 0) - (y.data?.totalMinor ?? 0), minWidth: 100 },
+      { field: 'refunded', minWidth: 100 },
       { field: 'items', flex: 2, minWidth: 200 },
       { field: 'buyer', minWidth: 160 },
       { field: 'via', headerName: 'Agent / channel', minWidth: 140 },

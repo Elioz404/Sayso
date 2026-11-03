@@ -45,6 +45,7 @@ export default async function Owner() {
       status: o.status,
       total: o.total ?? '-',
       totalMinor: total ? toMinor(total) : 0,
+      refunded: o.refunded ?? '-',
       items: o.items.map((i) => `${i.quantity}x ${i.name ?? i.variant_id}`).join(', '),
       buyer: o.buyer ?? '-',
       via: o.channel ?? '-',

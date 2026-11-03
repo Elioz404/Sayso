@@ -96,13 +96,13 @@ export function refundExecutor(client: PayPalClient): Executor {
       if (refundable <= 0) blockers.push('This payment has already been fully refunded.');
       else if (amount > refundable) blockers.push(`Refund ${fmt(amount, currency)} exceeds the ${fmt(refundable, currency)} still refundable.`);
 
+      const already = refunded ? ` (already refunded ${fmt(refunded, currency)})` : '';
       return {
         ok: blockers.length === 0,
         blockers,
-        effects: [
-          `Refund ${fmt(amount, currency)} to the buyer${refunded ? ` (already refunded ${fmt(refunded, currency)})` : ''}.`,
-          `${fmt(Math.max(0, refundable - amount), currency)} of ${fmt(captured, currency)} stays captured.`,
-        ],
+        effects: blockers.length
+          ? [`Nothing would move: ${fmt(Math.max(0, refundable), currency)} of ${fmt(captured, currency)} is still refundable${already}.`]
+          : [`Refund ${fmt(amount, currency)} to the buyer${already}.`, `${fmt(refundable - amount, currency)} of ${fmt(captured, currency)} stays captured.`],
         observed: { captured, refunded, refundable, currency },
       };
     },

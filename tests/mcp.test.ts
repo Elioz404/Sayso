@@ -88,6 +88,9 @@ test("owner's agent: small refund runs, big refund waits, and only the owner can
   const tooMuch = await s.call('refund_order', { order_id: orderId, amount: '20.00', reason: 'One more' }, s.owner); // only $11.03 left
   assert.match(tooMuch.data.why.join(' '), /exceeds the \$11\.03 still refundable/);
   assert.equal(tooMuch.data.status, 'denied');
+  assert.match(tooMuch.data.next, /Blocked before reaching PayPal/);
+  assert.match(tooMuch.data.what_happens[0], /^Nothing would move/);
+  assert.equal((await s.call('get_order', { order_id: orderId }, s.owner)).data.refunded, '$70.00');
 });
 
 test('an agent cannot loosen its own rules: policy changes always wait for the owner', async () => {
