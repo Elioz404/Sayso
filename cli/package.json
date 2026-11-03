@@ -1,0 +1,20 @@
+{
+  "name": "sayso-cli",
+  "version": "0.2.0",
+  "description": "Run your Sayso shop from the terminal, or let your own AI agent run it. Money only moves with the owner's say-so.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "sayso": "dist/sayso.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "tsc -p tsconfig.json"
+  }
+}
