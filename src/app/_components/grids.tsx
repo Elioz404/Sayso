@@ -6,19 +6,30 @@
 import { AllCommunityModule, ModuleRegistry, themeQuartz, type ColDef, type ICellRendererParams } from 'ag-grid-community';
 import { AgGridReact } from 'ag-grid-react';
 import { useMemo, useRef, useState } from 'react';
+import { Icon, Status } from './ui.tsx';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
 // Follows the site's light/dark tokens instead of a fixed palette.
 const theme = themeQuartz.withParams({
-  backgroundColor: 'var(--surface)',
-  foregroundColor: 'var(--fg)',
-  borderColor: 'var(--line)',
-  headerBackgroundColor: 'var(--bg)',
-  accentColor: 'var(--accent)',
-  fontFamily: 'inherit',
+  backgroundColor: 'var(--sheet)',
+  foregroundColor: 'var(--ink)',
+  textColor: 'var(--ink)',
+  subtleTextColor: 'var(--ink-3)',
+  borderColor: 'var(--rule)',
+  headerBackgroundColor: 'var(--sheet-2)',
+  headerTextColor: 'var(--ink-3)',
+  headerFontWeight: 650,
+  headerFontSize: 12,
+  accentColor: 'var(--say)',
+  oddRowBackgroundColor: 'var(--sheet)',
+  rowHoverColor: 'var(--sheet-2)',
+  fontFamily: 'var(--font-body)',
   fontSize: 14,
-  wrapperBorderRadius: 12,
+  wrapperBorderRadius: 14,
+  wrapperBorder: { color: 'var(--rule)' },
+  rowHeight: 46,
+  headerHeight: 42,
 });
 
 export interface OrderRow {
@@ -47,7 +58,7 @@ export interface AuditRow {
 }
 
 function Pill({ value }: ICellRendererParams) {
-  return <span className={`pill ${value}`}>{String(value ?? '').replace('_', ' ')}</span>;
+  return <Status value={String(value ?? '')} />;
 }
 
 export function OrdersGrid({ rows }: { rows: OrderRow[] }) {
@@ -58,8 +69,8 @@ export function OrdersGrid({ rows }: { rows: OrderRow[] }) {
       { field: 'number', headerName: 'Order', minWidth: 140 },
       { field: 'created', headerName: 'Placed', sort: 'desc', minWidth: 150 },
       { field: 'status', cellRenderer: Pill, minWidth: 140 },
-      { field: 'total', comparator: (_a, _b, x, y) => (x.data?.totalMinor ?? 0) - (y.data?.totalMinor ?? 0), minWidth: 100 },
-      { field: 'refunded', minWidth: 100 },
+      { field: 'total', cellClass: 'mono', comparator: (_a, _b, x, y) => (x.data?.totalMinor ?? 0) - (y.data?.totalMinor ?? 0), minWidth: 100 },
+      { field: 'refunded', cellClass: 'mono', minWidth: 120 },
       { field: 'items', flex: 2, minWidth: 200 },
       { field: 'buyer', minWidth: 160 },
       { field: 'via', headerName: 'Agent / channel', minWidth: 140 },
@@ -70,8 +81,11 @@ export function OrdersGrid({ rows }: { rows: OrderRow[] }) {
   return (
     <div className="stack">
       <div className="row">
-        <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Search orders" style={{ flex: 1, minWidth: 160 }} />
-        <button onClick={() => grid.current?.api.exportDataAsCsv({ fileName: 'sayso-orders.csv' })}>Export CSV</button>
+        <label htmlFor="order-search" className="sr-only">Search orders</label>
+        <input id="order-search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Search by order, buyer, item or agent" style={{ flex: 1, minWidth: 180 }} />
+        <button className="btn btn-small" onClick={() => grid.current?.api.exportDataAsCsv({ fileName: 'sayso-orders.csv' })}>
+          Export CSV
+        </button>
       </div>
       <AgGridReact<OrderRow>
         ref={grid}
@@ -81,6 +95,7 @@ export function OrdersGrid({ rows }: { rows: OrderRow[] }) {
         defaultColDef={{ flex: 1, sortable: true, filter: true, resizable: true }}
         quickFilterText={filter}
         domLayout="autoHeight"
+        containerStyle={{ height: 'auto' }}
         pagination={rows.length > 20}
         paginationPageSize={20}
         overlayNoRowsTemplate="No orders yet. Share your shop's MCP link with an AI assistant to get the first one."
@@ -102,7 +117,12 @@ export function AuditGrid({ rows }: { rows: AuditRow[] }) {
         field: 'chain',
         headerName: 'Audit chain',
         minWidth: 120,
-        cellRenderer: ({ value }: ICellRendererParams) => <span className={value === 'intact' ? 'ok' : 'error'}>{value}</span>,
+        cellRenderer: ({ value }: ICellRendererParams) => (
+          <span className={`row small ${value === 'intact' ? 'ok-text' : 'error'}`} style={{ gap: 5, display: 'inline-flex' }}>
+            <Icon name={value === 'intact' ? 'chain' : 'x'} size={15} />
+            {value}
+          </span>
+        ),
       },
       {
         field: 'id',
@@ -122,6 +142,7 @@ export function AuditGrid({ rows }: { rows: AuditRow[] }) {
       columnDefs={columns}
       defaultColDef={{ flex: 1, sortable: true, filter: true, resizable: true }}
       domLayout="autoHeight"
+        containerStyle={{ height: 'auto' }}
       pagination={rows.length > 15}
       paginationPageSize={15}
       overlayNoRowsTemplate="No agent actions yet."

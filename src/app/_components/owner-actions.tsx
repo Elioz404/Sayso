@@ -1,19 +1,21 @@
 'use client';
 
-// Small client islands for owner actions. Each one calls an owner-only API route (signed session
-// cookie) and refreshes the server-rendered page.
+// Client islands for owner actions. Each calls an owner-only API route (signed session cookie) and
+// refreshes the server-rendered page.
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { CopyField } from './client-ui.tsx';
+import { Icon } from './ui.tsx';
 
 async function send(url: string, method: string, body?: unknown): Promise<any> {
   const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.message ?? `Error ${res.status}`);
+  if (!res.ok) throw new Error(data.message ?? `Something went wrong (${res.status})`);
   return data;
 }
 
-export function LoginForm({ demo, defaultShop }: { demo: boolean; defaultShop?: string }) {
+export function LoginForm({ demo }: { demo: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -31,30 +33,42 @@ export function LoginForm({ demo, defaultShop }: { demo: boolean; defaultShop?: 
   }
 
   return (
-    <form
-      className="card"
-      onSubmit={(e) => {
-        e.preventDefault();
-        const form = new FormData(e.currentTarget);
-        void login({ shop: form.get('shop'), secret: form.get('secret') });
-      }}
-    >
-      <h3>Owner sign-in</h3>
-      <p className="muted small">Only the owner signs in here. Your AI agent uses its own key and can never approve anything.</p>
-      <label htmlFor="shop">Shop</label>
-      <input id="shop" name="shop" defaultValue={defaultShop} placeholder="your-shop-1a2b" autoComplete="username" required />
-      <label htmlFor="secret">Owner secret</label>
-      <input id="secret" name="secret" type="password" placeholder="sk_owner_..." autoComplete="current-password" required />
-      <div className="row" style={{ marginTop: 14 }}>
-        <button className="primary" disabled={busy}>Sign in</button>
-        {demo && (
-          <button type="button" disabled={busy} onClick={() => void login({ demo: true })}>
+    <div className="stack-lg">
+      <form
+        className="panel panel-raised stack"
+        style={{ gap: 16 }}
+        onSubmit={(e) => {
+          e.preventDefault();
+          const form = new FormData(e.currentTarget);
+          void login({ shop: form.get('shop'), secret: form.get('secret') });
+        }}
+      >
+        <div className="field">
+          <label htmlFor="shop">Shop ID</label>
+          <input id="shop" name="shop" placeholder="lumen-candles-807b" autoComplete="username" required />
+        </div>
+        <div className="field">
+          <label htmlFor="secret">Owner secret</label>
+          <input id="secret" name="secret" type="password" placeholder="sk_owner_..." autoComplete="current-password" required />
+          <span className="hint">You got it once, when the shop was created. Your agent&apos;s key won&apos;t work here, on purpose.</span>
+        </div>
+        <button className="btn btn-primary" disabled={busy}>
+          {busy ? 'Signing in...' : 'Sign in'}
+        </button>
+        {error && <p className="error small">{error}</p>}
+      </form>
+      {demo && (
+        <div className="panel panel-tight spread">
+          <div className="stack" style={{ gap: 2 }}>
+            <b>Just looking?</b>
+            <span className="soft small">Open Maya Ceramics, the demo shop, as its owner.</span>
+          </div>
+          <button type="button" className="btn" disabled={busy} onClick={() => void login({ demo: true })}>
             Open the demo shop
           </button>
-        )}
-      </div>
-      {error && <p className="error small" style={{ marginTop: 10 }}>{error}</p>}
-    </form>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -62,6 +76,7 @@ export function SignOut() {
   const router = useRouter();
   return (
     <button
+      className="btn btn-quiet btn-small"
       onClick={async () => {
         await send('/api/owner/session', 'DELETE').catch(() => {});
         router.refresh();
@@ -74,31 +89,37 @@ export function SignOut() {
 
 export function Decision({ id, big = false }: { id: string; big?: boolean }) {
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<'approve' | 'reject'>();
   const [error, setError] = useState<string>();
   const [note, setNote] = useState('');
 
   async function decide(decision: 'approve' | 'reject') {
-    setBusy(true);
+    setBusy(decision);
     setError(undefined);
     try {
       await send(`/api/guard/${id}`, 'POST', { decision, note: note || undefined });
       router.refresh();
     } catch (err) {
       setError((err as Error).message);
+      setBusy(undefined);
     }
-    setBusy(false);
   }
 
   return (
-    <div className="stack">
-      {big && <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (optional, saved in the audit log)" maxLength={300} />}
-      <div className="row">
-        <button className={`primary${big ? ' big' : ''}`} disabled={busy} onClick={() => void decide('approve')}>
-          Say OK
+    <div className="stack" style={{ gap: 10 }}>
+      {big && (
+        <div className="field">
+          <label htmlFor={`note-${id}`}>Note for the record (optional)</label>
+          <input id={`note-${id}`} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Saved in the audit log" maxLength={300} />
+        </div>
+      )}
+      <div className="decide">
+        <button className={`btn btn-primary${big ? ' btn-big' : ''}`} disabled={Boolean(busy)} onClick={() => void decide('approve')}>
+          <Icon name="check" size={18} />
+          {busy === 'approve' ? 'Approving...' : 'Say OK'}
         </button>
-        <button className={`danger${big ? ' big' : ''}`} disabled={busy} onClick={() => void decide('reject')}>
-          Reject
+        <button className={`btn btn-danger${big ? ' btn-big' : ''}`} disabled={Boolean(busy)} onClick={() => void decide('reject')}>
+          {busy === 'reject' ? 'Rejecting...' : 'Reject'}
         </button>
       </div>
       {error && <p className="error small">{error}</p>}
@@ -111,9 +132,9 @@ export function PublishButton() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string>();
   return (
-    <div className="stack">
+    <div className="stack" style={{ gap: 8 }}>
       <button
-        className="primary"
+        className="btn btn-primary"
         disabled={busy}
         onClick={async () => {
           setBusy(true);
@@ -127,9 +148,9 @@ export function PublishButton() {
           setBusy(false);
         }}
       >
-        Publish: open to AI shoppers
+        {busy ? 'Publishing...' : 'Publish shop'}
       </button>
-      {message && <p className="small muted">{message}</p>}
+      {message && <p className="small soft">{message}</p>}
     </div>
   );
 }
@@ -156,13 +177,14 @@ export function NewKey() {
           }
         }}
       >
-        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Label, e.g. laptop agent" maxLength={60} style={{ flex: 1, minWidth: 180 }} />
-        <button>New agent key</button>
+        <label htmlFor="key-label" className="sr-only">Key label</label>
+        <input id="key-label" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Label, e.g. laptop agent" maxLength={60} style={{ flex: 1, minWidth: 180 }} />
+        <button className="btn">New agent key</button>
       </form>
       {key && (
-        <div>
-          <p className="small">Copy it now; it won&apos;t be shown again:</p>
-          <div className="secret">{key}</div>
+        <div className="stack" style={{ gap: 6 }}>
+          <span className="small soft">Copy it now. It won&apos;t be shown again.</span>
+          <CopyField value={key} secret />
         </div>
       )}
       {error && <p className="error small">{error}</p>}
@@ -170,18 +192,37 @@ export function NewKey() {
   );
 }
 
-export function RevokeKey({ id }: { id: string }) {
+export function RevokeKey({ id, label }: { id: string; label: string }) {
   const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState<string>();
+  if (!confirming) {
+    return (
+      <button className="btn btn-quiet btn-small" onClick={() => setConfirming(true)}>
+        Revoke
+      </button>
+    );
+  }
   return (
-    <button
-      className="danger"
-      onClick={async () => {
-        if (!confirm('Revoke this key? Any agent using it stops working immediately.')) return;
-        await send('/api/owner/keys', 'DELETE', { id }).catch((err) => alert((err as Error).message));
-        router.refresh();
-      }}
-    >
-      Revoke
-    </button>
+    <span className="row" style={{ gap: 6 }}>
+      <span className="small soft">Revoke &ldquo;{label}&rdquo;?</span>
+      <button
+        className="btn btn-danger btn-small"
+        onClick={async () => {
+          try {
+            await send('/api/owner/keys', 'DELETE', { id });
+            router.refresh();
+          } catch (err) {
+            setError((err as Error).message);
+          }
+        }}
+      >
+        Revoke now
+      </button>
+      <button className="btn btn-quiet btn-small" onClick={() => setConfirming(false)}>
+        Keep
+      </button>
+      {error && <span className="error small">{error}</span>}
+    </span>
   );
 }

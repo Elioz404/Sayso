@@ -4,6 +4,8 @@
 // phone picture uploads fast and stays under the server's limit.
 
 import { useState } from 'react';
+import { CopyField } from './client-ui.tsx';
+import { Icon } from './ui.tsx';
 
 interface Created {
   shop: { slug: string; name: string };
@@ -25,8 +27,13 @@ async function shrink(file: File, max = 1280): Promise<string> {
   return canvas.toDataURL('image/jpeg', 0.85);
 }
 
+const EXAMPLE = `Hand-thrown mugs, 12 oz, $34. Sage green (6 left) and speckled white (1).
+Ramen bowls $48, 3 left. Custom bud vases $62, made to order in about 10 days.
+USPS in the US $8.95, free over $75. I also ship to Canada for $28.`;
+
 export function OnboardForm({ origin }: { origin: string }) {
   const [images, setImages] = useState<string[]>([]);
+  const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [created, setCreated] = useState<Created>();
@@ -35,7 +42,8 @@ export function OnboardForm({ origin }: { origin: string }) {
 
   return (
     <form
-      className="card"
+      className="panel stack"
+      style={{ gap: 18 }}
       onSubmit={async (e) => {
         e.preventDefault();
         const form = new FormData(e.currentTarget);
@@ -47,14 +55,14 @@ export function OnboardForm({ origin }: { origin: string }) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               shop_name: form.get('name') || undefined,
-              text: form.get('text') || undefined,
+              text: text || undefined,
               currency: form.get('currency') || undefined,
               country: form.get('country') || undefined,
               images,
             }),
           });
           const data = await res.json();
-          if (!res.ok) throw new Error(data.message ?? `Error ${res.status}`);
+          if (!res.ok) throw new Error(data.message ?? `Something went wrong (${res.status})`);
           setCreated(data);
         } catch (err) {
           setError((err as Error).message);
@@ -62,99 +70,136 @@ export function OnboardForm({ origin }: { origin: string }) {
         setBusy(false);
       }}
     >
-      <label htmlFor="name">Shop name</label>
-      <input id="name" name="name" placeholder="Maya Ceramics" maxLength={80} />
+      <div className="field">
+        <label htmlFor="name">Shop name</label>
+        <input id="name" name="name" placeholder="Maya Ceramics" maxLength={80} />
+      </div>
 
-      <label htmlFor="text">What do you sell?</label>
-      <textarea
-        id="text"
-        name="text"
-        maxLength={8000}
-        placeholder={'Paste a price list, an Instagram caption or just describe it:\n\nHand-thrown mugs, 12 oz, $34. Sage green (6) and speckled white (1).\nRamen bowls $48, 3 left. Ship USPS in the US for $8.95, free over $75.'}
-      />
-
-      <label htmlFor="photos">Photos (optional, up to 8)</label>
-      <input
-        id="photos"
-        type="file"
-        accept="image/png,image/jpeg,image/webp"
-        multiple
-        onChange={async (e) => {
-          const files = [...(e.target.files ?? [])].slice(0, 8);
-          setImages(await Promise.all(files.map((f) => shrink(f))));
-        }}
-      />
-      {images.length > 0 && (
-        <div className="thumbs">
-          {images.map((src, i) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img key={i} src={src} alt={`Photo ${i + 1}`} />
-          ))}
+      <div className="field">
+        <div className="spread">
+          <label htmlFor="text">What you sell</label>
+          <button type="button" className="btn btn-quiet btn-small" onClick={() => setText(EXAMPLE)}>
+            Use an example
+          </button>
         </div>
-      )}
+        <textarea
+          id="text"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          maxLength={8000}
+          placeholder="Paste a price list or an Instagram caption, or just describe it: products, prices, how many you have, where you ship and what it costs."
+        />
+      </div>
 
-      <div className="grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
-        <div>
+      <div className="field">
+        <span className="small soft" style={{ fontWeight: 600 }}>Photos (optional, up to 8)</span>
+        <label className="drop" htmlFor="photos" style={{ position: 'relative' }}>
+          <Icon name="camera" size={22} />
+          <b>{images.length ? `${images.length} photo${images.length > 1 ? 's' : ''} added` : 'Add product photos'}</b>
+          <span className="small">Prices you can see in a photo count too.</span>
+          <input
+            id="photos"
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            multiple
+            onChange={async (e) => {
+              const files = [...(e.target.files ?? [])].slice(0, 8);
+              setImages(await Promise.all(files.map((f) => shrink(f))));
+            }}
+          />
+        </label>
+        {images.length > 0 && (
+          <div className="thumbs">
+            {images.map((src, i) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img key={i} src={src} alt={`Photo ${i + 1}`} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="field-row">
+        <div className="field">
           <label htmlFor="currency">Currency</label>
-          <input id="currency" name="currency" placeholder="USD" maxLength={3} />
+          <input id="currency" name="currency" placeholder="USD" maxLength={3} autoCapitalize="characters" />
         </div>
-        <div>
+        <div className="field">
           <label htmlFor="country">Ships from</label>
-          <input id="country" name="country" placeholder="US" maxLength={2} />
+          <input id="country" name="country" placeholder="US" maxLength={2} autoCapitalize="characters" />
         </div>
       </div>
 
-      <div className="row" style={{ marginTop: 16 }}>
-        <button className="primary" disabled={busy}>{busy ? 'Reading your catalog...' : 'Draft my shop'}</button>
-        <span className="muted small">Nothing goes live until you review and publish it.</span>
+      <div className="row" style={{ gap: 14 }}>
+        <button className="btn btn-primary" disabled={busy || (!text.trim() && images.length === 0)}>
+          {busy ? 'Reading your catalog...' : 'Draft my shop'}
+        </button>
+        <span className="small soft">Nothing goes live until you publish it.</span>
       </div>
-      {error && <p className="error" style={{ marginTop: 10 }}>{error}</p>}
+      {error && <p className="error">{error}</p>}
     </form>
   );
 }
 
 function CreatedShop({ created, origin }: { created: Created; origin: string }) {
-  const mcpConfig = JSON.stringify(
-    { mcpServers: { [created.shop.slug]: { url: created.mcp.seller, headers: { Authorization: `Bearer ${created.agent_key}` } } } },
-    null,
-    2,
-  );
   return (
-    <div className="stack">
-      <div className="card">
-        <h3 className="ok">Drafted {created.shop.name} with {created.products} product(s)</h3>
+    <div className="stack-lg">
+      <div className="panel stack" style={{ gap: 10 }}>
+        <span className="eyebrow ok-text">Draft ready</span>
+        <h2>
+          {created.shop.name}, {created.products} product{created.products === 1 ? '' : 's'}
+        </h2>
         {created.questions.length > 0 && (
           <>
-            <p className="small">Check these before publishing:</p>
-            <ul className="small">{created.questions.map((q) => <li key={q}>{q}</li>)}</ul>
+            <p className="soft small">Check these before you publish:</p>
+            <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>
+              {created.questions.map((q) => (
+                <li key={q}>{q}</li>
+              ))}
+            </ul>
           </>
         )}
       </div>
 
-      <div className="card warn">
-        <h3>Save these now. They are shown only once.</h3>
-        <p className="small"><b>Owner secret</b>: signs you in and approves money moves. Keep it away from your agents.</p>
-        <div className="secret">{created.owner_secret}</div>
-        <p className="small" style={{ marginTop: 12 }}><b>Agent key</b>: for your own AI agent. It can run the shop, never approve.</p>
-        <div className="secret">{created.agent_key}</div>
-        <p className="small" style={{ marginTop: 12 }}>Shop id: <code>{created.shop.slug}</code></p>
+      <div className="panel panel-hold stack" style={{ gap: 14 }}>
+        <div className="stack" style={{ gap: 4 }}>
+          <h3>Save these two keys now</h3>
+          <p className="small soft">They are shown only once. Store them in a password manager.</p>
+        </div>
+        <div className="stack" style={{ gap: 6 }}>
+          <b className="small">Owner secret: for you. It signs you in and approves money moves.</b>
+          <CopyField value={created.owner_secret} secret />
+        </div>
+        <div className="stack" style={{ gap: 6 }}>
+          <b className="small">Agent key: for your AI agent. It runs the shop but can never approve.</b>
+          <CopyField value={created.agent_key} secret />
+        </div>
+        <div className="stack" style={{ gap: 6 }}>
+          <b className="small">Shop ID</b>
+          <CopyField value={created.shop.slug} />
+        </div>
       </div>
 
-      <div className="card">
+      <div className="panel stack" style={{ gap: 16 }}>
+        <h3>Next</h3>
         <ol className="steps">
           <li>
-            <a href="/owner">Sign in as the owner</a>, review the catalog and press <b>Publish</b>.
+            <span className="stack" style={{ gap: 6 }}>
+              <span>
+                <a href="/owner">Sign in as the owner</a>, check the catalog and press <b>Publish shop</b>.
+              </span>
+            </span>
           </li>
           <li>
-            Run it from your terminal:
-            <pre>{`node cli/sayso.ts login --url ${origin} --key ${created.agent_key}\nnode cli/sayso.ts status`}</pre>
+            <span className="stack" style={{ gap: 6, minWidth: 0 }}>
+              <span>Connect your agent from a terminal:</span>
+              <CopyField value={`node cli/sayso.ts login --url ${origin} --key ${created.agent_key}`} />
+            </span>
           </li>
           <li>
-            Or add it to any MCP client:
-            <pre>{mcpConfig}</pre>
-          </li>
-          <li>
-            Buyer agents shop at <code>{created.mcp.buyer}</code> once you publish.
+            <span className="stack" style={{ gap: 6, minWidth: 0 }}>
+              <span>After you publish, shoppers&apos; assistants buy here:</span>
+              <CopyField value={created.mcp.buyer} />
+            </span>
           </li>
         </ol>
       </div>

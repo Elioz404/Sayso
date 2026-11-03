@@ -1,8 +1,14 @@
+import type { Metadata } from 'next';
+
+export const metadata: Metadata = { title: 'Checkout cancelled' };
+
 export default function PayCancel() {
   return (
-    <div className="card">
-      <h1>Checkout cancelled</h1>
-      <p>Nothing was charged. Your assistant can pick up the cart again whenever you are ready.</p>
-    </div>
+    <main className="wrap wrap-narrow">
+      <article className="sayso-card" style={{ maxWidth: 'none' }}>
+        <h1>Checkout cancelled</h1>
+        <p className="soft">Nothing was charged. Your assistant can pick the cart up again whenever you are ready.</p>
+      </article>
+    </main>
   );
 }
