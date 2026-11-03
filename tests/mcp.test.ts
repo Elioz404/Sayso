@@ -319,7 +319,7 @@ test("saved PayPal: the buyer approves once and sets limits; the assistant pays 
 
 test('custom orders: invoices go through Guard, a first invoice to a new client waits for the owner', async () => {
   const s = await stack();
-  const vase = { email: 'Grace@Example.com', name: 'Grace', items: [{ name: 'Custom bud vase, cobalt glaze', price: '62.00' }], note: 'Ships in about 10 days', deposit: '31.00' };
+  const vase = { email: 'Grace@Example.com', name: 'Grace', items: [{ name: 'Custom vase, cobalt glaze', price: '62.00' }], note: 'Ships in about 10 days', deposit: '31.00' };
 
   const first = await s.call('send_invoice', vase, s.owner);
   assert.equal(first.data.status, 'pending_approval', 'Grace has never paid this shop');

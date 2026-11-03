@@ -2,6 +2,7 @@
 // country? } -> a draft shop and a first agent key, returned exactly once. Where owners sign in with
 // PayPal, this browser may then claim the shop (claim_url); otherwise the owner secret comes back, once.
 import { HttpError } from '@/core/errors.ts';
+import { formatMoney } from '@/core/money.ts';
 import { shopSummary } from '@/core/search.ts';
 import { ready } from '@/server/context.ts';
 import { handle, readJson } from '@/server/http.ts';
@@ -38,6 +39,15 @@ export async function POST(request: Request) {
       {
         shop: { id: shop.id, slug: shop.slug, name: shop.name, status: shop.status },
         products: result.catalog.products.length,
+        // What Sayso understood, for the owner to check before publishing.
+        preview: result.catalog.products.map((p) => ({
+          name: p.name,
+          variants: p.variants.map((v) => ({
+            title: v.title,
+            price: formatMoney(v.price, shop.currency),
+            stock: v.madeToOrderDays !== undefined ? `Made to order, ${v.madeToOrderDays} days` : `${v.inventory} in stock`,
+          })),
+        })),
         questions: result.questions,
         owner_secret: result.ownerSecret,
         claim_url: paypalLogin ? links.paypalSignIn : undefined,

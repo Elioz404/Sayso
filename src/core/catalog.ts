@@ -22,9 +22,27 @@ export interface Product {
   category: string;
   tags: string[];
   imageUrl?: string;
+  /** Who took `imageUrl` and under what licence, when it isn't the owner's own photo. */
+  imageCredit?: PhotoCredit;
   /** PayPal Catalog product id once synced (POST /v1/catalogs/products). */
   paypalProductId?: string;
   variants: Variant[];
+}
+
+/** Attribution for an openly licensed photo: shown next to it wherever it appears. */
+export interface PhotoCredit {
+  author: string;
+  /** e.g. "CC BY 4.0" */
+  license: string;
+  /** The photo's page, where its licence is stated. */
+  source: string;
+}
+
+export interface Photo {
+  url: string;
+  /** What the photo shows, for people who can't see it. */
+  alt: string;
+  credit?: PhotoCredit;
 }
 
 export interface ShippingRule {
@@ -51,6 +69,8 @@ export interface Shop {
   /** Tax in basis points by destination country (or "US-CA" style region). Missing means 0. */
   taxBps: Record<string, number>;
   returnPolicy: { days: number; buyerPaysReturn: boolean };
+  /** A picture of the shop or its workshop, at the top of its page. */
+  cover?: Photo;
   /** Drafts come out of onboarding; agents can only shop once the owner publishes. Missing = live. */
   status?: 'draft' | 'live';
   /** private: reachable by its own link and its owner, never in shop lists (a judge's tour copy). Missing = public. */

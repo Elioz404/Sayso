@@ -33,7 +33,7 @@ test('a paid made-to-order item goes on the board, starting the day after it was
 
   const jobs = await board(s);
   assert.equal(jobs.length, 1, 'only the made-to-order vase, not the mug from stock');
-  assert.match(jobs[0].what, /Custom Bud Vase/);
+  assert.match(jobs[0].what, /Custom Vase/);
   assert.equal(jobs[0].blocked, false);
   const tomorrow = addDays(dayOf(), 1);
   assert.equal(jobs[0].making, `${tomorrow} to ${addDays(tomorrow, 9)}`, 'the variant takes 10 days');
