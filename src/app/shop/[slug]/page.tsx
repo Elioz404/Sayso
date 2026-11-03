@@ -4,6 +4,7 @@ import { connection } from 'next/server';
 import { CopyField } from '@/app/_components/client-ui.tsx';
 import { Icon } from '@/app/_components/ui.tsx';
 import { isLive } from '@/core/catalog.ts';
+import { jsonLdScript, shopJsonLd } from '@/core/discovery.ts';
 import { formatMoney } from '@/core/money.ts';
 import { ready } from '@/server/context.ts';
 
@@ -30,6 +31,8 @@ export default async function ShopPage({ params }: { params: Promise<{ slug: str
 
   return (
     <main className="wrap page stack" style={{ gap: 'var(--s6)' }}>
+      {/* What search engines and shopping crawlers read: the store, its offers, shipping and returns. */}
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLdScript(shopJsonLd(catalog, links)) }} />
       <div className="split" style={{ alignItems: 'end' }}>
         <div className="stack" style={{ gap: 10 }}>
           <h1 className="display" style={{ fontSize: 'var(--t-display)', lineHeight: 1.05 }}>{shop.name}</h1>
