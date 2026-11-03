@@ -1,5 +1,6 @@
-# Render Blueprint: one Node web service + Postgres. Secrets are set in the Render dashboard (sync: false).
-# Use a paid Postgres plan: free databases expire after 30 days, and judging runs until Dec 15.
+# Render Blueprint: one Node web service + Postgres. Secrets marked sync: false are entered in the
+# Render dashboard when the Blueprint is created.
+# Use a paid Postgres plan: free databases expire after 30 days, and judging runs past that.
 services:
   - type: web
     name: sayso
@@ -7,17 +8,15 @@ services:
     plan: starter
     buildCommand: npm ci && npm run build
     startCommand: npm start
-    healthCheckPath: /
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION
-        value: "22"
+        value: "24"
       - key: PAYPAL_ENV
         value: sandbox
       - key: PAYPAL_CLIENT_ID
         sync: false
       - key: PAYPAL_CLIENT_SECRET
-        sync: false
-      - key: PAYPAL_WEBHOOK_ID
         sync: false
       - key: DEEPSEEK_API_KEY
         sync: false
@@ -25,7 +24,18 @@ services:
         value: deepseek-flash
       - key: PUBLIC_BASE_URL
         sync: false
-      - key: AG_STUDIO_LICENSE
+      # Signs owner sessions. Generated once by Render; rotating it signs every owner out.
+      - key: SAYSO_SECRET
+        generateValue: true
+      # Lets judges open the demo shop's owner view without its secret.
+      - key: SAYSO_DEMO
+        value: "true"
+      - key: SAYSO_DEMO_OWNER_SECRET
+        sync: false
+      - key: SAYSO_DEMO_AGENT_KEY
+        sync: false
+      # Optional: push say-so requests to the owner's phone (ntfy app, subscribe to this topic).
+      - key: SAYSO_NTFY_TOPIC
         sync: false
       - key: DATABASE_URL
         fromDatabase:

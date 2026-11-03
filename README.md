@@ -1,80 +1,180 @@
 # Sayso
 
-**Sell to AI agents, safely.** Sayso makes any small seller buyable by AI shopping agents through PayPal in minutes, and puts a say-so layer between every agent and the money: nothing is charged, refunded or accepted without passing the owner's rules or getting their OK.
+**Sell to AI shoppers. Run your shop with your own AI agent. Nothing moves without your say-so.**
 
-> Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/) (2026).
-> Status: work in progress. Sections marked _(planned)_ are being built this week.
+Sayso turns a few photos and a price list into a shop that AI shopping agents can buy from through PayPal, and gives the seller's own AI agent a CLI, MCP tools and an agent skill to run it. Refunds, captures and rule changes go through the owner's say-so rules, and the big ones wait for the owner's OK on their phone, where no agent can reach.
+
+> Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/) (2026). PayPal **sandbox only**.
 
 ## The problem
 
-AI assistants are becoming a place where people shop: PayPal's agentic commerce services already reach ChatGPT, Perplexity and Google's AI surfaces. But getting a store in front of those agents today goes through commerce platforms (Store Sync partners such as Wix, BigCommerce and Shopware) or a protocol integration (Agent Ready with ACP/UCP). Millions of one-person businesses that sell through Instagram DMs, markets or a simple PayPal button have neither, so AI shoppers can't find or buy from them.
+AI assistants are becoming a place where people shop. PayPal's agentic commerce services already reach ChatGPT, Perplexity and Google's AI surfaces, but a store gets there through a commerce platform or a protocol integration. Millions of one-person businesses that sell through Instagram DMs, markets or a PayPal button have neither.
 
-And once agents do buy and sell, someone has to make sure they don't overspend, double-refund, or accept a dispute they shouldn't.
+And once agents buy and sell, someone has to run the shop: answer "where's my order", refund the chipped mug, add tracking, restock. The seller's own AI agent could do that today, if it could be trusted with the money.
 
 ## What Sayso does
 
-| Piece | What it does | PayPal |
+Three doors into the same shop, all backed by one tool registry and one set of rules:
+
+| Who | How | What they can do |
 |---|---|---|
-| **Shelf** | Turns photos, a price list or a description into a structured catalog with an LLM, and publishes an agent-ready storefront: an MCP server _(planned)_ plus an implementation of PayPal's **Agentic Commerce merchant-cart API v1**. | Catalog Products API _(planned)_, Orders v2 |
-| **Guard** | Every money-moving agent action goes through `propose -> simulate -> decide -> [say-so] -> execute -> verify`, with a tamper-evident audit log. Owners write rules in plain English; the LLM turns them into declarative rules, and the rules decide, not the model. | Orders v2 authorize/capture/void, Payments v2 refunds, `PayPal-Request-Id` idempotency |
-| **Ops agent** _(planned)_ | Reacts to PayPal webhooks: adds shipment tracking, sends invoices, proposes refunds and triages disputes, all through Guard. | Webhooks (verified), Shipment Tracking, Invoicing, Disputes via the **PayPal Agent Toolkit / MCP server** |
-| **Insights** _(planned)_ | AG Studio dashboard: agent sales by channel, the say-so queue, the audit trail, and **missed demand** (what agents tried to buy and couldn't). | Transaction Search, merchant insights |
+| **Buyer agents** (any assistant) | PayPal's **Agentic Commerce merchant-cart API v1** and a public **MCP** endpoint per shop | Search, build a cart with exact prices, shipping and tax, fix stock problems with the spec's `resolution_options`, and send the buyer to PayPal to approve |
+| **The seller's own agent** | The **`sayso` CLI**, a seller **MCP** endpoint, and an **agent skill** | Orders, refunds, tracking, prices, stock, propose new rules. It holds a scoped agent key, never PayPal credentials |
+| **The owner** | A web dashboard and a phone-first approval page | Approve or reject what's waiting, publish the shop, issue and revoke agent keys, read the tamper-evident audit log |
 
-### Why authorize-then-capture
+### The say-so layer (Guard)
 
-The buyer approves in PayPal (their say-so). Sayso then re-checks stock, places an authorization, and captures it through Guard. If the item sold out meanwhile or a rule blocks it, the authorization is voided, so nobody is ever charged for something that can't ship.
+Every money-moving action, from any agent, goes through:
+
+```
+propose -> simulate against live PayPal state -> decide (owner's rules) -> [owner's OK] -> execute -> verify -> audit
+```
+
+- **Rules decide, not the model.** Owners write rules in plain English ("refunds over $30 need my OK; never accept disputes"). The LLM drafts declarative rules, code validates them, and `evaluate()` applies them deterministically.
+- **Agents can't approve.** Approving needs the owner's signed session. Agent keys are rejected on that route, and no tool or CLI command approves anything.
+- **Agents can't loosen their own leash.** Changing the rules is itself a Guard action (`policy.update`) that always waits for the owner when an agent proposes it. This is built in and no policy can turn it off.
+- **Simulated first.** A refund larger than what's still refundable, or a capture on an expired authorization, is refused before PayPal is called.
+- **Authorize, then capture.** The buyer approves in PayPal; Sayso re-checks stock, places an authorization and captures it through Guard. If the item sold out meanwhile, or the owner rejects a big order, the hold is voided and the buyer is never charged.
+- **Idempotent and verified.** Every PayPal write carries a `PayPal-Request-Id`; every result is read back from PayPal before it counts as done.
+- **Tamper-evident.** Each record's events form a SHA-256 hash chain (over canonical JSON, so it survives Postgres), re-checked whenever the log is shown.
+- **Out-of-band approvals.** Requests that need the owner are pushed to their phone (ntfy) with a link to `/approve/<id>`; the agent only learns "waiting for the owner".
+
+## Try it
+
+**Hosted demo:** _(link added before submission)_. The demo shop is **Maya Ceramics**, a one-person studio in Portland that sells to buyers in several countries.
+
+### 1. Shop as a buyer agent (no key needed)
+
+Add this MCP server to any MCP client and ask it to buy a mug:
+
+```
+https://<host>/api/shops/maya-ceramics/mcp
+```
+
+Ask for two speckled mugs: there's only one, so the cart comes back `INCOMPLETE` with resolution options the agent can apply on its own. Approve the payment with a PayPal sandbox **personal** account.
+
+### 2. Run the shop as the owner's agent
+
+```bash
+node cli/sayso.ts login --url https://<host> --key <demo agent key from the Devpost testing instructions>
+node cli/sayso.ts status
+node cli/sayso.ts orders
+node cli/sayso.ts refund <order_id> 10.00 --reason "Chipped rim"    # small: runs now
+node cli/sayso.ts refund <order_id> --reason "Arrived broken"       # over $50: waits for the owner (exit code 3)
+node cli/sayso.ts policy propose "refunds over 30 dollars need my OK"
+```
+
+### 3. Be the owner
+
+Open `https://<host>/owner` (the demo has an **Open the demo shop** button), approve what's waiting, and watch the CLI's `sayso check <id>` flip to `done`.
+
+### 4. Open your own shop
+
+`https://<host>/start`: paste a price list or add photos. Sayso drafts the catalog, asks about anything it couldn't tell (it never invents prices, stock or shipping), and gives you an owner secret and an agent key, once. Review, publish, and buyer agents can shop.
+
+## The `sayso` CLI
+
+No dependencies; Node 22.18+ runs the TypeScript file directly (`node cli/sayso.ts`), or build it with `npm run cli:build`.
+
+| Command | What it does |
+|---|---|
+| `sayso init [photos...] --text "..."` | Draft a new shop from photos and notes |
+| `sayso login --key sk_agent_... --url ...` | Sign this machine in with an agent key |
+| `sayso status` | Orders, what's waiting for the owner, low stock, what buyers couldn't get |
+| `sayso products` / `price <variant> <amount>` / `stock <variant> <qty>` | Catalog |
+| `sayso orders` / `order <id>` | Orders and their payment history |
+| `sayso refund <order> [amount] --reason "..."` | Refund through the owner's rules |
+| `sayso track <order> <carrier> <number>` | Add shipment tracking in PayPal |
+| `sayso approvals` / `check <say_so_id>` | What's waiting for the owner (read-only) |
+| `sayso policy` / `policy propose "..."` | Show or propose say-so rules |
+| `sayso audit` | Audit log with hash-chain checks |
+| `sayso tools` / `call <tool> '<json>'` | Any tool, raw |
+| `sayso mcp` | Serve the seller tools to a local MCP client over stdio |
+
+`--json` on any command gives machine-readable output. Exit codes: `0` ok, `1` error, `2` usage, **`3` waiting for the owner**, **`4` refused**, so an agent can branch without parsing text.
+
+The agent skill in [`skills/sayso/SKILL.md`](skills/sayso/SKILL.md) (open Agent Skills format) teaches an agent to drive the CLI: always `--json`, start with `status`, never retry a refused action, tell the owner plainly what is waiting.
+
+## MCP
+
+| Endpoint | Auth | Tools |
+|---|---|---|
+| `POST /api/shops/<slug>/mcp` | none | `search_products`, `create_cart`, `update_cart`, `get_cart` |
+| `POST /api/mcp` | `Authorization: Bearer sk_agent_...` | `shop_overview`, `list_products`, `update_variant`, `list_orders`, `get_order`, `refund_order`, `add_tracking`, `list_approvals`, `get_say_so`, `get_policy`, `propose_policy`, `audit_log` |
+
+Streamable HTTP, stateless JSON responses, protocol versions `2025-11-25`, `2025-06-18` and `2025-03-26`. A remote client config:
+
+```json
+{ "mcpServers": { "my-shop": { "url": "https://<host>/api/mcp", "headers": { "Authorization": "Bearer sk_agent_..." } } } }
+```
+
+A stdio client can use `{ "command": "node", "args": ["cli/sayso.ts", "mcp"] }` after `sayso login`.
+
+## PayPal integration
+
+| PayPal | Used for |
+|---|---|
+| **Agentic Commerce merchant-cart API v1** (spec) | `POST/PUT/GET /merchant-cart`, `POST /merchant-cart/{id}/checkout`, validation issues with resolution options |
+| **Orders v2** | `intent: AUTHORIZE` orders from priced carts, buyer approval, authorize, shipment tracking |
+| **Payments v2** | Capture and void authorizations, refunds, reading captures and refunds back to verify |
+| **Catalog Products API** | Products registered when a shop is published |
+| **Idempotency** | `PayPal-Request-Id` on every write, tied to the Guard record |
+| **Webhooks** | Signature verification helper (`verify-webhook-signature`) |
+
+## AI
+
+- **DeepSeek** (`deepseek-flash`, OpenAI-compatible API): reads product photos and notes into a draft catalog, and turns the owner's plain-English rules into declarative say-so rules. Both outputs are validated in code; the model never decides whether money moves.
+- Any agent the owner already uses can run the shop through the CLI, MCP and skill, and any shopping assistant can buy through MCP or PayPal's platform.
 
 ## How it fits together
 
 ```
-Buyer's AI assistant (ChatGPT, any MCP client, Sayso chat)
-        |  MCP / merchant-cart API
-        v
-  Sayso Shelf  ---- priceCart(): catalog prices, shipping, tax, validation issues + resolution options
-        |
-        v
-  Sayso Guard  ---- policy (deterministic) + live simulation + human say-so + verification + audit
-        |
-        v
-  PayPal: Orders v2, Payments v2, Agent Toolkit tools, Webhooks
+ buyer agents ──MCP / merchant-cart──┐          ┌── sayso CLI / MCP / skill ── owner's agent
+                                     v          v
+                               tool registry (src/core/tools)
+                                     │
+               Commerce (carts, checkout)   Seller (orders, refunds, rules)   Shops (onboarding)
+                                     │
+                         Guard: simulate -> rules -> [owner] -> execute -> verify -> audit
+                                     │
+                PayPal Orders v2 · Payments v2 · Catalog          owner's phone (/approve/<id>)
 ```
 
-Core logic lives in `src/core` and has no framework dependency; the Next.js app in `src/app` is a thin layer over it.
+`src/core` has no framework dependency and is tested end to end against an in-memory PayPal fake. The Next.js app in `src/app` and `src/server` is a thin layer over it.
 
 ```
-src/core/cart/engine.ts       Pricing + validation for the merchant-cart API
-src/core/commerce.ts          create / update / checkout flow (authorize -> Guard capture)
-src/core/guard/               Policy rules, the Guard pipeline, hash-chained audit
-src/core/paypal/              REST client (idempotency, retries, debug ids), Orders/Payments, executors
-src/app/api/shops/[slug]/merchant-cart/...   Spec endpoints
-src/app/api/guard/[id]        Owner approves / rejects
-tests/                        Unit + end-to-end tests against an in-memory PayPal fake
+src/core/cart/            Pricing + validation for the merchant-cart API
+src/core/commerce.ts      create / update / checkout (authorize -> Guard capture, void on failure)
+src/core/guard/           Rules, the Guard pipeline, hash-chained audit, policy changes as actions
+src/core/paypal/          REST client (idempotency, retries, debug ids), Orders/Payments/Catalog, executors
+src/core/ai/              LLM client, catalog drafting, rule drafting (all output validated)
+src/core/tools/           The tool registry shared by MCP, the CLI and the web app
+src/core/mcp.ts           Dependency-free MCP (JSON-RPC) server
+src/core/access.ts        Agent keys (hashed) and signed owner sessions
+src/server/               Wiring, Postgres stores, MCP transport, owner notifications
+cli/sayso.ts              The CLI
+skills/sayso/SKILL.md     Agent skill
+tests/                    Unit + end-to-end tests
 ```
 
-## Run it
+## Run it locally
 
 Requires Node.js 22.18+ and a PayPal sandbox REST app ([developer.paypal.com](https://developer.paypal.com/dashboard/applications/sandbox)).
 
 ```bash
 npm install
-cp .env.example .env.local   # fill in PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET
-npm test                     # 22 tests, no network needed
+cp .env.example .env.local   # PayPal sandbox keys; DeepSeek key for onboarding
+npm test                     # no network needed
 npm run dev
-node scripts/try-cart.ts     # acts as an agent: creates a cart, fixes an inventory issue, prints the PayPal approval link
 ```
 
-Approve with a sandbox **personal** account; PayPal redirects to `/pay/return`, which completes checkout. Open http://localhost:3000 to see the cart and the Guard audit trail.
+Then `node cli/sayso.ts login --url http://localhost:3000 --key <SAYSO_DEMO_AGENT_KEY>` and open http://localhost:3000/owner. `node scripts/try-cart.ts` plays a buyer agent against the merchant-cart API and prints a PayPal approval link.
 
-## For judges
+Without `DATABASE_URL` everything is kept in memory.
 
-- **Hosted demo:** _(link coming)_. No API keys needed: everything runs server-side.
-- **Sandbox buyer login:** provided in the Devpost testing instructions.
-- **Try it from your own AI assistant:** add the Sayso MCP URL _(coming)_ to any MCP client (ChatGPT, Cursor, ...) and ask it to buy a mug.
+## Deploy
 
-## AI used
-
-- **DeepSeek** (`deepseek-flash`, OpenAI-compatible API) _(planned)_: catalog extraction from photos and text, plain-English policies to rules, the ops agent, the buyer chat.
-- **PayPal Agent Toolkit / MCP server** _(planned)_: invoicing, shipment tracking, disputes and reporting tools for the ops agent.
+[`render.yaml`](render.yaml) is a Render Blueprint: a Node web service plus Postgres, with `SAYSO_SECRET` generated by Render. Set the PayPal and DeepSeek keys, `PUBLIC_BASE_URL` and the demo credentials in the dashboard. The health check is `/api/health`.
 
 ## License
 
