@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { takeStock } from '../src/core/catalog.ts';
 import { Commerce } from '../src/core/commerce.ts';
 import { HttpError } from '../src/core/errors.ts';
 import { links } from '../src/core/links.ts';
@@ -75,7 +76,7 @@ test('invalid carts get no PayPal order until the agent fixes them', async () =>
 test('if the item sells out while the buyer approves, nothing is authorized or charged', async () => {
   const { pp, commerce, catalogs } = setup();
   const cart = await commerce.createCart('maya-ceramics', { items: [{ variant_id: 'var_mug_speckled', quantity: 1 }], shipping_address: address });
-  await catalogs.takeStock('shop_maya', [{ variantId: 'var_mug_speckled', quantity: 1 }]); // sold elsewhere meanwhile
+  await catalogs.modify('shop_maya', (c) => takeStock(c, [{ variantId: 'var_mug_speckled', quantity: 1 }])); // sold elsewhere meanwhile
   pp.approve(cart.payment_method!.token!);
   await assert.rejects(
     commerce.checkout(cart.id!, { items: [], payment_method: { type: 'paypal', token: cart.payment_method!.token } }),

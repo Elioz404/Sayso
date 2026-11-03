@@ -1,4 +1,6 @@
 import type { Metadata } from 'next';
+import { CatalogGrid } from '@/app/_components/grids.tsx';
+import { variantRows } from '@/core/catalog-view.ts';
 import { formatMoney } from '@/core/money.ts';
 import { ownerView } from '@/server/owner.ts';
 
@@ -17,7 +19,7 @@ export default async function Catalog() {
         <div>
           <h1>Catalog</h1>
           <p className="sub">
-            {catalog.products.length} products, {variants} variants. Your agent updates prices and stock with <code>sayso price</code> and <code>sayso stock</code>.
+            {catalog.products.length} products, {variants} variants. Change prices and stock here, or let your agent do it with <code>sayso price</code> and <code>sayso stock</code>.
           </p>
         </div>
       </div>
@@ -26,46 +28,7 @@ export default async function Catalog() {
         <h2 id="products" className="sr-only">
           Products
         </h2>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Product</th>
-                <th className="num">Price</th>
-                <th className="num">In stock</th>
-              </tr>
-            </thead>
-            <tbody>
-              {catalog.products.flatMap((p) =>
-                p.variants.map((v) => (
-                  <tr key={v.id}>
-                    <td>
-                      <span className="stack" style={{ gap: 2 }}>
-                        <b>
-                          {p.name}
-                          {p.variants.length > 1 || v.title !== 'Default' ? <span className="soft" style={{ fontWeight: 400 }}> · {v.title}</span> : null}
-                        </b>
-                        <span className="mono muted">{v.id}</span>
-                      </span>
-                    </td>
-                    <td className="num">{money(v.price)}</td>
-                    <td className="num">
-                      {v.madeToOrderDays !== undefined ? (
-                        <span className="soft">Made to order, {v.madeToOrderDays} days</span>
-                      ) : v.inventory === 0 ? (
-                        <span className="status status-stop">Sold out</span>
-                      ) : v.inventory === 1 ? (
-                        <span className="status status-hold">1 left</span>
-                      ) : (
-                        v.inventory
-                      )}
-                    </td>
-                  </tr>
-                )),
-              )}
-            </tbody>
-          </table>
-        </div>
+        <CatalogGrid rows={variantRows(catalog)} />
       </section>
 
       <section className="block" aria-labelledby="shipping">

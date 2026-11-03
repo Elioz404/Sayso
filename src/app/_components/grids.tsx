@@ -1,7 +1,8 @@
 'use client';
 
 // AG Grid (Community) views for the owner area. Columns fit the container (no sideways scrolling):
-// secondary columns hide on narrow screens, and a row opens its detail page.
+// secondary columns hide on narrow screens. Orders and activity rows open their detail page; the
+// catalog is edited in place.
 
 import {
   CellStyleModule,
@@ -13,12 +14,18 @@ import {
   QuickFilterModule,
   TooltipModule,
   themeQuartz,
+  NumberEditorModule,
+  UndoRedoEditModule,
+  type CellValueChangedEvent,
   type ColDef,
   type ICellRendererParams,
 } from 'ag-grid-community';
 import { AgGridReact } from 'ag-grid-react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { VariantRow } from '@/core/catalog-view.ts';
+import { decimalsFor, formatMoney } from '@/core/money.ts';
+import { callApi } from './api.ts';
 import { formatWhen } from './time.tsx';
 import { Status } from './ui.tsx';
 
@@ -31,6 +38,8 @@ ModuleRegistry.registerModules([
   PaginationModule,
   QuickFilterModule,
   TooltipModule,
+  NumberEditorModule,
+  UndoRedoEditModule,
 ]);
 
 // Follows the site's light/dark tokens instead of a fixed palette.
@@ -247,6 +256,127 @@ export function AuditGrid({ rows }: { rows: AuditRow[] }) {
       ) : (
         <GridSkeleton rows={rows.length} />
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Catalog: the owner edits price and stock in place. Each edit is saved through the same service the
+// agent's update_variant tool uses; a refused edit snaps back, and Ctrl+Z undoes (and saves) the last one.
+
+function ProductCell({ data }: ICellRendererParams<VariantRow>) {
+  return (
+    <span className="cell-two">
+      <b>
+        {data?.product}
+        {data?.title ? <span className="soft" style={{ fontWeight: 400 }}> · {data.title}</span> : null}
+      </b>
+      <small className="mono">{data?.id}</small>
+    </span>
+  );
+}
+
+function StockStateCell({ data }: ICellRendererParams<VariantRow>) {
+  if (!data) return null;
+  if (data.stock === null) return <span className="status status-quiet">Made to order, {data.madeToOrderDays} days</span>;
+  if (data.stock === 0) return <span className="status status-stop">Sold out</span>;
+  if (data.stock <= LOW_STOCK) return <span className="status status-hold">{data.stock} left</span>;
+  return <span className="status status-ok">In stock</span>;
+}
+
+const LOW_STOCK = 2;
+type Feedback = { tone: 'ok' | 'error'; text: string };
+
+export function CatalogGrid({ rows }: { rows: VariantRow[] }) {
+  const { ref, width } = useGridSize();
+  const narrow = width < NARROW;
+  const [feedback, setFeedback] = useState<Feedback>();
+  // Rows we are putting back after a refused edit: their change events are not new edits.
+  const reverting = useRef(new Set<string>());
+
+  const columns = useMemo<ColDef<VariantRow>[]>(
+    () => [
+      { field: 'product', headerName: 'Product', cellRenderer: ProductCell, minWidth: 180, flex: 2, getQuickFilterText: (p) => `${p.data?.product} ${p.data?.title}` },
+      {
+        field: 'price',
+        headerName: 'Price',
+        minWidth: 104,
+        flex: 0.9,
+        type: 'rightAligned',
+        cellClass: [...RIGHT, 'cell-editable'],
+        editable: true,
+        cellEditor: 'agNumberCellEditor',
+        cellEditorParams: (p: { data?: VariantRow }) => ({ min: 0, precision: decimalsFor(p.data?.currency ?? 'USD'), showStepperButtons: false }),
+        // The grid edits whole units ("24.5"); the shop keeps minor units.
+        valueGetter: (p) => (p.data ? p.data.price / 10 ** decimalsFor(p.data.currency) : null),
+        valueSetter: (p) => {
+          if (!p.data || typeof p.newValue !== 'number' || !Number.isFinite(p.newValue)) return false;
+          p.data.price = Math.round(p.newValue * 10 ** decimalsFor(p.data.currency));
+          return true;
+        },
+        valueFormatter: (p) => (p.data ? formatMoney(p.data.price, p.data.currency) : ''),
+      },
+      {
+        field: 'stock',
+        headerName: 'In stock',
+        minWidth: 96,
+        flex: 0.8,
+        type: 'rightAligned',
+        cellClass: (p) => (p.data?.stock === null ? RIGHT : [...RIGHT, 'cell-editable']),
+        editable: (p) => p.data?.stock !== null,
+        cellEditor: 'agNumberCellEditor',
+        cellEditorParams: { min: 0, precision: 0, showStepperButtons: false },
+        valueFormatter: (p) => (p.value === null ? '-' : String(p.value)),
+      },
+      { colId: 'state', headerName: 'Status', cellRenderer: StockStateCell, minWidth: 150, flex: 1, sortable: false, hide: narrow },
+    ],
+    [narrow],
+  );
+
+  async function save(e: CellValueChangedEvent<VariantRow>) {
+    const row = e.data;
+    const field = e.colDef.field as 'price' | 'stock';
+    if (reverting.current.delete(`${row.id}:${field}`) || e.oldValue === e.newValue) return;
+    const body = field === 'price' ? { price: (row.price / 10 ** decimalsFor(row.currency)).toFixed(decimalsFor(row.currency)) } : { stock: row.stock };
+    try {
+      const saved = await callApi<VariantRow>(`/api/owner/variants/${encodeURIComponent(row.id)}`, 'PATCH', body);
+      e.node.setData(saved);
+      const what = field === 'price' ? `price is now ${formatMoney(saved.price, saved.currency)}` : `stock is now ${saved.stock}`;
+      setFeedback({ tone: 'ok', text: `Saved. ${row.product}${row.title ? ` (${row.title})` : ''} ${what}.` });
+    } catch (err) {
+      reverting.current.add(`${row.id}:${field}`);
+      e.node.setDataValue(e.column, e.oldValue);
+      setFeedback({ tone: 'error', text: `Not saved: ${(err as Error).message}` });
+    }
+  }
+
+  return (
+    <div className="stack" style={{ gap: 'var(--s3)' }}>
+      <p className={`small ${feedback?.tone === 'error' ? 'error' : 'soft'}`} role="status" aria-live="polite">
+        {feedback?.text ?? 'Double-click a price or a stock count to change it. Enter saves, Esc cancels, Ctrl+Z undoes.'}
+      </p>
+      <div ref={ref}>
+        {width ? (
+          <AgGridReact<VariantRow>
+            theme={theme}
+            rowData={rows}
+            columnDefs={columns}
+            getRowId={(p) => p.data.id}
+            defaultColDef={{ sortable: true, resizable: false, suppressMovable: true }}
+            autoSizeStrategy={FIT}
+            onGridSizeChanged={(e) => e.api.sizeColumnsToFit()}
+            domLayout="autoHeight"
+            containerStyle={{ height: 'auto' }}
+            singleClickEdit={false}
+            stopEditingWhenCellsLoseFocus
+            undoRedoCellEditing
+            undoRedoCellEditingLimit={20}
+            onCellValueChanged={save}
+          />
+        ) : (
+          <GridSkeleton rows={rows.length} />
+        )}
+      </div>
     </div>
   );
 }

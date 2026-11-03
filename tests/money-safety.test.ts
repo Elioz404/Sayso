@@ -3,6 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { variantRows } from '../src/core/catalog-view.ts';
 import { Guard, MemoryGuardStore } from '../src/core/guard/engine.ts';
 import type { Policy } from '../src/core/guard/policy.ts';
 import type { Executor, ProposedAction } from '../src/core/guard/types.ts';
@@ -185,4 +186,19 @@ test('amounts people and models type are parsed strictly', () => {
   assert.equal(parseAmount('1500', 'JPY'), 1_500);
   for (const bad of ['-5', '12,50', '1.234', 'lots', '', '1,2345']) assert.equal(parseAmount(bad, 'USD'), undefined, bad);
   assert.equal(parseAmount('15.5', 'JPY'), undefined, 'yen has no decimals');
+});
+
+test('editing a price keeps stock a checkout just took, and bad edits change nothing', async () => {
+  const s = await stack();
+  const { cartId, token } = await approvedCart(s, [{ variant_id: 'var_mug_sage', quantity: 2 }]);
+  await pay(s, cartId, token);
+  await s.shops.setVariant('shop_maya', 'var_mug_sage', { price: 3_600 });
+  assert.equal(await stock(s, 'var_mug_sage'), 4, 'the sale is not undone by the edit');
+
+  await assert.rejects(s.shops.setVariant('shop_maya', 'var_mug_sage', { inventory: -1 }), /whole number/);
+  await assert.rejects(s.shops.setVariant('shop_maya', 'var_nope', { price: 100 }), /not found/);
+  const row = variantRows((await s.catalogs.byShopId('shop_maya'))!).find((r) => r.id === 'var_mug_sage');
+  assert.deepEqual([row?.price, row?.stock], [3_600, 4]);
+  const vase = variantRows((await s.catalogs.byShopId('shop_maya'))!).find((r) => r.id === 'var_vase_custom');
+  assert.equal(vase?.stock, null, 'made-to-order has no stock to edit');
 });

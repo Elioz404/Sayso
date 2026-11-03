@@ -49,6 +49,7 @@ export class Shops {
   async publish(shopId: string): Promise<{ catalog: Catalog; warnings: string[] }> {
     const catalog = await this.get(shopId);
     const warnings: string[] = [];
+    const registered = new Map<string, string>();
     for (const product of catalog.products) {
       if (product.paypalProductId) continue;
       try {
@@ -57,31 +58,34 @@ export class Shops {
           { name: product.name, description: product.description, imageUrl: product.imageUrl, homeUrl: this.deps.links.shopPage(catalog.shop.slug) },
           `${shopId}-${product.id}-catalog`,
         );
-        product.paypalProductId = created.id;
+        registered.set(product.id, created.id);
       } catch (err) {
         // A catalog sync hiccup should not keep a seller offline; checkout doesn't depend on it.
         warnings.push(`${product.name}: not registered in PayPal's catalog (${err instanceof Error ? err.message : 'error'})`);
       }
     }
-    catalog.shop.status = 'live';
-    await this.deps.catalogs.save(catalog);
-    return { catalog, warnings };
+    // The PayPal calls take a while; apply their results to the catalog as it is now, not as it was.
+    const published = await this.deps.catalogs.modify(shopId, (current) => {
+      for (const product of current.products) product.paypalProductId ??= registered.get(product.id);
+      current.shop.status = 'live';
+      return true;
+    });
+    return { catalog: published ?? catalog, warnings };
   }
 
+  /** Set a variant's price (minor units) and/or stock. The owner's grid and the agent's tool both land here. */
   async setVariant(shopId: string, variantId: string, patch: { price?: number; inventory?: number }): Promise<Catalog> {
-    const catalog = await this.get(shopId);
-    const found = findVariant(catalog, variantId);
-    if (!found) throw notFound(`Variant ${variantId}`);
-    if (patch.price !== undefined) {
-      if (!Number.isInteger(patch.price) || patch.price <= 0) throw new HttpError(400, 'Price must be a positive amount');
-      found.variant.price = patch.price;
-    }
-    if (patch.inventory !== undefined) {
-      if (!Number.isInteger(patch.inventory) || patch.inventory < 0) throw new HttpError(400, 'Stock must be a whole number, 0 or more');
-      found.variant.inventory = patch.inventory;
-    }
-    await this.deps.catalogs.save(catalog);
-    return catalog;
+    if (patch.price !== undefined && (!Number.isSafeInteger(patch.price) || patch.price <= 0)) throw new HttpError(400, 'Price must be a positive amount');
+    if (patch.inventory !== undefined && (!Number.isSafeInteger(patch.inventory) || patch.inventory < 0)) throw new HttpError(400, 'Stock must be a whole number, 0 or more');
+    const updated = await this.deps.catalogs.modify(shopId, (catalog) => {
+      const found = findVariant(catalog, variantId);
+      if (!found) return false;
+      if (patch.price !== undefined) found.variant.price = patch.price;
+      if (patch.inventory !== undefined) found.variant.inventory = patch.inventory;
+      return true;
+    });
+    if (!updated) throw notFound(`Variant ${variantId}`);
+    return updated;
   }
 
   async get(shopId: string): Promise<Catalog> {

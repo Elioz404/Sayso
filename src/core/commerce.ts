@@ -10,7 +10,7 @@
 
 import { randomBytes } from 'node:crypto';
 import { OPS_AGENT } from './actors.ts';
-import { isLive, stockLines, type Catalog } from './catalog.ts';
+import { isLive, returnStock, stockLines, takeStock, type Catalog } from './catalog.ts';
 import { isPayable, priceCart } from './cart/engine.ts';
 import type { CheckoutResult, PayPalCart, ValidationIssue } from './cart/spec.ts';
 import { HttpError, notFound } from './errors.ts';
@@ -169,7 +169,7 @@ export class Commerce {
   private async settle(stored: StoredCart, authorization: OrderAuthorization, payerEmail?: string, payerId?: string): Promise<CheckoutResult> {
     stored.authorizationId = authorization.id;
     const lines = stockLines(stored.cart.items);
-    if (!(await this.deps.catalogs.takeStock(stored.shopId, lines))) {
+    if (!(await this.deps.catalogs.modify(stored.shopId, (catalog) => takeStock(catalog, lines)))) {
       await this.release(stored, 'An item sold out while the buyer was paying.', OPS_AGENT);
       await this.recheck(stored).catch(() => undefined); // records the sold-out issue on the cart
       throw new HttpError(422, 'An item sold out before payment completed', issueBody(stored, paymentIssue(`${NOT_CHARGED} An item just sold out.`)));
@@ -241,7 +241,13 @@ export class Commerce {
       holdVoided = voided.status === 'verified';
     }
     stored.released = { at: new Date().toISOString(), reason, holdVoided };
-    if (stored.reserved?.length) await this.deps.catalogs.returnStock(stored.shopId, stored.reserved);
+    const reserved = stored.reserved;
+    if (reserved?.length) {
+      await this.deps.catalogs.modify(stored.shopId, (catalog) => {
+        returnStock(catalog, reserved);
+        return true;
+      });
+    }
     stored.reserved = undefined;
     stored.updatedAt = new Date().toISOString();
     await this.deps.carts.put(stored);

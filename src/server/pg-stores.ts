@@ -5,7 +5,7 @@
 import 'server-only';
 import pg from 'pg';
 import type { AccessStore, AgentKey } from '@/core/access.ts';
-import { returnStock, takeStock, type Catalog, type StockLine } from '@/core/catalog.ts';
+import type { Catalog } from '@/core/catalog.ts';
 import type { Policy } from '@/core/guard/policy.ts';
 import type { PolicyStore } from '@/core/guard/policy-store.ts';
 import type { GuardRecord, GuardStore, RecordQuery, RecordStatus } from '@/core/guard/types.ts';
@@ -124,24 +124,14 @@ export class PgCatalogStore implements CatalogStore {
   listLive() {
     return this.db.list<Catalog>('catalog', null, { where: ["coalesce(data->'shop'->>'status', 'live') = 'live'"] });
   }
-  /** Row-locked, so two checkouts can't both take the last mug. */
-  takeStock(shopId: string, lines: readonly StockLine[]) {
-    return this.locked(shopId, (catalog) => takeStock(catalog, lines));
-  }
-  async returnStock(shopId: string, lines: readonly StockLine[]) {
-    await this.locked(shopId, (catalog) => {
-      returnStock(catalog, lines);
-      return true;
-    });
-  }
-  /** Load the catalog under a row lock, let `change` edit it, and save it if `change` returns true. */
-  private locked(shopId: string, change: (catalog: Catalog) => boolean): Promise<boolean> {
+  /** Row-locked, so two checkouts can't both take the last mug and an edit can't undo a sale. */
+  modify(shopId: string, change: (catalog: Catalog) => boolean) {
     return this.db.transaction(async (client) => {
       const { rows } = await client.query("select data from sayso_docs where kind = 'catalog' and id = $1 for update", [shopId]);
       const catalog = rows[0]?.data as Catalog | undefined;
-      if (!catalog || !change(catalog)) return false;
+      if (!catalog || !change(catalog)) return undefined;
       await this.save(catalog, client);
-      return true;
+      return catalog;
     });
   }
 }

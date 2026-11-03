@@ -1,7 +1,7 @@
 // Storage contracts for shops and carts, with in-memory implementations for tests and the zero-config
 // local demo. Production uses the Postgres implementations in src/server/pg-stores.ts.
 
-import { returnStock, takeStock, type Catalog, type StockLine } from './catalog.ts';
+import type { Catalog, StockLine } from './catalog.ts';
 import type { PayPalCart } from './cart/spec.ts';
 
 export interface StoredCart {
@@ -48,9 +48,12 @@ export interface CatalogStore {
   save(catalog: Catalog): Promise<void>;
   /** Published shops only: what buyers' assistants can browse. */
   listLive(): Promise<Catalog[]>;
-  /** Atomically take stock for an order; false (nothing taken) if any line is short. */
-  takeStock(shopId: string, lines: readonly StockLine[]): Promise<boolean>;
-  returnStock(shopId: string, lines: readonly StockLine[]): Promise<void>;
+  /**
+   * Change a catalog atomically: `change` edits it and returns true to save, false to leave it as it
+   * was. Nothing else writes the catalog in between, so a checkout taking the last unit and the owner
+   * editing a price can't overwrite each other. Returns the saved catalog, or undefined if nothing was saved.
+   */
+  modify(shopId: string, change: (catalog: Catalog) => boolean): Promise<Catalog | undefined>;
 }
 
 export class MemoryCartStore implements CartStore {
@@ -96,13 +99,13 @@ export class MemoryCatalogStore implements CatalogStore {
   async listLive() {
     return [...this.catalogs.values()].filter((c) => (c.shop.status ?? 'live') === 'live').map((c) => structuredClone(c));
   }
-  // Synchronous between reading and writing, so two checkouts can't both take the last unit.
-  async takeStock(shopId: string, lines: readonly StockLine[]) {
-    const catalog = this.catalogs.get(shopId);
-    return catalog ? takeStock(catalog, lines) : false;
-  }
-  async returnStock(shopId: string, lines: readonly StockLine[]) {
-    const catalog = this.catalogs.get(shopId);
-    if (catalog) returnStock(catalog, lines);
+  // Synchronous between reading and writing, which is all the atomicity one process needs.
+  async modify(shopId: string, change: (catalog: Catalog) => boolean) {
+    const current = this.catalogs.get(shopId);
+    if (!current) return undefined;
+    const draft = structuredClone(current);
+    if (!change(draft)) return undefined;
+    this.catalogs.set(shopId, draft);
+    return structuredClone(draft);
   }
 }
