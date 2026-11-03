@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import { connection } from 'next/server';
 import { RailNav } from '@/app/_components/client-ui.tsx';
 import { LoginForm, SignOut } from '@/app/_components/owner-actions.tsx';
-import { Icon, Status } from '@/app/_components/ui.tsx';
+import { Icon, Mark, Status } from '@/app/_components/ui.tsx';
 import { ownerView } from '@/server/owner.ts';
 
 export const metadata: Metadata = { title: 'Your shop' };
@@ -34,6 +34,15 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
     <div className="owner">
       <aside className="rail">
         <div className="rail-inner">
+          <div className="rail-top">
+            <a href="/" className="brand" aria-label="Sayso home">
+              <Mark />
+              <span className="brand-word">sayso</span>
+            </a>
+            <span className="rail-top-mobile">
+              <SignOut />
+            </span>
+          </div>
           <div className="rail-shop">
             <b>{shop.name}</b>
             <Status value={status} />

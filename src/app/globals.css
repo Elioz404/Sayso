@@ -226,9 +226,13 @@ td.num, th.num { text-align: right; }
 }
 
 /* ---------- owner area: side rail + one job per view ---------- */
-.owner { display: grid; grid-template-columns: 236px minmax(0, 1fr); min-height: calc(100dvh - var(--header-h)); }
+/* The rail is the owner area's own navigation, so the site header and footer step aside here. */
+body:has(.owner) .site-header, body:has(.owner) .site-footer { display: none; }
+.owner { display: grid; grid-template-columns: 240px minmax(0, 1fr); min-height: 100dvh; }
 .rail { background: var(--paper-2); border-right: 1px solid var(--rule); }
-.rail-inner { position: sticky; top: calc(env(safe-area-inset-top, 0px) + var(--header-h)); display: flex; flex-direction: column; gap: var(--s5); padding: var(--s5) var(--s4); }
+.rail-inner { position: sticky; top: env(safe-area-inset-top, 0px); height: calc(100dvh - env(safe-area-inset-top, 0px)); overflow-y: auto; display: flex; flex-direction: column; gap: var(--s5); padding: var(--s4) var(--s4) var(--s5); }
+.rail-top { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); min-height: 44px; padding-inline: var(--s2); }
+.rail-top-mobile { display: none; }
 .rail-shop { display: flex; flex-direction: column; gap: 6px; padding-inline: var(--s2); }
 .rail-shop b { font-size: var(--t-md); line-height: 1.25; }
 .rail-nav { display: flex; flex-direction: column; gap: 2px; }
@@ -236,10 +240,10 @@ td.num, th.num { text-align: right; }
 .rail-nav a .count-badge { margin-left: auto; }
 @media (hover: hover) { .rail-nav a:hover { background: var(--sheet); color: var(--ink); } }
 .rail-nav a[aria-current='page'] { background: var(--sheet); color: var(--ink); box-shadow: inset 2px 0 0 var(--say); }
-.rail-foot { display: flex; flex-direction: column; gap: 2px; border-top: 1px solid var(--rule); padding-top: var(--s3); }
+.rail-foot { display: flex; flex-direction: column; gap: 2px; border-top: 1px solid var(--rule); padding-top: var(--s3); margin-top: auto; }
 .rail-foot .btn { justify-content: flex-start; padding-inline: var(--s2); }
-.owner-main { padding: var(--s6) max(16px, env(safe-area-inset-right, 0px)) var(--s8) var(--s6); min-width: 0; }
-.owner-body { max-width: 980px; display: flex; flex-direction: column; gap: var(--s7); }
+.owner-main { padding: var(--s7) max(var(--s6), env(safe-area-inset-right, 0px)) var(--s8) var(--s6); min-width: 0; }
+.owner-body { max-width: 960px; margin-inline: auto; display: flex; flex-direction: column; gap: var(--s7); }
 .view-head { display: flex; gap: var(--s4); align-items: flex-end; justify-content: space-between; flex-wrap: wrap; }
 .view-head .sub { color: var(--ink-3); font-size: var(--t-sm); margin-top: 4px; }
 .block { display: flex; flex-direction: column; gap: var(--s4); }
@@ -325,11 +329,14 @@ td.num, th.num { text-align: right; }
 
 /* ---------- responsive ---------- */
 @media (max-width: 960px) {
-  .owner { grid-template-columns: minmax(0, 1fr); }
+  .owner { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
   .rail { border-right: none; border-bottom: 1px solid var(--rule); }
-  .rail-inner { position: static; flex-direction: row; align-items: center; gap: var(--s3); padding: var(--s2) max(16px, env(safe-area-inset-right, 0px)) var(--s2) max(16px, env(safe-area-inset-left, 0px)); overflow-x: auto; scrollbar-width: none; }
+  .rail { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 10; }
+  .rail-inner { position: static; height: auto; overflow: visible; gap: var(--s1); padding: var(--s2) max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px)); }
+  .rail-top { padding-inline: 0; }
+  .rail-top-mobile { display: block; }
   .rail-shop, .rail-foot { display: none; }
-  .rail-nav { flex-direction: row; }
+  .rail-nav { flex-direction: row; overflow-x: auto; scrollbar-width: none; margin-inline: -8px; }
   .rail-nav a { white-space: nowrap; padding: 8px 10px; }
   .rail-nav a[aria-current='page'] { box-shadow: inset 0 -2px 0 var(--say); }
   .owner-main { padding: var(--s5) max(16px, env(safe-area-inset-right, 0px)) var(--s8) max(16px, env(safe-area-inset-left, 0px)); }
