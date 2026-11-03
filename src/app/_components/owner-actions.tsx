@@ -340,3 +340,32 @@ export function ConnectPayouts({ again = false }: { again?: boolean }) {
     </div>
   );
 }
+
+/** Keeps a price Sayso suggested for a draft (saving it is the owner's confirmation). */
+export function KeepPrice({ variantId, price, label }: { variantId: string; price: string; label: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  return (
+    <span className="stack" style={{ gap: 4 }}>
+      <button
+        className="btn btn-small"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          setError(undefined);
+          try {
+            await callApi(`/api/owner/variants/${encodeURIComponent(variantId)}`, 'PATCH', { price });
+            router.refresh();
+          } catch (err) {
+            setError((err as Error).message);
+          }
+          setBusy(false);
+        }}
+      >
+        {busy ? 'Saving...' : label}
+      </button>
+      {error && <span className="error small">{error}</span>}
+    </span>
+  );
+}

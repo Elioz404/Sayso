@@ -13,7 +13,7 @@ import { Icon } from './ui.tsx';
 interface Created {
   shop: { slug: string; name: string };
   products: number;
-  preview: { name: string; variants: { title: string; price: string; stock: string }[] }[];
+  preview: { name: string; description: string; image?: string; variants: { title: string; price: string; to_confirm: boolean; stock: string }[] }[];
   questions: string[];
   /** Only where owners sign in with a secret instead of PayPal. */
   owner_secret?: string;
@@ -72,8 +72,8 @@ export function OnboardFlow({ paypalLogin }: { paypalLogin: boolean }) {
         {created && <DraftPreview created={created} />}
         {phase === 'describe' && (
           <p className="small soft">
-            Nothing goes live until you publish. Sayso never invents a price or a stock count: anything it can&apos;t tell from what you give it
-            comes back as a question. Payments run on the PayPal sandbox in this demo.
+            Nothing goes live until you publish. Sayso never sets a price for you: without one, it suggests what similar items sell for, and you
+            keep it or change it before anything is published. Payments run on the PayPal sandbox in this demo.
           </p>
         )}
       </aside>
@@ -90,7 +90,7 @@ function Describe({ busy, onSubmit }: { busy: boolean; onSubmit: (body: Record<s
     <div className="stack" style={{ gap: 'var(--s5)' }}>
       <div className="stack" style={{ gap: 'var(--s2)' }}>
         <h1>Open your shop to AI shoppers</h1>
-        <p className="lede">Say what you sell and what it costs, or add a few photos. Sayso drafts the catalog for you to check.</p>
+        <p className="lede">Add photos of what you sell. Sayso names and describes each piece and suggests a price from similar items, for you to confirm.</p>
       </div>
       <form
         className="panel stack"
@@ -115,23 +115,7 @@ function Describe({ busy, onSubmit }: { busy: boolean; onSubmit: (body: Record<s
           </div>
 
           <div className="field">
-            <div className="spread">
-              <label htmlFor="text">What you sell</label>
-              <button type="button" className="btn btn-quiet btn-small" onClick={() => setText(EXAMPLE)}>
-                Use an example
-              </button>
-            </div>
-            <textarea
-              id="text"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              maxLength={8000}
-              placeholder="Paste a price list or an Instagram caption, or just describe it: products, prices, how many you have, where you ship and what it costs."
-            />
-          </div>
-
-          <div className="field">
-            <span className="field-label">Photos (optional, up to 8)</span>
+            <span className="field-label">Photos (up to 8)</span>
             <label className="drop" htmlFor="photos" style={{ position: 'relative' }}>
               <Icon name="camera" size={22} />
               <b>{images.length ? `${images.length} photo${images.length > 1 ? 's' : ''} added` : 'Add product photos'}</b>
@@ -155,6 +139,22 @@ function Describe({ busy, onSubmit }: { busy: boolean; onSubmit: (body: Record<s
                 ))}
               </div>
             )}
+          </div>
+
+          <div className="field">
+            <div className="spread">
+              <label htmlFor="text">Anything to add (optional)</label>
+              <button type="button" className="btn btn-quiet btn-small" onClick={() => setText(EXAMPLE)}>
+                Use an example
+              </button>
+            </div>
+            <textarea
+              id="text"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              maxLength={8000}
+              placeholder="Prices if you know them, how many you have, where you ship and what it costs. A price list or an Instagram caption works too."
+            />
           </div>
 
           <div className="field-row">
@@ -242,7 +242,7 @@ function MakeItYours({ created }: { created: Created }) {
 
 function Progress({ phase, paypalLogin }: { phase: Phase; paypalLogin: boolean }) {
   const steps = [
-    { title: 'Describe what you sell', note: 'Prices, stock, shipping, photos' },
+    { title: 'Show what you sell', note: 'Photos, and anything Sayso should know' },
     paypalLogin ? { title: 'Make it yours with PayPal', note: 'Your PayPal is your login' } : { title: 'Save your owner secret', note: 'It signs you in and approves' },
     { title: 'Check it and publish', note: 'Products are registered with PayPal' },
     { title: 'Get paid and connect your agent', note: 'Sales go straight to your PayPal' },
@@ -290,17 +290,27 @@ function DraftPreview({ created }: { created: Created }) {
       </div>
       <ul className="draft-products">
         {created.preview.map((p) => (
-          <li key={p.name}>
-            <b>{p.name}</b>
-            <ul>
-              {p.variants.map((v) => (
-                <li key={v.title}>
-                  <span>{v.title}</span>
-                  <span className="small soft">{v.stock}</span>
-                  <span className="draft-price">{v.price}</span>
-                </li>
-              ))}
-            </ul>
+          <li key={p.name} className={p.image ? 'draft-product has-photo' : 'draft-product'}>
+            {p.image && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={p.image} alt="" className="draft-photo" />
+            )}
+            <div className="stack" style={{ gap: 2, minWidth: 0 }}>
+              <b>{p.name}</b>
+              {p.description && <span className="small soft draft-description">{p.description}</span>}
+              <ul>
+                {p.variants.map((v) => (
+                  <li key={v.title}>
+                    <span>{v.title}</span>
+                    <span className="small soft">{v.stock}</span>
+                    <span className={`draft-price ${v.to_confirm ? 'to-confirm' : ''}`} title={v.to_confirm ? 'Suggested by Sayso: confirm it before publishing' : undefined}>
+                      {v.price}
+                      {v.to_confirm && <span className="small"> · to confirm</span>}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </li>
         ))}
       </ul>

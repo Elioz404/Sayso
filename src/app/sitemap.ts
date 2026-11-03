@@ -7,6 +7,9 @@ export const dynamic = 'force-dynamic';
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const { catalogs, links } = await ready();
   const pages = ['', '/start', '/tour', '/docs', '/llms.txt'].map((path) => ({ url: `${links.base}${path}` }));
-  const shops = (await catalogs.listLive()).map(({ shop }) => ({ url: links.shopPage(shop.slug) }));
+  const shops = (await catalogs.listLive()).flatMap(({ shop, products }) => [
+    { url: links.shopPage(shop.slug) },
+    ...products.map((p) => ({ url: links.productPage(shop.slug, p.id) })),
+  ]);
   return [...pages, ...shops];
 }

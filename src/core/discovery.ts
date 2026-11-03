@@ -2,7 +2,7 @@
 // models), schema.org JSON-LD on each shop page (what search engines and shopping crawlers read), and
 // the sitemap. All three are built here from the same catalogs and links.
 
-import { available, type Catalog } from './catalog.ts';
+import { available, type Catalog, type Product, type Variant } from './catalog.ts';
 import type { Links } from './links.ts';
 import { formatMoney, toMoney } from './money.ts';
 
@@ -45,50 +45,85 @@ export function llmsText(links: Links, shops: readonly Catalog[]): string {
 /** schema.org markup for a shop page: the store, its products and offers, shipping and returns. */
 export function shopJsonLd(catalog: Catalog, links: Links): Record<string, unknown> {
   const { shop } = catalog;
-  const url = links.shopPage(shop.slug);
-  const price = (minor: number) => toMoney(minor, shop.currency).value;
-  const returnPolicy = {
-    '@type': 'MerchantReturnPolicy',
-    applicableCountry: shop.country,
-    returnPolicyCategory: 'https://schema.org/MerchantReturnFiniteReturnWindow',
-    merchantReturnDays: shop.returnPolicy.days,
-    returnFees: shop.returnPolicy.buyerPaysReturn ? 'https://schema.org/ReturnShippingFees' : 'https://schema.org/FreeReturn',
-  };
-  const shipping = shop.shipping.map((rule) => ({
-    '@type': 'OfferShippingDetails',
-    shippingRate: { '@type': 'MonetaryAmount', value: price(rule.price), currency: shop.currency },
-    shippingDestination: rule.countries.includes('*') ? undefined : rule.countries.map((c) => ({ '@type': 'DefinedRegion', addressCountry: c })),
-    deliveryTime: { '@type': 'ShippingDeliveryTime', transitTime: { '@type': 'QuantitativeValue', minValue: rule.minDays, maxValue: rule.maxDays, unitCode: 'DAY' } },
-  }));
-
+  const terms = offerTerms(catalog);
   return {
     '@context': 'https://schema.org',
     '@type': 'Store',
     name: shop.name,
-    url,
+    url: links.shopPage(shop.slug),
+    image: shop.cover && links.asset(shop.cover.url),
     currenciesAccepted: shop.currency,
     paymentAccepted: 'PayPal',
-    hasMerchantReturnPolicy: returnPolicy,
+    hasMerchantReturnPolicy: terms.hasMerchantReturnPolicy,
     makesOffer: catalog.products.flatMap((product) =>
       product.variants.map((variant) => ({
-        '@type': 'Offer',
-        sku: variant.id,
-        price: price(variant.price),
-        priceCurrency: shop.currency,
-        availability: available(variant) > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
-        url,
-        shippingDetails: shipping,
-        hasMerchantReturnPolicy: returnPolicy,
+        ...offer(catalog, product, variant, links, terms),
         itemOffered: {
           '@type': 'Product',
           name: variant.title && variant.title !== 'Default' ? `${product.name} (${variant.title})` : product.name,
           description: product.description,
           category: product.category,
           image: product.imageUrl && links.asset(product.imageUrl),
+          url: links.productPage(shop.slug, product.id),
         },
-        description: variant.madeToOrderDays !== undefined ? `Made to order in ${variant.madeToOrderDays} days, ${formatMoney(variant.price, shop.currency)}` : undefined,
       })),
     ),
+  };
+}
+
+/** schema.org markup for one product page: the product, sold by the shop, one offer per variant. */
+export function productJsonLd(catalog: Catalog, product: Product, links: Links): Record<string, unknown> {
+  const terms = offerTerms(catalog);
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    name: product.name,
+    description: product.description,
+    category: product.category,
+    image: product.imageUrl && links.asset(product.imageUrl),
+    url: links.productPage(catalog.shop.slug, product.id),
+    brand: { '@type': 'Brand', name: catalog.shop.name },
+    offers: product.variants.map((variant) => ({ ...offer(catalog, product, variant, links, terms), name: variant.title })),
+  };
+}
+
+interface OfferTerms {
+  shippingDetails: Record<string, unknown>[];
+  hasMerchantReturnPolicy: Record<string, unknown>;
+}
+
+/** Shipping and returns, the same for every offer of a shop. */
+function offerTerms({ shop }: Catalog): OfferTerms {
+  const price = (minor: number) => toMoney(minor, shop.currency).value;
+  return {
+    hasMerchantReturnPolicy: {
+      '@type': 'MerchantReturnPolicy',
+      applicableCountry: shop.country,
+      returnPolicyCategory: 'https://schema.org/MerchantReturnFiniteReturnWindow',
+      merchantReturnDays: shop.returnPolicy.days,
+      returnFees: shop.returnPolicy.buyerPaysReturn ? 'https://schema.org/ReturnShippingFees' : 'https://schema.org/FreeReturn',
+    },
+    shippingDetails: shop.shipping.map((rule) => ({
+      '@type': 'OfferShippingDetails',
+      shippingRate: { '@type': 'MonetaryAmount', value: price(rule.price), currency: shop.currency },
+      shippingDestination: rule.countries.includes('*') ? undefined : rule.countries.map((c) => ({ '@type': 'DefinedRegion', addressCountry: c })),
+      deliveryTime: { '@type': 'ShippingDeliveryTime', transitTime: { '@type': 'QuantitativeValue', minValue: rule.minDays, maxValue: rule.maxDays, unitCode: 'DAY' } },
+    })),
+  };
+}
+
+function offer(catalog: Catalog, product: Product, variant: Variant, links: Links, terms: OfferTerms): Record<string, unknown> {
+  const { shop } = catalog;
+  return {
+    '@type': 'Offer',
+    sku: variant.id,
+    price: toMoney(variant.price, shop.currency).value,
+    priceCurrency: shop.currency,
+    availability: available(variant) > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+    url: links.productPage(shop.slug, product.id),
+    seller: { '@type': 'Organization', name: shop.name },
+    ...terms,
+    description: variant.madeToOrderDays !== undefined ? `Made to order in ${variant.madeToOrderDays} days, ${formatMoney(variant.price, shop.currency)}` : undefined,
   };
 }
 

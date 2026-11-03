@@ -1,9 +1,10 @@
 // Overview: the one job first (what's waiting for the owner), then a single row of figures and the
 // latest orders. Everything else lives in its own view.
-import { ConnectPayouts, Decision, PublishButton } from '@/app/_components/owner-actions.tsx';
+import { ConnectPayouts, Decision, KeepPrice, PublishButton } from '@/app/_components/owner-actions.tsx';
 import { actionLabel, Status, Who } from '@/app/_components/ui.tsx';
 import { Ago } from '@/app/_components/time.tsx';
-import { formatMoney } from '@/core/money.ts';
+import { pricesToConfirm } from '@/core/catalog.ts';
+import { formatMoney, toMoney } from '@/core/money.ts';
 import { ownerView, pendingFor } from '@/server/owner.ts';
 
 /** What PayPal's payout onboarding came back with, as /owner?payouts=... */
@@ -22,6 +23,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const onTour = shop.visibility === 'private';
   const [approvals, orders, { suggestions }] = await Promise.all([pendingFor(shopId), shopOrders.list(shopId), saySo.autonomy(shopId)]);
   const money = (minor: number) => formatMoney(minor, shop.currency);
+  const unconfirmed = pricesToConfirm(catalog);
   const paid = orders.filter((o) => o.status === 'paid');
   const charged = paid.reduce((sum, o) => sum + (o.totalMinor ?? 0), 0);
   const refunded = orders.reduce((sum, o) => sum + o.refundedMinor, 0);
@@ -41,10 +43,46 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         <div className="callout">
           <div className="stack" style={{ gap: 2 }}>
             <b>Your shop is a draft</b>
-            <span className="small soft">Check the catalog, then publish to register it with PayPal and let AI shoppers buy.</span>
+            <span className="small soft">
+              {unconfirmed.length
+                ? 'Confirm the prices below, check the catalog, then publish to register it with PayPal and let AI shoppers buy.'
+                : 'Check the catalog, then publish to register it with PayPal and let AI shoppers buy.'}
+            </span>
           </div>
           <PublishButton />
         </div>
+      )}
+
+      {unconfirmed.length > 0 && (
+        <section className="block" aria-labelledby="confirm">
+          <div className="block-head">
+            <h2 id="confirm">Prices to confirm</h2>
+            <a className="note" href="/owner/catalog">
+              Set your own in Catalog
+            </a>
+          </div>
+          <ul className="list">
+            {unconfirmed.map(({ product, variant }) => {
+              const s = variant.priceToConfirm?.suggested;
+              return (
+                <li key={variant.id} className="spread confirm-row">
+                  <span className="stack" style={{ gap: 2, minWidth: 0 }}>
+                    <b>
+                      {product.name}
+                      {variant.title !== 'Default' ? ` (${variant.title})` : ''}
+                    </b>
+                    <span className="small soft">
+                      {s
+                        ? `Similar items sell for ${money(s.low)} to ${money(s.high)} (${s.listings} listings).`
+                        : 'No price yet, and too few similar items to suggest one. Set it in Catalog.'}
+                    </span>
+                  </span>
+                  {s && <KeepPrice variantId={variant.id} price={toMoney(variant.price, shop.currency).value} label={`Keep ${money(variant.price)}`} />}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
       )}
 
       {outcome && <div className={`callout small ${shop.payout ? 'callout-say' : ''}`}>{outcome}</div>}

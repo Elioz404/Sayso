@@ -12,6 +12,7 @@ import type { JobNotes, JobStore } from '@/core/production.ts';
 import type { Tour, TourStore } from '@/core/tour.ts';
 import type { GuardRecord, GuardStore, RecordQuery, RecordStatus } from '@/core/guard/types.ts';
 import type { CartStore, CatalogStore, StoredCart } from '@/core/stores.ts';
+import type { MediaStore, StoredPhoto } from '@/core/media.ts';
 import type { Seller, SellerStore } from '@/core/sellers.ts';
 import type { Wallet, WalletStore } from '@/core/wallets.ts';
 
@@ -31,7 +32,7 @@ create unique index if not exists sayso_docs_slug on sayso_docs (kind, slug) whe
 create index if not exists sayso_docs_hash on sayso_docs (kind, hash) where hash is not null;
 `;
 
-type Kind = 'catalog' | 'cart' | 'guard' | 'owner' | 'key' | 'policy' | 'wallet' | 'wallet-key' | 'jobs' | 'tour' | 'seller';
+type Kind = 'catalog' | 'cart' | 'guard' | 'owner' | 'key' | 'policy' | 'wallet' | 'wallet-key' | 'jobs' | 'tour' | 'seller' | 'media';
 type Queryable = pg.Pool | pg.PoolClient;
 
 interface Doc {
@@ -328,5 +329,18 @@ export class PgSellerStore implements SellerStore {
   }
   async put(seller: Seller) {
     await this.db.put({ kind: 'seller', id: seller.id, hash: seller.paypalUserId, createdAt: seller.createdAt, data: seller });
+  }
+}
+
+export class PgMediaStore implements MediaStore {
+  private readonly db: Db;
+  constructor(db: Db) {
+    this.db = db;
+  }
+  get(id: string) {
+    return this.db.get<StoredPhoto>('media', id);
+  }
+  async put(photo: StoredPhoto) {
+    await this.db.put({ kind: 'media', id: photo.id, createdAt: photo.createdAt, data: photo });
   }
 }

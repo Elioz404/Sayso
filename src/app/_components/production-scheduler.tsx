@@ -35,10 +35,10 @@ function dayOf(date: Date): string {
 
 /** A payment bar can be one day wide, so it carries an icon; the whole story is in the tooltip. */
 const PAYMENT: Record<PaymentState, { color: string; icon: string; title: string; detail: (j: ProductionJob) => string }> = {
-  waiting: { color: 'orange', icon: 'fa fa-hourglass-half', title: 'Unpaid', detail: (j) => `Waiting for ${j.payment.amount} in PayPal since ${j.payment.since}` },
-  held: { color: 'violet', icon: 'fa fa-hand', title: 'Waiting for your OK', detail: (j) => `The buyer approved ${j.payment.amount} in PayPal; it is charged when you accept the order` },
-  deposit: { color: 'teal', icon: 'fa fa-coins', title: 'Deposit paid', detail: (j) => `Deposit paid in PayPal on ${j.payment.paidOn} (total ${j.payment.amount})` },
-  paid: { color: 'green', icon: 'fa fa-check', title: 'Paid', detail: (j) => `${j.payment.amount} paid in PayPal on ${j.payment.paidOn}` },
+  waiting: { color: 'light-gray', icon: 'fa fa-hourglass-half', title: 'Unpaid', detail: (j) => `Waiting for ${j.payment.amount} in PayPal since ${j.payment.since}` },
+  held: { color: 'yellow', icon: 'fa fa-hand', title: 'Waiting for your OK', detail: (j) => `The buyer approved ${j.payment.amount} in PayPal; it is charged when you accept the order` },
+  deposit: { color: 'orange', icon: 'fa fa-coins', title: 'Deposit paid', detail: (j) => `Deposit paid in PayPal on ${j.payment.paidOn} (total ${j.payment.amount})` },
+  paid: { color: 'deep-orange', icon: 'fa fa-check', title: 'Paid', detail: (j) => `${j.payment.amount} paid in PayPal on ${j.payment.paidOn}` },
   unknown: { color: 'gray', icon: 'fa fa-question', title: 'Payment unknown', detail: () => 'PayPal could not be read just now; refresh in a minute' },
 };
 

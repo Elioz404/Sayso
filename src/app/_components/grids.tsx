@@ -370,6 +370,7 @@ export function CatalogGrid({ rows, market: marketEnabled }: { rows: VariantRow[
         flex: 0.9,
         type: 'rightAligned',
         cellClass: [...RIGHT, 'cell-editable'],
+        cellClassRules: { 'cell-confirm': (p) => Boolean(p.data?.toConfirm) },
         editable: true,
         cellEditor: 'agTextCellEditor',
         // The owner types an amount ("24.50", "$1,200"); it is read with the same parser the server uses,
@@ -385,7 +386,8 @@ export function CatalogGrid({ rows, market: marketEnabled }: { rows: VariantRow[
           p.data.price = minor;
           return true;
         },
-        valueFormatter: (p) => (p.data ? formatMoney(p.data.price, p.data.currency) : ''),
+        valueFormatter: (p) => (p.data ? `${formatMoney(p.data.price, p.data.currency)}${p.data.toConfirm ? ' · to confirm' : ''}` : ''),
+        tooltipValueGetter: (p) => (p.data?.toConfirm ? 'Sayso suggested this price from similar items. Set your own, or keep it from the overview.' : undefined),
       },
       {
         field: 'stock',

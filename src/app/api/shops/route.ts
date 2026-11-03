@@ -42,9 +42,13 @@ export async function POST(request: Request) {
         // What Sayso understood, for the owner to check before publishing.
         preview: result.catalog.products.map((p) => ({
           name: p.name,
+          description: p.description,
+          image: p.imageUrl,
           variants: p.variants.map((v) => ({
             title: v.title,
-            price: formatMoney(v.price, shop.currency),
+            price: v.price ? formatMoney(v.price, shop.currency) : 'No price yet',
+            /** A price Sayso suggested (or none at all): the owner confirms it before publishing. */
+            to_confirm: Boolean(v.priceToConfirm),
             stock: v.madeToOrderDays !== undefined ? `Made to order, ${v.madeToOrderDays} days` : `${v.inventory} in stock`,
           })),
         })),

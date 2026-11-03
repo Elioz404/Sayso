@@ -1,9 +1,10 @@
 // What similar products sell for elsewhere, so a small seller can price with confidence. Listings come
 // from a product-search source (Channel3 in production); this file only turns them into a reference
 // range. The middle half of prices is used, so one odd listing (a set of six, a clearance item) can't
-// skew it. Read-only: nothing here changes a price.
+// skew it. Read-only: nothing here changes a price; a suggestion for a new product is only a suggestion
+// until its owner confirms it.
 
-import type { Catalog, Product } from './catalog.ts';
+import type { Catalog, PriceSuggestion, Product } from './catalog.ts';
 import { findVariant } from './catalog.ts';
 import { HttpError, notFound } from './errors.ts';
 import { formatMoney } from './money.ts';
@@ -65,6 +66,12 @@ export class MarketPrices {
     return priceReference(query, listings, catalog.shop.currency, found.variant.price);
   }
 
+  /** What `product` usually sells for, for a draft that has no price yet. Undefined if the market can't tell. */
+  async suggest(product: Product, currency: string, shopId: string): Promise<PriceSuggestion | undefined> {
+    const range = marketRange(await this.listings(searchPhrase(product), shopId), currency);
+    return range && { low: range.low, median: range.median, high: range.high, listings: range.comparable.length };
+  }
+
   private listings(query: string, shopId: string): Promise<Listing[]> {
     const cached = this.cache.get(query);
     if (cached && Date.now() - cached.at < CACHE_MS) return cached.listings;
@@ -87,24 +94,35 @@ export function searchPhrase(product: Product): string {
   return [product.name, ...extra].join(' ');
 }
 
-/** Range, median and where `ownPrice` sits, from listings in the shop's currency. Exported for tests. */
-export function priceReference(query: string, listings: Listing[], currency: string, ownPrice: number): PriceReference {
+/** Distinct listings priced in `currency` (one store selling the same thing twice counts once). */
+function comparableListings(listings: Listing[], currency: string): Listing[] {
   const seen = new Set<string>();
-  const comparable = listings.filter((l) => {
+  return listings.filter((l) => {
     const key = `${l.store}|${l.title.toLowerCase()}|${l.price}`;
     if (l.currency !== currency || l.price <= 0 || seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+}
+
+/** The middle half and median of comparable listings; undefined below MIN_LISTINGS. */
+function marketRange(listings: Listing[], currency: string): { low: number; median: number; high: number; comparable: Listing[] } | undefined {
+  const comparable = comparableListings(listings, currency);
+  if (comparable.length < MIN_LISTINGS) return undefined;
+  const prices = comparable.map((l) => l.price).sort((a, b) => a - b);
+  return { low: percentile(prices, 0.25), median: percentile(prices, 0.5), high: percentile(prices, 0.75), comparable };
+}
+
+/** Range, median and where `ownPrice` sits, from listings in the shop's currency. Exported for tests. */
+export function priceReference(query: string, listings: Listing[], currency: string, ownPrice: number): PriceReference {
   const money = (minor: number) => formatMoney(minor, currency);
-  if (comparable.length < MIN_LISTINGS) {
-    return { query, currency, listings: comparable.length, summary: `Not enough similar listings in ${currency} to compare "${query}".`, examples: [] };
+  const range = marketRange(listings, currency);
+  if (!range) {
+    const count = comparableListings(listings, currency).length;
+    return { query, currency, listings: count, summary: `Not enough similar listings in ${currency} to compare "${query}".`, examples: [] };
   }
 
-  const prices = comparable.map((l) => l.price).sort((a, b) => a - b);
-  const low = percentile(prices, 0.25);
-  const median = percentile(prices, 0.5);
-  const high = percentile(prices, 0.75);
+  const { low, median, high, comparable } = range;
   const position = ownPrice < low ? 'below' : ownPrice > high ? 'above' : 'within';
   const where = { below: 'below the usual range', within: 'within the usual range', above: 'above the usual range' }[position];
   const examples = [...comparable]

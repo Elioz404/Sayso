@@ -1,7 +1,8 @@
 // Seller tools: the owner's own agent running the shop with its agent key. Anything that moves money or
 // changes the rules goes through Guard; no tool can approve a say-so request.
 
-import { parseAmount } from '../money.ts';
+import { pricesToConfirm } from '../catalog.ts';
+import { formatMoney, parseAmount } from '../money.ts';
 import type { PaymentState, ProductionJob } from '../production.ts';
 import { money } from './args.ts';
 import { actor, shop, ToolError, type Tool } from './context.ts';
@@ -37,6 +38,13 @@ export const sellerTools: Tool[] = [
         low_stock: catalog.products.flatMap((p) =>
           p.variants.filter((v) => v.madeToOrderDays === undefined && v.inventory <= 1).map((v) => ({ variant_id: v.id, name: `${p.name} (${v.title})`, stock: v.inventory })),
         ),
+        // Draft prices Sayso suggested (or couldn't): the shop can't be published until the owner sets them.
+        prices_to_confirm: pricesToConfirm(catalog).map(({ product, variant }) => ({
+          variant_id: variant.id,
+          name: `${product.name} (${variant.title})`,
+          price: variant.price ? formatMoney(variant.price, catalog.shop.currency) : undefined,
+          suggested_from: variant.priceToConfirm?.suggested && `${variant.priceToConfirm.suggested.listings} similar listings`,
+        })),
       };
     },
   },

@@ -5,6 +5,8 @@ export interface Links {
   base: string;
   /** A full URL for an asset given as a path on this site (/photos/mug.webp); full URLs pass through. */
   asset(url: string): string;
+  /** A seller's uploaded photo, as a path on this site. */
+  media(id: string): string;
   /** Every shop, for any shopping assistant. */
   shoppingMcp: string;
   /** Every shop plus the buyer's saved PayPal. */
@@ -29,6 +31,7 @@ export interface Links {
   /** Where PayPal sends the owner back after connecting their account for payouts. */
   payoutsReturn: string;
   shopPage(slug: string): string;
+  productPage(slug: string, productId: string): string;
   approve(recordId: string): string;
   wallet(walletId: string): string;
   walletReturn(walletId: string): string;
@@ -42,6 +45,7 @@ export function links(baseUrl: string): Links {
   return {
     base,
     asset: (url) => (url.startsWith('/') ? `${base}${url}` : url),
+    media: (id) => `/media/${id}`,
     shoppingMcp: `${base}/api/shopping/mcp`,
     shoppingMcpFor: (key) => `${base}/api/shopping/mcp/${key}`,
     shopMcp: (slug) => `${base}/api/shops/${slug}/mcp`,
@@ -55,6 +59,7 @@ export function links(baseUrl: string): Links {
     paypalSignInReturn: `${base}/api/owner/paypal/callback`,
     payoutsReturn: `${base}/api/owner/payouts/return`,
     shopPage: (slug) => `${base}/shop/${slug}`,
+    productPage: (slug, productId) => `${base}/shop/${slug}/${productId}`,
     approve: (id) => `${base}/approve/${id}`,
     wallet: (id) => `${base}/wallet/${id}`,
     walletReturn: (id) => `${base}/wallet/${id}/return`,

@@ -12,6 +12,26 @@ export interface Variant {
   attributes: Record<string, string>;
   /** Made-to-order items can be sold beyond stock, with a lead time instead. */
   madeToOrderDays?: number;
+  /**
+   * The price isn't the owner's yet: Sayso drafted this variant without one, and `price` is what the
+   * market suggests (or 0 when it couldn't tell). The shop can't be published until the owner sets or
+   * keeps a price, which clears this.
+   */
+  priceToConfirm?: { suggested?: PriceSuggestion };
+}
+
+/** What similar items sell for elsewhere, from a market search. Minor units of the shop currency. */
+export interface PriceSuggestion {
+  low: number;
+  median: number;
+  high: number;
+  /** How many comparable listings the range is built from. */
+  listings: number;
+}
+
+/** Variants whose price the owner still has to confirm, by product name and variant title. */
+export function pricesToConfirm(catalog: Catalog): { product: Product; variant: Variant }[] {
+  return catalog.products.flatMap((product) => product.variants.filter((v) => v.priceToConfirm).map((variant) => ({ product, variant })));
 }
 
 export interface Product {

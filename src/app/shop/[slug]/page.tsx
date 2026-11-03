@@ -6,28 +6,15 @@ import { connection } from 'next/server';
 import { CopyField } from '@/app/_components/client-ui.tsx';
 import { ShopPhoto } from '@/app/_components/photo.tsx';
 import { Icon } from '@/app/_components/ui.tsx';
-import { available, isLive, type Catalog, type Variant } from '@/core/catalog.ts';
+import { isLive } from '@/core/catalog.ts';
 import { jsonLdScript, shopJsonLd } from '@/core/discovery.ts';
 import { formatMoney } from '@/core/money.ts';
+import { assistantPrompt, stockNote } from '@/core/storefront.ts';
 import { ready } from '@/server/context.ts';
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const catalog = await (await ready()).catalogs.bySlug((await params).slug).catch(() => undefined);
   return { title: catalog?.shop.name ?? 'Shop' };
-}
-
-/** What to say to an assistant, built from something this shop can actually sell right now. */
-function examplePrompt({ shop, products }: Catalog): string {
-  const pick = products.flatMap((p) => p.variants.map((v) => ({ p, v }))).find(({ v }) => v.madeToOrderDays === undefined && v.inventory > 1);
-  const item = pick ? `a ${pick.v.title} ${pick.p.name}` : `something from ${shop.name}`;
-  return pick ? `Buy ${item} from ${shop.name} on Sayso and ship it to me.` : `Show me what ${shop.name} sells on Sayso.`;
-}
-
-function stockNote(v: Variant): { text: string; tone: 'ok' | 'low' | 'out' | 'made' } {
-  if (v.madeToOrderDays !== undefined) return { text: `Made to order, about ${v.madeToOrderDays} days`, tone: 'made' };
-  if (available(v) === 0) return { text: 'Sold out', tone: 'out' };
-  if (v.inventory === 1) return { text: 'Last one', tone: 'low' };
-  return { text: `${v.inventory} in stock`, tone: 'ok' };
 }
 
 export default async function ShopPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -75,7 +62,7 @@ export default async function ShopPage({ params }: { params: Promise<{ slug: str
               </li>
               <li>
                 <span>Ask for what you want, in your own words.</span>
-                <CopyField value={examplePrompt(catalog)} />
+                <CopyField value={assistantPrompt(catalog)} />
               </li>
               <li>
                 <span>Approve the exact total in PayPal. The shop prices it, never the assistant.</span>
@@ -103,7 +90,11 @@ export default async function ShopPage({ params }: { params: Promise<{ slug: str
               )}
               <div className="good-body">
                 <div className="stack" style={{ gap: 4 }}>
-                  <h3>{p.name}</h3>
+                  <h3>
+                    <a className="good-link" href={links.productPage(shop.slug, p.id)}>
+                      {p.name}
+                    </a>
+                  </h3>
                   <p className="small soft">{p.description}</p>
                 </div>
                 <ul className="good-variants">

@@ -14,6 +14,8 @@ export interface VariantRow {
   /** Units on hand; null for made-to-order variants, which have no stock limit. */
   stock: number | null;
   madeToOrderDays?: number;
+  /** The price is a draft's suggestion the owner hasn't confirmed; the shop can't be published yet. */
+  toConfirm: boolean;
 }
 
 export function variantRows(catalog: Catalog): VariantRow[] {
@@ -36,5 +38,6 @@ function toRow(catalog: Catalog, product: string, siblings: number, variantId: s
     price: variant.price,
     stock: variant.madeToOrderDays === undefined ? variant.inventory : null,
     madeToOrderDays: variant.madeToOrderDays,
+    toConfirm: Boolean(variant.priceToConfirm),
   };
 }

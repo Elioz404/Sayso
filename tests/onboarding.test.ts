@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import type { ChatModel } from '../src/core/ai/llm.ts';
 import { Budget, LlmError, modelFromEnv, openAICompatible } from '../src/core/ai/llm.ts';
 import { draftCatalog, normalizeDraft } from '../src/core/ai/onboarding.ts';
+import { pricesToConfirm } from '../src/core/catalog.ts';
 import { draftPolicy, validateRules } from '../src/core/ai/policy-draft.ts';
 import { evaluate } from '../src/core/guard/policy.ts';
 
@@ -37,25 +38,27 @@ const candleShop = {
   questions: ['Do you ship to Canada?'],
 };
 
-test('draft catalog: prices become cents, unknowns become questions, nothing is invented', async () => {
+test('draft catalog: prices become cents, unknowns become questions, nothing is invented or dropped', async () => {
   const seen: unknown[] = [];
   const { catalog, questions } = await draftCatalog(fakeModel(candleShop, seen), { text: 'Lavender and cedar candles, $18 each', images: ['data:image/jpeg;base64,AAAA'] });
 
   assert.equal(catalog.shop.status, 'draft');
   assert.equal(catalog.shop.currency, 'USD');
   assert.match(catalog.shop.slug, /^lumen-candles-[0-9a-f]{4}$/);
-  assert.equal(catalog.products.length, 1, 'products without a valid price are left out');
+  assert.equal(catalog.products.length, 2, 'a product without a valid price is kept, its price to be confirmed');
 
-  const [lavender, cedar] = catalog.products[0].variants;
+  const [lavender, cedar, mystery] = catalog.products[0].variants;
   assert.equal(lavender.price, 1_800);
   assert.equal(lavender.inventory, 12);
   assert.equal(cedar.price, 1_800);
   assert.equal(cedar.inventory, 1, 'unknown stock defaults to one piece, and asks');
-  assert.equal(catalog.products[0].variants.length, 2, 'the unpriced variant is not for sale');
+  assert.equal(lavender.priceToConfirm, undefined);
+  assert.deepEqual([mystery.price, mystery.priceToConfirm], [0, {}], 'no price is invented: it waits for the owner');
+  assert.deepEqual(catalog.products[1].variants.map((v) => [v.price, v.priceToConfirm]), [[0, {}]], '"-5" is not a price');
+  assert.deepEqual(pricesToConfirm(catalog).map(({ variant }) => variant.title), ['Mystery', 'Sampler']);
 
   assert.deepEqual(catalog.shop.shipping.map((s) => [s.countries, s.price, s.freeAbove]), [[['US'], 650, 5_000]]);
   assert.ok(questions.includes('Do you ship to Canada?'));
-  assert.ok(questions.some((q) => q.includes('Mystery') && q.includes('cost')));
   assert.ok(questions.some((q) => q.includes('Cedar') && q.includes('assumed 1')));
 
   // Photos are passed to the model; the seller's text is fenced as data.
@@ -71,8 +74,19 @@ test('draft catalog: no shipping info means a free domestic placeholder and a qu
   assert.ok(questions.some((q) => q.startsWith('Shipping is set to free')));
 });
 
-test('draft catalog: refuses when nothing sellable came back', () => {
-  assert.throws(() => normalizeDraft({ products: [{ name: 'Thing', variants: [{ title: 'x', price: 'ask me' }] }] }), /No sellable products/);
+test('draft catalog: refuses when no product came back', () => {
+  assert.throws(() => normalizeDraft({ products: [{ variants: [{ title: 'x', price: '10' }] }] }), /No products found/);
+});
+
+test('draft catalog: each product keeps the photo that shows it', () => {
+  const images = ['data:image/jpeg;base64,AAAA', 'data:image/jpeg;base64,BBBB'];
+  const { catalog, photoOf } = normalizeDraft(
+    { products: [{ name: 'Mug', photo: 2, variants: [{ title: 'Blue' }] }, { name: 'Bowl', photo: 9, variants: [{ title: 'Sand' }] }] },
+    { images },
+  );
+  assert.deepEqual(photoOf, { [catalog.products[0].id]: 1 }, 'a photo number that does not exist is ignored');
+  const single = normalizeDraft({ products: [{ name: 'Vase', variants: [{ title: 'Cobalt' }] }] }, { images: [images[0]] });
+  assert.deepEqual(Object.values(single.photoOf), [0], 'with one photo, what was found is in it');
 });
 
 test('draft catalog: duplicate names still get unique ids', () => {
