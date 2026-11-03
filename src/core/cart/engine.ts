@@ -4,6 +4,7 @@
 // No I/O here, so every rule is unit-tested (tests/cart.test.ts).
 
 import { available, findVariant, type Catalog, type ShippingRule } from '../catalog.ts';
+import { addDays, dayOf } from '../days.ts';
 import { applyBps, formatMoney, toMinor, toMoney } from '../money.ts';
 import type {
   CartItem,
@@ -154,7 +155,7 @@ export function priceCart(catalog: Catalog, input: PayPalCart, options: PriceCar
         price: toMoney(price, currency),
         is_selected: rule.id === selectedId,
         description: `${rule.minDays}-${rule.maxDays} business days`,
-        estimated_delivery: addDays(now, rule.maxDays),
+        estimated_delivery: addDays(dayOf(now), rule.maxDays),
       }));
       shipping = priced.find((p) => p.rule.id === selectedId)!.price;
     }
@@ -204,9 +205,4 @@ function taxRate(rates: Record<string, number>, country?: string, state?: string
 
 function shippingPrice(rule: ShippingRule, subtotal: number): number {
   return rule.freeAbove !== undefined && subtotal >= rule.freeAbove ? 0 : rule.price;
-}
-
-function addDays(from: Date, days: number): string {
-  const d = new Date(from.getTime() + days * 86_400_000);
-  return d.toISOString().slice(0, 10);
 }

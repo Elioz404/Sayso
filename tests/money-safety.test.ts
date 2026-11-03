@@ -7,6 +7,7 @@ import { variantRows } from '../src/core/catalog-view.ts';
 import { Guard, MemoryGuardStore } from '../src/core/guard/engine.ts';
 import type { Policy } from '../src/core/guard/policy.ts';
 import type { Executor, ProposedAction } from '../src/core/guard/types.ts';
+import { Channel3 } from '../src/core/channel3.ts';
 import { MarketPrices, priceReference } from '../src/core/market.ts';
 import { parseAmount } from '../src/core/money.ts';
 import { address, stack } from './stack.ts';
@@ -187,6 +188,7 @@ test('amounts people and models type are parsed strictly', () => {
   assert.equal(parseAmount('1500', 'JPY'), 1_500);
   for (const bad of ['-5', '12,50', '1.234', 'lots', '', '1,2345']) assert.equal(parseAmount(bad, 'USD'), undefined, bad);
   assert.equal(parseAmount('15.5', 'JPY'), undefined, 'yen has no decimals');
+  assert.equal(parseAmount(24.555, 'USD'), undefined, 'a number with a fraction of a cent is refused, not rounded');
 });
 
 test('editing a price keeps stock a checkout just took, and bad edits change nothing', async () => {
@@ -226,4 +228,47 @@ test('the owner\'s agent can check a price against the market, read-only', async
   assert.equal(await stock(s, 'var_mug_sage'), 6, 'nothing in the shop changed');
   const notForBuyers = await s.call('price_check', { variant_id: 'var_mug_sage' }, s.buyer);
   assert.equal(notForBuyers.isError, true);
+});
+
+test('Channel3 listings: one per product, its cheapest in-stock offer, in minor units', async () => {
+  const body = {
+    products: [
+      { id: 'a', title: 'Mug A', offers: [{ url: 'u1', domain: 'one.com', price: { price: 30, currency: 'USD' }, availability: 'InStock' }, { url: 'u2', domain: 'two.com', price: { price: 24.5, currency: 'USD' }, availability: 'InStock' }] },
+      { id: 'b', title: 'Mug B', offers: [{ url: 'u3', domain: 'three.com', price: { price: 12, currency: 'USD' }, availability: 'OutOfStock' }] },
+    ],
+  };
+  const fetchStub = (async () => new Response(JSON.stringify(body), { status: 200 })) as typeof fetch;
+  const listings = await new Channel3('key', fetchStub).search('mug', 10);
+  assert.deepEqual(listings, [{ title: 'Mug A', store: 'two.com', price: 2_450, currency: 'USD', url: 'u2' }]);
+});
+
+test('a failed market search is not cached: the next question tries again', async () => {
+  let calls = 0;
+  const flaky = {
+    search: async () => {
+      calls += 1;
+      if (calls === 1) throw new Error('timeout');
+      return [2_400, 2_600, 2_900].map((p) => ({ title: `Mug ${p}`, store: `s${p}.com`, price: p, currency: 'USD', url: 'https://x' }));
+    },
+  };
+  const s = await stack();
+  const market = new MarketPrices(flaky);
+  const catalog = (await s.catalogs.byShopId('shop_maya'))!;
+  await assert.rejects(market.forVariant(catalog, 'var_mug_sage'), /unavailable/);
+  assert.equal((await market.forVariant(catalog, 'var_mug_sage')).median, 2_600);
+  await market.forVariant(catalog, 'var_mug_sage');
+  assert.equal(calls, 2, 'the good answer is cached');
+});
+
+test('the email a buyer types into a cart is not who paid: trust rules use PayPal\'s payer', async () => {
+  const s = await stack();
+  const cart = await s.call('create_cart', { items: [{ variant_id: 'var_mug_sage', quantity: 1 }], shipping_address: address, customer: { email_address: 'trusted@example.com' } }, s.buyer);
+  const token = new URL(cart.data.approval_url).searchParams.get('token')!;
+  s.pp.approve(token); // PayPal's payer is buyer@example.com
+  await pay(s, cart.data.cart_id, token);
+
+  const invoice = await s.call('send_invoice', { email: 'trusted@example.com', items: [{ name: 'Vase', price: '30.00' }] }, s.owner);
+  assert.equal(invoice.data.status, 'pending_approval', 'still a new client: they never paid');
+  const known = await s.call('send_invoice', { email: 'buyer@example.com', items: [{ name: 'Vase', price: '30.00' }] }, s.owner);
+  assert.equal(known.data.status, 'verified', 'the real payer is a known client');
 });

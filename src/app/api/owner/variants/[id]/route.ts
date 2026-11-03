@@ -10,15 +10,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   return handle(async () => {
     const shopId = await requireOwner(request);
     const { id } = await params;
-    const body = await readJson<{ price?: string | number; stock?: number }>(request);
+    const body = await readJson<{ price?: unknown; stock?: unknown }>(request);
     const { shops } = await ready();
     const { shop } = await shops.get(shopId);
 
-    const price = body.price === undefined ? undefined : parseAmount(body.price, shop.currency);
-    if (body.price !== undefined && !price) throw new HttpError(400, `Price must be more than zero, like 24.00 (${shop.currency})`);
+    // Amounts travel as text ("24.00"), never as JSON numbers, so nothing is rounded on the way.
+    const price = typeof body.price === 'string' ? parseAmount(body.price, shop.currency) : undefined;
+    if (body.price !== undefined && !price) throw new HttpError(400, `Price must be text like "24.00" (${shop.currency}), more than zero`);
+    if (body.stock !== undefined && !Number.isSafeInteger(body.stock)) throw new HttpError(400, 'Stock must be a whole number');
     if (price === undefined && body.stock === undefined) throw new HttpError(400, 'Send a price, a stock count or both');
 
-    const catalog = await shops.setVariant(shopId, id, { price, inventory: body.stock });
+    const catalog = await shops.setVariant(shopId, id, { price, inventory: body.stock as number | undefined });
     return Response.json(variantRow(catalog, id));
   });
 }

@@ -10,7 +10,7 @@
 
 import { randomBytes } from 'node:crypto';
 import { OPS_AGENT } from './actors.ts';
-import { isLive, returnStock, stockLines, takeStock, type Catalog } from './catalog.ts';
+import { findVariant, isLive, returnStock, stockLines, takeStock, type Catalog } from './catalog.ts';
 import { isPayable, priceCart } from './cart/engine.ts';
 import type { CheckoutResult, PayPalCart, ValidationIssue } from './cart/spec.ts';
 import { HttpError, notFound } from './errors.ts';
@@ -169,12 +169,20 @@ export class Commerce {
   private async settle(stored: StoredCart, authorization: OrderAuthorization, payerEmail?: string, payerId?: string): Promise<CheckoutResult> {
     stored.authorizationId = authorization.id;
     const lines = stockLines(stored.cart.items);
-    if (!(await this.deps.catalogs.modify(stored.shopId, (catalog) => takeStock(catalog, lines)))) {
+    let makeDays: (number | null)[] = [];
+    const took = await this.deps.catalogs.modify(stored.shopId, (catalog) => {
+      // Read the lead times in the same atomic step that takes the stock: what was promised is kept.
+      makeDays = stored.cart.items.map((i) => (i.variant_id ? (findVariant(catalog, i.variant_id)?.variant.madeToOrderDays ?? null) : null));
+      return takeStock(catalog, lines);
+    });
+    if (!took) {
       await this.release(stored, 'An item sold out while the buyer was paying.', OPS_AGENT);
       await this.recheck(stored).catch(() => undefined); // records the sold-out issue on the cart
       throw new HttpError(422, 'An item sold out before payment completed', issueBody(stored, paymentIssue(`${NOT_CHARGED} An item just sold out.`)));
     }
     stored.reserved = lines;
+    stored.makeDays = makeDays;
+    stored.payerEmail = payerEmail?.toLowerCase();
 
     const record = await this.deps.guard.submit(
       {

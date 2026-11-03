@@ -159,7 +159,8 @@ test('agent keys: hashed, scoped to one shop, revocable; owner sessions are sign
   assert.equal(await s.access.agentFromHeader('Bearer sk_agent_demo'), undefined);
 
   const session = s.access.signOwnerSession('shop_maya', 60_000);
-  assert.equal(s.access.verifyOwnerSession(session), 'shop_maya');
+  assert.deepEqual(s.access.verifyOwnerSession(session), { shopId: 'shop_maya', kind: 'owner' });
+  assert.equal(s.access.verifyOwnerSession(session.replace('.owner.', '.demo.')), undefined, 'the kind is signed too');
   assert.equal(s.access.verifyOwnerSession(session.replace('shop_maya', 'shop_evil')), undefined);
   assert.equal(s.access.verifyOwnerSession(session, Date.now() + 120_000), undefined, 'expired');
 });
@@ -306,6 +307,14 @@ test("saved PayPal: the buyer approves once and sets limits; the assistant pays 
   assert.equal(s.pp.paymentTokens.size, 0);
   const gone = await s.call('pay_with_paypal', { cart_id: second.data.cart_id, wallet_key: connect.data.wallet_key }, s.buyer);
   assert.equal(gone.isError, true);
+
+  // Every key issued before stays dead, even after the buyer connects PayPal again.
+  await s.wallets.startConnect(walletId, { perOrder: '50', daily: '80' });
+  s.pp.approveSetup((await s.wallets.get(walletId)).setupTokenId!);
+  const again = await s.wallets.finishConnect(walletId);
+  assert.equal(await s.wallets.fromKey(connect.data.wallet_key), undefined);
+  assert.equal(await s.wallets.fromKey(connectorKey), undefined, 'a leaked personal URL does not come back');
+  assert.equal((await s.wallets.fromKey(again.connectorKey))?.id, walletId, 'the new personal URL works');
 });
 
 test('custom orders: invoices go through Guard, a first invoice to a new client waits for the owner', async () => {

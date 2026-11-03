@@ -9,7 +9,7 @@ export default async function Making() {
   const view = await ownerView();
   if (!view) return null;
   const jobs = await view.production.jobs(view.shopId);
-  const blocked = jobs.filter((j) => j.blocked).length;
+  const blocked = jobs.filter((j) => j.blockedBy).length;
 
   return (
     <>
@@ -18,7 +18,7 @@ export default async function Making() {
           <h1>Making</h1>
           <p className="sub">
             Made-to-order pieces and commissions still to make.{' '}
-            {blocked ? `${blocked} can't start until the buyer pays.` : jobs.length ? 'Everything here is paid for.' : ''}
+            {blocked ? `${blocked} can't start yet: waiting for a payment or your OK.` : jobs.length ? 'Everything here is paid for.' : ''}
           </p>
         </div>
       </div>
@@ -30,7 +30,7 @@ export default async function Making() {
           </span>
         </div>
       ) : (
-        <ProductionBoard jobs={jobs} today={new Date().toISOString().slice(0, 10)} />
+        <ProductionBoard jobs={jobs} today={view.production.today()} />
       )}
     </>
   );

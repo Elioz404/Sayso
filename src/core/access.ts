@@ -22,6 +22,12 @@ export interface AgentKey {
   lastUsedAt?: string;
 }
 
+export interface OwnerSession {
+  shopId: string;
+  /** owner: signed in with the owner secret. demo: the shared public demo session. */
+  kind: 'owner' | 'demo';
+}
+
 export interface AccessStore {
   setOwnerHash(shopId: string, hash: string): Promise<void>;
   ownerHash(shopId: string): Promise<string | undefined>;
@@ -99,6 +105,12 @@ export class Access {
     return key;
   }
 
+  /** Is `keyId` this shop's key for `secret`? */
+  async isKey(shopId: string, keyId: string, secret: string): Promise<boolean> {
+    const key = await this.store.keyByHash(hashSecret(secret));
+    return key?.shopId === shopId && key.id === keyId;
+  }
+
   /** Returns false if the shop has no such key. */
   async revokeKey(shopId: string, keyId: string): Promise<boolean> {
     const key = (await this.store.listKeys(shopId)).find((k) => k.id === keyId);
@@ -111,19 +123,23 @@ export class Access {
     return this.store.listKeys(shopId);
   }
 
-  /** Signed, expiring owner session for a cookie: "<shopId>.<expiresMs>.<hmac>". */
-  signOwnerSession(shopId: string, ttlMs = 7 * 86_400_000, now = Date.now()): string {
-    const payload = `${shopId}.${now + ttlMs}`;
+  /**
+   * Signed, expiring owner session for a cookie: "<shopId>.<expiresMs>.<kind>.<hmac>". A "demo" session
+   * is the shared public one for the demo shop: it can decide, but sees buyers' details masked.
+   */
+  signOwnerSession(shopId: string, ttlMs = 7 * 86_400_000, now = Date.now(), kind: OwnerSession['kind'] = 'owner'): string {
+    const payload = `${shopId}.${now + ttlMs}.${kind}`;
     return `${payload}.${this.hmac(payload)}`;
   }
 
-  /** Returns the shop id the session belongs to, or undefined if it is forged or expired. */
-  verifyOwnerSession(token: string | undefined, now = Date.now()): string | undefined {
+  /** The session's shop and kind, or undefined if it is forged or expired. */
+  verifyOwnerSession(token: string | undefined, now = Date.now()): OwnerSession | undefined {
     const parts = token?.split('.') ?? [];
-    if (parts.length !== 3) return undefined;
-    const [shopId, expires, sig] = parts;
-    if (!safeEqual(sig, this.hmac(`${shopId}.${expires}`))) return undefined;
-    return Number(expires) > now ? shopId : undefined;
+    if (parts.length !== 4) return undefined;
+    const [shopId, expires, kind, sig] = parts;
+    if (!safeEqual(sig, this.hmac(`${shopId}.${expires}.${kind}`))) return undefined;
+    if (kind !== 'owner' && kind !== 'demo') return undefined;
+    return Number(expires) > now ? { shopId, kind } : undefined;
   }
 
   private hmac(payload: string): string {

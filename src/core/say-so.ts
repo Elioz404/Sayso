@@ -10,6 +10,7 @@ import type { Policy } from './guard/policy.ts';
 import { describeRule } from './guard/policy-store.ts';
 import type { Actor, GuardRecord } from './guard/types.ts';
 import type { PolicyLookup } from './policies.ts';
+import { RateLimit } from './rate-limit.ts';
 import type { Shops } from './shops.ts';
 
 export interface SaySoDeps {
@@ -21,8 +22,12 @@ export interface SaySoDeps {
 
 export type AuditedRecord = GuardRecord & { chainIntact: boolean };
 
+/** Rule drafts per shop per hour: each one is an AI call on the server's daily budget. */
+const DRAFTS_PER_HOUR = 20;
+
 export class SaySo {
   private readonly deps: SaySoDeps;
+  private readonly drafts = new RateLimit(DRAFTS_PER_HOUR, 3_600_000);
 
   constructor(deps: SaySoDeps) {
     this.deps = deps;
@@ -54,6 +59,7 @@ export class SaySo {
   /** Draft rules from the owner's words and submit them. From an agent this always waits for the owner. */
   async proposePolicy(shopId: string, text: string, actor: Actor): Promise<{ record: GuardRecord; unclear: string[] }> {
     if (!this.deps.model) throw new HttpError(503, 'Policy drafting needs an AI key (OPENAI_API_KEY or DEEPSEEK_API_KEY) on the server');
+    if (!this.drafts.allow(shopId)) throw new HttpError(429, `Up to ${DRAFTS_PER_HOUR} rule drafts an hour; try again later`);
     const { shop } = await this.deps.shops.get(shopId);
     const { policy, unclear } = await draftPolicy(this.deps.model, shopId, text, shop.currency).catch((err: unknown) => {
       throw fromLlmError(err, 'Could not draft that policy');

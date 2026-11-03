@@ -7,6 +7,7 @@ import type { Catalog, Product } from './catalog.ts';
 import { findVariant } from './catalog.ts';
 import { HttpError, notFound } from './errors.ts';
 import { formatMoney } from './money.ts';
+import { RateLimit } from './rate-limit.ts';
 
 export interface Listing {
   title: string;
@@ -42,10 +43,14 @@ const MIN_LISTINGS = 3;
 const SEARCH_LIMIT = 20;
 /** Market prices move slowly; caching keeps every page view and agent question from spending a search. */
 const CACHE_MS = 12 * 3_600_000;
+const CACHE_ENTRIES = 500;
+/** Searches (cache misses) per shop per hour: each one spends paid credits. */
+const SEARCHES_PER_HOUR = 60;
 
 export class MarketPrices {
   private readonly source: ListingSource;
   private readonly cache = new Map<string, { at: number; listings: Promise<Listing[]> }>();
+  private readonly searches = new RateLimit(SEARCHES_PER_HOUR, 3_600_000);
 
   constructor(source: ListingSource) {
     this.source = source;
@@ -56,13 +61,16 @@ export class MarketPrices {
     const found = findVariant(catalog, variantId);
     if (!found) throw notFound(`Variant ${variantId}`);
     const query = searchPhrase(found.product);
-    const listings = await this.listings(query);
+    const listings = await this.listings(query, catalog.shop.id);
     return priceReference(query, listings, catalog.shop.currency, found.variant.price);
   }
 
-  private listings(query: string): Promise<Listing[]> {
+  private listings(query: string, shopId: string): Promise<Listing[]> {
     const cached = this.cache.get(query);
     if (cached && Date.now() - cached.at < CACHE_MS) return cached.listings;
+    if (!this.searches.allow(shopId)) return Promise.reject(new HttpError(429, 'Too many market price checks this hour; try again later'));
+    // Oldest entries go first once the cache is full (a Map keeps insertion order).
+    if (this.cache.size >= CACHE_ENTRIES) this.cache.delete(this.cache.keys().next().value!);
     const listings = this.source.search(query, SEARCH_LIMIT).catch((err: unknown) => {
       this.cache.delete(query); // don't remember a failure
       throw new HttpError(502, `Market prices are unavailable right now (${err instanceof Error ? err.message : 'error'})`);
@@ -117,7 +125,7 @@ export function priceReference(query: string, listings: Listing[], currency: str
   };
 }
 
-/** Nearest-rank percentile of sorted values, rounded to whole minor units. */
+/** Percentile of sorted values, interpolated between neighbours and rounded to whole minor units. */
 function percentile(sorted: number[], p: number): number {
   const index = (sorted.length - 1) * p;
   const lower = Math.floor(index);

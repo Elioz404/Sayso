@@ -9,7 +9,7 @@ import { ownerView, pendingFor } from '@/server/owner.ts';
 export default async function Overview() {
   const view = await ownerView();
   if (!view) return null;
-  const { shop, shopId, orders: shopOrders, catalog } = view;
+  const { shop, shopId, orders: shopOrders, catalog, redact } = view;
   const [approvals, orders] = await Promise.all([pendingFor(shopId), shopOrders.list(shopId)]);
   const money = (minor: number) => formatMoney(minor, shop.currency);
   const paid = orders.filter((o) => o.status === 'paid');
@@ -62,8 +62,8 @@ export default async function Overview() {
                     <b>{actionLabel(r.action.kind)}</b>
                     {r.action.amount !== undefined && <span className="amount-md">{formatMoney(r.action.amount, r.action.currency ?? shop.currency)}</span>}
                   </div>
-                  <p className="small soft">{r.action.reason}</p>
-                  <p className="ask-why">{r.decision?.hits.map((h) => h.message).join(' ')}</p>
+                  <p className="small soft">{redact(r.action.reason)}</p>
+                  <p className="ask-why">{redact(r.decision?.hits.map((h) => h.message).join(' ') ?? '')}</p>
                 </div>
                 <div className="ask-side">
                   <Decision id={r.id} />

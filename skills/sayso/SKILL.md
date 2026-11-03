@@ -45,6 +45,7 @@ If `sayso` is not installed, run it from the repo with `node cli/sayso.ts` inste
 | "Grace wants a cobalt vase for $62, half up front, ready in 12 days" | `sayso invoice grace@example.com "Custom bud vase, cobalt" 62.00 --deposit 31.00 --make-days 12 --json` |
 | "What am I making this week?" | `sayso making --json`: made-to-order work, whether PayPal says it is paid, and when it is planned |
 | "Start Grace's vase on Monday" | `sayso making plan <job_id> 2026-11-16 2026-11-27 --json` (moves the plan only, never money) |
+| "The vase is done" | `sayso making done <job_id> --json`, then add tracking when it ships |
 | "Did Grace pay?" | `sayso invoices --json` |
 
 ## When something waits for the owner (exit code 3, `status: pending_approval`)

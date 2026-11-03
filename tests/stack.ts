@@ -14,7 +14,7 @@ import { PayPalClient } from '../src/core/paypal/client.ts';
 import { captureExecutor, refundExecutor, voidExecutor } from '../src/core/paypal/executors.ts';
 import { invoiceExecutor } from '../src/core/paypal/invoices.ts';
 import { policyLookup } from '../src/core/policies.ts';
-import { MemoryPlanStore, Production } from '../src/core/production.ts';
+import { MemoryJobStore, Production } from '../src/core/production.ts';
 import { SaySo } from '../src/core/say-so.ts';
 import { Shops } from '../src/core/shops.ts';
 import { MemoryCartStore, MemoryCatalogStore } from '../src/core/stores.ts';
@@ -53,7 +53,7 @@ export async function stack(model?: ChatModel) {
   const orders = new Orders({ carts, guard, paypal });
   const saySo = new SaySo({ guard, policyFor, shops, model });
   const invoicing = new Invoicing({ guard, carts, shops, paypal, statusTtlMs: 0 }); // tests change PayPal state between reads
-  const production = new Production({ carts, catalogs, guard, invoicing, plans: new MemoryPlanStore() });
+  const production = new Production({ carts, catalogs, guard, invoicing, jobs: new MemoryJobStore() });
   const services: ToolServices = { commerce, orders, saySo, invoicing, production, shops, catalogs, wallets, links: site };
 
   await access.createOwner(demoCatalog.shop.id, 'sk_owner_demo');

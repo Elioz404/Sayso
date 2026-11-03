@@ -15,15 +15,17 @@ export async function POST(request: Request) {
     const { access, catalogs } = await ready();
 
     let shopId: string | undefined;
+    let kind: 'owner' | 'demo' = 'owner';
     if (demo && process.env.SAYSO_DEMO === 'true') {
       shopId = demoCatalog.shop.id;
+      kind = 'demo';
     } else {
       const catalog = shop ? await catalogs.bySlug(shop.trim()) : undefined;
       if (catalog && secret && (await access.checkOwnerSecret(catalog.shop.id, secret.trim()))) shopId = catalog.shop.id;
     }
     if (!shopId) throw new HttpError(401, 'Shop or owner secret is wrong');
 
-    (await cookies()).set(OWNER_COOKIE, access.signOwnerSession(shopId, WEEK * 1000), {
+    (await cookies()).set(OWNER_COOKIE, access.signOwnerSession(shopId, WEEK * 1000, Date.now(), kind), {
       httpOnly: true,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',

@@ -17,6 +17,10 @@ export interface StoredCart {
   captureId?: string;
   /** When the capture went through: the buyer has paid. */
   paidAt?: string;
+  /** Who paid, as PayPal reports it. Trust decisions use this, never the email typed into the cart. */
+  payerEmail?: string;
+  /** Made-to-order lead time of each cart line when the order was placed (null: from stock). */
+  makeDays?: (number | null)[];
   guardRecordId?: string;
   /** The order number the owner and the buyer see, e.g. SAY-7K2M9QXD. */
   merchantOrderNumber?: string;
@@ -38,9 +42,11 @@ export interface CartStore {
   put(cart: StoredCart): Promise<void>;
   /** Carts of a shop, newest first. */
   listByShop(shopId: string, limit?: number): Promise<StoredCart[]>;
+  /** Placed orders that still stand (completed, not released), newest first. */
+  listPlaced(shopId: string, limit?: number): Promise<StoredCart[]>;
   /** A placed order by the number people see (case-insensitive). */
   byNumber(shopId: string, number: string): Promise<StoredCart | undefined>;
-  /** Has this email paid the shop for an order before? */
+  /** Has this PayPal account (by email) paid the shop for an order before? */
   paidBy(shopId: string, email: string): Promise<boolean>;
 }
 
@@ -70,12 +76,18 @@ export class MemoryCartStore implements CartStore {
   async listByShop(shopId: string, limit = Infinity) {
     return this.ofShop(shopId).slice(0, limit).map((c) => structuredClone(c));
   }
+  async listPlaced(shopId: string, limit = Infinity) {
+    return this.ofShop(shopId)
+      .filter((c) => c.cart.status === 'COMPLETED' && !c.released)
+      .slice(0, limit)
+      .map((c) => structuredClone(c));
+  }
   async byNumber(shopId: string, number: string) {
     const c = this.ofShop(shopId).find((x) => x.merchantOrderNumber?.toUpperCase() === number.toUpperCase());
     return c && structuredClone(c);
   }
   async paidBy(shopId: string, email: string) {
-    return this.ofShop(shopId).some((c) => c.captureId && c.cart.customer?.email_address?.toLowerCase() === email.toLowerCase());
+    return this.ofShop(shopId).some((c) => c.captureId && c.payerEmail?.toLowerCase() === email.toLowerCase());
   }
   private ofShop(shopId: string): StoredCart[] {
     return [...this.carts.values()].filter((c) => c.shopId === shopId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));

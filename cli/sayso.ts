@@ -297,14 +297,20 @@ const commands: Record<string, { usage: string; summary: string; run: Command }>
     },
   },
   making: {
-    usage: 'sayso making [plan <job_id> <start> <end>]',
-    summary: 'Made-to-order work still to make, and whether PayPal says it is paid; or plan a job',
+    usage: 'sayso making [plan <job_id> <start> <end> | done <job_id>]',
+    summary: 'Made-to-order work still to make and whether PayPal says it is paid; plan a job, or mark it made',
     async run(args, config, json) {
       const [sub, job, start, end] = args.positional;
       if (sub === 'plan') {
         if (!job || !start || !end) throw new CliError(this.usage, EXIT.usage);
         const r = await tool(config, 'plan_job', { job_id: job, start, end });
-        out(json, r, () => console.log(`${r.job_id}: ${r.making.start} to ${r.making.end}${r.blocked_by_payment ? c.yellow(' (still waiting for payment)') : ''}`));
+        out(json, r, () => console.log(`${r.job_id}: ${r.making.start} to ${r.making.end}${r.blocked ? c.yellow(' (blocked until it is paid and accepted)') : ''}`));
+        return;
+      }
+      if (sub === 'done') {
+        if (!job) throw new CliError(this.usage, EXIT.usage);
+        const r = await tool(config, 'finish_job', { job_id: job });
+        out(json, r, () => console.log(`${r.job_id}: made on ${r.made_on}. ${r.next}`));
         return;
       }
       if (sub) throw new CliError(this.usage, EXIT.usage);

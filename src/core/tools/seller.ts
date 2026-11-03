@@ -2,9 +2,19 @@
 // changes the rules goes through Guard; no tool can approve a say-so request.
 
 import { parseAmount } from '../money.ts';
+import type { PaymentState, ProductionJob } from '../production.ts';
 import { money } from './args.ts';
 import { actor, shop, ToolError, type Tool } from './context.ts';
 import { catalogView, priceReferenceView, sayso } from './views.ts';
+
+/** A job's payment as the owner's agent should say it. */
+const PAYMENT_FOR_OWNER: Record<PaymentState, (j: ProductionJob) => string> = {
+  waiting: (j) => `waiting for ${j.payment.amount}`,
+  held: (j) => `${j.payment.amount} approved by the buyer, waiting for the owner's OK`,
+  deposit: (j) => `deposit paid on ${j.payment.paidOn} (total ${j.payment.amount})`,
+  paid: (j) => `${j.payment.amount} paid on ${j.payment.paidOn}`,
+  unknown: () => 'PayPal could not be read just now',
+};
 
 export const sellerTools: Tool[] = [
   {
@@ -90,9 +100,9 @@ export const sellerTools: Tool[] = [
         what: j.title,
         for: j.customer,
         reference: j.reference,
-        payment: j.payment.state === 'waiting' ? `waiting for ${j.payment.amount}` : `${j.payment.state} (${j.payment.amount}) on ${j.payment.paidOn}`,
+        payment: PAYMENT_FOR_OWNER[j.payment.state](j),
         making: j.making ? `${j.making.start} to ${j.making.end}${j.making.by === 'owner' ? ' (planned)' : ''}` : 'not planned yet',
-        blocked_by_payment: j.blocked,
+        blocked: j.blockedBy === 'payment' ? 'until the buyer pays' : j.blockedBy === 'owner' ? 'until the owner accepts the order' : false,
       }));
     },
   },
@@ -113,7 +123,19 @@ export const sellerTools: Tool[] = [
     },
     async run(input, ctx) {
       const job = await ctx.services.production.plan(shop(ctx), input.job_id, { start: input.start, end: input.end });
-      return { job_id: job.id, making: job.making, blocked_by_payment: job.blocked };
+      return { job_id: job.id, making: job.making, blocked: Boolean(job.blockedBy) };
+    },
+  },
+  {
+    name: 'finish_job',
+    title: 'Mark something as made',
+    description: 'The piece is made: take the job off the made-to-order board. Moves no money; shipping it is add_tracking.',
+    side: 'seller',
+    annotations: { idempotentHint: true },
+    inputSchema: { type: 'object', properties: { job_id: { type: 'string', maxLength: 120, description: 'From production_board' } }, required: ['job_id'] },
+    async run(input, ctx) {
+      const done = await ctx.services.production.finish(shop(ctx), input.job_id);
+      return { job_id: done.id, made_on: done.madeOn, next: 'Off the board. When it ships, add tracking to the order.' };
     },
   },
   {

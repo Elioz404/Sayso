@@ -57,11 +57,11 @@ paths:
           schema: { type: string, maxLength: 200 }
         - name: max_price
           in: query
-          description: Highest price per item in the shop's currency, e.g. "40.00".
-          schema: { type: string, pattern: '^\d+(\.\d{1,2})?$' }
+          description: Highest price per item in the shop's currency, e.g. "40.00" or "$40". No more decimals than the currency has.
+          schema: { type: string, maxLength: 20 }
         - name: in_stock_only
           in: query
-          description: Leave out sold-out variants (made-to-order ones always stay).
+          description: Leave out sold-out variants (made-to-order ones always stay). "true" or "1".
           schema: { type: boolean, default: false }
       responses:
         '200':

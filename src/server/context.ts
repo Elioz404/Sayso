@@ -4,6 +4,8 @@
 
 import 'server-only';
 import { randomBytes } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { Access, MemoryAccessStore, type AccessStore } from '@/core/access.ts';
 import { modelFromEnv, type Budget, type ChatModel } from '@/core/ai/llm.ts';
 import { Commerce } from '@/core/commerce.ts';
@@ -18,7 +20,7 @@ import { links, type Links } from '@/core/links.ts';
 import { MarketPrices } from '@/core/market.ts';
 import { Orders } from '@/core/orders.ts';
 import { PayPalClient } from '@/core/paypal/client.ts';
-import { MemoryPlanStore, Production, type PlanStore } from '@/core/production.ts';
+import { MemoryJobStore, Production, type JobStore } from '@/core/production.ts';
 import { captureExecutor, refundExecutor, voidExecutor } from '@/core/paypal/executors.ts';
 import { invoiceExecutor } from '@/core/paypal/invoices.ts';
 import { policyLookup } from '@/core/policies.ts';
@@ -28,7 +30,7 @@ import { MemoryCartStore, MemoryCatalogStore, type CartStore, type CatalogStore 
 import type { ToolServices } from '@/core/tools/registry.ts';
 import { MemoryWalletStore, walletCheckoutExecutor, Wallets, type WalletStore } from '@/core/wallets.ts';
 import { notifyOwner } from './notify.ts';
-import { Db, PgAccessStore, PgCartStore, PgCatalogStore, PgGuardStore, PgPlanStore, PgPolicyStore, PgWalletStore } from './pg-stores.ts';
+import { Db, PgAccessStore, PgCartStore, PgCatalogStore, PgGuardStore, PgJobStore, PgPolicyStore, PgWalletStore } from './pg-stores.ts';
 
 export interface Context {
   carts: CartStore;
@@ -56,6 +58,11 @@ export function siteLinks(): Links {
   return links(process.env.PUBLIC_BASE_URL ?? 'http://localhost:3000');
 }
 
+/** Whether the APIMatic developer portal was generated into public/developers for this deployment. */
+export function developerPortalBuilt(): boolean {
+  return existsSync(join(process.cwd(), 'public', 'developers', 'index.html'));
+}
+
 /** The shared context, created (and the database migrated and seeded) on first use. */
 export function ready(): Promise<Context> {
   globalForSayso.sayso ??= create().catch((err) => {
@@ -76,7 +83,7 @@ async function create(): Promise<Context> {
   const policies: PolicyStore = db ? new PgPolicyStore(db) : new MemoryPolicyStore();
   const accessStore: AccessStore = db ? new PgAccessStore(db) : new MemoryAccessStore();
   const walletStore: WalletStore = db ? new PgWalletStore(db) : new MemoryWalletStore();
-  const plans: PlanStore = db ? new PgPlanStore(db) : new MemoryPlanStore();
+  const jobs: JobStore = db ? new PgJobStore(db) : new MemoryJobStore();
   const access = new Access(accessStore, sessionSecret());
   const ai = modelFromEnv();
   const model = ai?.model;
@@ -103,7 +110,7 @@ async function create(): Promise<Context> {
   const orders = new Orders({ carts, guard, paypal });
   const saySo = new SaySo({ guard, policyFor, shops, model });
   const invoicing = new Invoicing({ guard, carts, shops, paypal });
-  const production = new Production({ carts, catalogs, guard, invoicing, plans });
+  const production = new Production({ carts, catalogs, guard, invoicing, jobs });
   const wallets = new Wallets({ store: walletStore, policies, guard, commerce, paypal, links: site });
   const channel3 = Channel3.fromEnv();
   const market = channel3 && new MarketPrices(channel3);

@@ -14,7 +14,7 @@ export default async function OrderDetail({ params }: { params: Promise<{ id: st
   const view = await ownerView();
   if (!view) return null;
   const { id } = await params;
-  const { shopId, orders, shop } = view;
+  const { shopId, orders, shop, demo, redact } = view;
   const found = await orders.get(shopId, id).catch((err: unknown) => {
     if (err instanceof HttpError && err.status === 404) return undefined;
     throw err;
@@ -108,11 +108,14 @@ export default async function OrderDetail({ params }: { params: Promise<{ id: st
           <div className="panel">
             <dl className="kv kv-stack">
               <dt>Buyer</dt>
-              <dd>{order.buyer ?? 'Shared by PayPal at payment'}</dd>
+              <dd>{order.buyer ? redact(order.buyer) : 'Shared by PayPal at payment'}</dd>
               <dt>Ship to</dt>
               <dd>
                 {address
-                  ? [address.address_line_1, address.admin_area_2, address.admin_area_1, address.postal_code, address.country_code].filter(Boolean).join(', ')
+                  ? // The shared demo session sees the town, not the street.
+                    [demo ? undefined : address.address_line_1, address.admin_area_2, address.admin_area_1, demo ? undefined : address.postal_code, address.country_code]
+                      .filter(Boolean)
+                      .join(', ')
                   : '-'}
               </dd>
               <dt>Bought via</dt>

@@ -49,6 +49,8 @@ export interface WalletStore {
   /** Finds a wallet by any of its keys: the assistant's, or the one in the buyer's personal URL. */
   byHash(hash: string): Promise<Wallet | undefined>;
   addKey(walletId: string, hash: string): Promise<void>;
+  /** Forget every extra key of a wallet (its personal URLs). */
+  removeKeys(walletId: string): Promise<void>;
 }
 
 /** What a new wallet starts with, before the person picks their own limits. */
@@ -134,7 +136,8 @@ export class Wallets {
         returnUrl: this.deps.links.walletReturn(wallet.id),
         cancelUrl: this.deps.links.walletCancelled(wallet.id),
       },
-      `${wallet.id}-setup-${picked.perOrder}-${picked.daily}`,
+      // A fresh key per attempt: a reconnect must get a new setup token, not PayPal's replay of the last one.
+      `${wallet.id}-setup-${randomBytes(6).toString('hex')}`,
     );
     const link = approveLink(token);
     if (!link) throw new HttpError(502, 'PayPal did not return an approval link');
@@ -153,7 +156,7 @@ export class Wallets {
     if (wallet.status !== 'awaiting_paypal' || !wallet.setupTokenId) throw new HttpError(409, 'Start from the wallet page');
     const setup = await getSetupToken(this.deps.paypal, wallet.setupTokenId);
     if (setup.status !== 'APPROVED') throw new HttpError(409, `PayPal says this approval is ${setup.status.toLowerCase().replace(/_/g, ' ')}`);
-    const token = await createPaymentToken(this.deps.paypal, wallet.setupTokenId, `${wallet.id}-token`);
+    const token = await createPaymentToken(this.deps.paypal, wallet.setupTokenId, `${wallet.setupTokenId}-token`); // one per approval, safe to retry
     const connected: Wallet = {
       ...wallet,
       status: 'connected',
@@ -176,7 +179,10 @@ export class Wallets {
   async disconnect(id: string): Promise<Wallet> {
     const wallet = await this.get(id);
     if (wallet.paymentTokenId) await deletePaymentToken(this.deps.paypal, wallet.paymentTokenId).catch(() => undefined);
-    const off: Wallet = { ...wallet, status: 'disconnected', paymentTokenId: undefined };
+    // Every key issued so far stops working, so a leaked URL can't spend again after a later reconnect.
+    // The hash is rotated to one no key produces; reconnecting issues fresh keys.
+    const off: Wallet = { ...wallet, status: 'disconnected', paymentTokenId: undefined, hash: hashOf(randomBytes(24).toString('base64url')) };
+    await this.deps.store.removeKeys(wallet.id);
     await this.deps.store.put(off);
     return off;
   }
@@ -295,5 +301,8 @@ export class MemoryWalletStore implements WalletStore {
   }
   async addKey(walletId: string, hash: string) {
     this.keys.set(hash, walletId);
+  }
+  async removeKeys(walletId: string) {
+    for (const [hash, id] of this.keys) if (id === walletId) this.keys.delete(hash);
   }
 }

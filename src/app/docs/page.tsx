@@ -5,7 +5,7 @@ import type { Metadata } from 'next';
 import { CopyField } from '@/app/_components/client-ui.tsx';
 import { ABOUT } from '@/core/about.ts';
 import { MCP_VERSIONS } from '@/core/mcp.ts';
-import { siteLinks } from '@/server/context.ts';
+import { developerPortalBuilt, siteLinks } from '@/server/context.ts';
 
 export const metadata: Metadata = {
   title: 'Docs',
@@ -40,6 +40,7 @@ const CLI = [
 export default async function Docs() {
   await connection(); // URLs come from PUBLIC_BASE_URL at request time, not at build time
   const links = siteLinks();
+  const portal = developerPortalBuilt();
   return (
     <main className="wrap page">
       <div className="docs">
@@ -222,9 +223,13 @@ export default async function Docs() {
             </p>
             <p>
               To find shops and products over plain HTTP, use <code>GET /api/shops</code> and <code>GET /api/shops/{'{shop}'}/products?query=</code>. The whole
-              API is described in an <a href={links.openApi}>OpenAPI spec</a>. From it, APIMatic generates the{' '}
-              <a href={links.developers}>developer portal</a> (reference, try-it console and guides) and typed SDKs for TypeScript and Python, in the
-              repository&apos;s <code>sdk/</code> folder.
+              API is described in an <a href={links.openApi}>OpenAPI spec</a>. From it, APIMatic generates{' '}
+              {portal ? (
+                <>
+                  the <a href={links.developers}>developer portal</a> (reference, try-it console and guides) and{' '}
+                </>
+              ) : null}
+              typed SDKs for TypeScript and Python, in the repository&apos;s <code>sdk/</code> folder.
             </p>
           </section>
 

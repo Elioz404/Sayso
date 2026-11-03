@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: 'Orders' };
 export default async function Orders() {
   const view = await ownerView();
   if (!view) return null;
-  const { shopId, orders: shopOrders, invoicing } = view;
+  const { shopId, orders: shopOrders, invoicing, redact } = view;
   const [orders, invoices] = await Promise.all([shopOrders.list(shopId), invoicing.list(shopId)]);
   const placed = orders.filter((o) => o.number);
   const open = orders.length - placed.length;
@@ -62,7 +62,7 @@ export default async function Orders() {
               <li key={i.say_so_id} className="spread">
                 <span className="stack" style={{ gap: 2, minWidth: 0 }}>
                   <b>
-                    {i.number ? `Invoice ${i.number}` : 'Invoice'} · {i.to}
+                    {i.number ? `Invoice ${i.number}` : 'Invoice'} · {redact(i.to)}
                   </b>
                   <span className="small soft">{i.items}</span>
                 </span>

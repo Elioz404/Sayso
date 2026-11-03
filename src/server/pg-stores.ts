@@ -8,7 +8,7 @@ import type { AccessStore, AgentKey } from '@/core/access.ts';
 import type { Catalog } from '@/core/catalog.ts';
 import type { Policy } from '@/core/guard/policy.ts';
 import type { PolicyStore } from '@/core/guard/policy-store.ts';
-import type { Plan, PlanStore } from '@/core/production.ts';
+import type { JobNotes, JobStore } from '@/core/production.ts';
 import type { GuardRecord, GuardStore, RecordQuery, RecordStatus } from '@/core/guard/types.ts';
 import type { CartStore, CatalogStore, StoredCart } from '@/core/stores.ts';
 import type { Wallet, WalletStore } from '@/core/wallets.ts';
@@ -29,7 +29,7 @@ create unique index if not exists sayso_docs_slug on sayso_docs (kind, slug) whe
 create index if not exists sayso_docs_hash on sayso_docs (kind, hash) where hash is not null;
 `;
 
-type Kind = 'catalog' | 'cart' | 'guard' | 'owner' | 'key' | 'policy' | 'wallet' | 'wallet-key' | 'plan';
+type Kind = 'catalog' | 'cart' | 'guard' | 'owner' | 'key' | 'policy' | 'wallet' | 'wallet-key' | 'jobs';
 type Queryable = pg.Pool | pg.PoolClient;
 
 interface Doc {
@@ -151,13 +151,16 @@ export class PgCartStore implements CartStore {
   listByShop(shopId: string, limit?: number) {
     return this.db.list<StoredCart>('cart', shopId, { limit });
   }
+  listPlaced(shopId: string, limit?: number) {
+    return this.db.list<StoredCart>('cart', shopId, { where: ["data->'cart'->>'status' = 'COMPLETED'", "data->'released' is null"], limit });
+  }
   async byNumber(shopId: string, number: string) {
     const cart = await this.db.one<StoredCart>('cart', 'slug', number.toUpperCase());
     return cart?.shopId === shopId ? cart : undefined;
   }
   async paidBy(shopId: string, email: string) {
     const found = await this.db.list<StoredCart>('cart', shopId, {
-      where: ["data->>'captureId' is not null", "lower(data->'cart'->'customer'->>'email_address') = $3"],
+      where: ["data->>'captureId' is not null", "lower(data->>'payerEmail') = $3"],
       params: [email.toLowerCase()],
       limit: 1,
     });
@@ -239,21 +242,22 @@ export class PgPolicyStore implements PolicyStore {
   }
 }
 
-/** One document per shop holding its plans by job id; plans are few and always read together. */
-export class PgPlanStore implements PlanStore {
+/** One document per shop holding its job notes by job id; they are few and always read together. */
+export class PgJobStore implements JobStore {
   private readonly db: Db;
   constructor(db: Db) {
     this.db = db;
   }
   async list(shopId: string) {
-    return (await this.db.get<Record<string, Plan>>('plan', shopId)) ?? {};
+    return (await this.db.get<Record<string, JobNotes>>('jobs', shopId)) ?? {};
   }
-  async put(shopId: string, jobId: string, plan: Plan) {
-    await this.db.transaction(async (client) => {
-      const { rows } = await client.query("select data from sayso_docs where kind = 'plan' and id = $1 for update", [shopId]);
-      const plans = { ...(rows[0]?.data as Record<string, Plan> | undefined), [jobId]: plan };
-      await this.db.put({ kind: 'plan', id: shopId, owner: shopId, data: plans }, client);
-    });
+  /** One statement, so two first notes for a shop arriving together can't lose one. */
+  async update(shopId: string, jobId: string, notes: JobNotes) {
+    await this.db.pool.query(
+      `insert into sayso_docs (kind, id, owner, data) values ('jobs', $1, $1, jsonb_build_object($2::text, $3::jsonb))
+       on conflict (kind, id) do update set data = sayso_docs.data || jsonb_build_object($2::text, coalesce(sayso_docs.data -> $2, '{}'::jsonb) || $3::jsonb)`,
+      [shopId, jobId, JSON.stringify(notes)],
+    );
   }
 }
 
@@ -276,5 +280,8 @@ export class PgWalletStore implements WalletStore {
   }
   async addKey(walletId: string, hash: string) {
     await this.db.put({ kind: 'wallet-key', id: hash, owner: walletId, hash, data: { walletId } });
+  }
+  async removeKeys(walletId: string) {
+    await this.db.pool.query("delete from sayso_docs where kind = 'wallet-key' and owner = $1", [walletId]);
   }
 }

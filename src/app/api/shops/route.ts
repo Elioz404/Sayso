@@ -4,7 +4,7 @@ import { HttpError } from '@/core/errors.ts';
 import { shopSummary } from '@/core/search.ts';
 import { ready } from '@/server/context.ts';
 import { handle, readJson } from '@/server/http.ts';
-import { allow, clientAddress } from '@/server/rate-limit.ts';
+import { clientAddress, onboarding } from '@/server/rate-limit.ts';
 
 const MAX_IMAGE_CHARS = 6_000_000; // ~4.5 MB per photo once base64-encoded
 
@@ -14,7 +14,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   return handle(async () => {
-    if (!allow(`onboard:${clientAddress(request)}`, 10, 3_600_000)) {
+    if (!onboarding.allow(clientAddress(request))) {
       throw new HttpError(429, 'Too many new shops from here; try again later');
     }
     const body = await readJson<{ text?: string; images?: string[]; shop_name?: string; currency?: string; country?: string; agent_label?: string }>(request);

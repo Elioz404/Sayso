@@ -1,15 +1,22 @@
 import 'server-only';
 import { cookies } from 'next/headers';
+import type { OwnerSession } from '@/core/access.ts';
+import { isLive, type Catalog } from '@/core/catalog.ts';
 import { HttpError, notFound } from '@/core/errors.ts';
 import { PayPalError } from '@/core/paypal/client.ts';
 import { ready, siteLinks } from './context.ts';
 
 export const OWNER_COOKIE = 'sayso_owner';
 
-/** Shop id of the signed-in owner, if any. Agent keys never produce an owner session. */
-export async function ownerShopId(): Promise<string | undefined> {
+/** The signed-in owner's session, if any. Agent keys never produce one. */
+export async function ownerSession(): Promise<OwnerSession | undefined> {
   const { access } = await ready();
   return access.verifyOwnerSession((await cookies()).get(OWNER_COOKIE)?.value);
+}
+
+/** Shop id of the signed-in owner, if any. */
+export async function ownerShopId(): Promise<string | undefined> {
+  return (await ownerSession())?.shopId;
 }
 
 export async function requireOwner(request: Request): Promise<string> {
@@ -27,11 +34,16 @@ export function assertSameOrigin(request: Request): void {
   }
 }
 
-/** The id of the live shop at `slug`, for routes scoped to one shop. */
-export async function liveShopId(slug: string): Promise<string> {
+/** The live shop at `slug`, for routes scoped to one shop. */
+export async function liveCatalog(slug: string): Promise<Catalog> {
   const catalog = await (await ready()).catalogs.bySlug(slug);
-  if (!catalog || (catalog.shop.status ?? 'live') !== 'live') throw notFound(`Shop ${slug}`);
-  return catalog.shop.id;
+  if (!catalog || !isLive(catalog)) throw notFound(`Shop ${slug}`);
+  return catalog;
+}
+
+/** A yes/no query parameter: "true" or "1" mean yes. */
+export function flag(search: URLSearchParams, name: string): boolean {
+  return ['true', '1'].includes(search.get(name)?.toLowerCase() ?? '');
 }
 
 /** Who is shopping, as the client says (for the owner's dashboard only; never trusted for access). */

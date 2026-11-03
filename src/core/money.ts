@@ -58,6 +58,7 @@ export function parseAmount(input: string | number, currency: string): number | 
   if (typeof input === 'number') {
     if (!Number.isFinite(input) || input < 0) return undefined;
     text = input.toFixed(decimalsFor(currency));
+    if (Number(text) !== input) return undefined; // 24.555 has a fraction of a cent: refuse, never round
   } else {
     text = input.trim().replace(/^[$€£¥]\s*/, '').replace(new RegExp(`\\s*${currency}$`, 'i'), '');
     if (THOUSANDS.test(text)) text = text.replace(/,/g, '');

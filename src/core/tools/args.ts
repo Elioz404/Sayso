@@ -33,6 +33,7 @@ export const items: JsonSchema = {
   },
 };
 
-export const money = { type: 'string', pattern: '^\\d+(\\.\\d{1,2})?$', description: 'Decimal amount in the shop currency, e.g. "12.50"' } as const;
+/** Read by parseAmount in the shop's currency (its decimals, "$1,250"), so the schema only bounds length. */
+export const money = { type: 'string', minLength: 1, maxLength: 20, description: 'Amount in the shop currency, e.g. "12.50"' } as const;
 
 export const shopArg = { type: 'string', maxLength: 80, description: "The shop's slug from search_products. Only needed on the all-shops endpoint." } as const;

@@ -6,16 +6,15 @@ import { Decision, LoginForm } from '@/app/_components/owner-actions.tsx';
 import { actionLabel, Status, Who } from '@/app/_components/ui.tsx';
 import { When } from '@/app/_components/time.tsx';
 import { DEFAULT_CURRENCY, formatMoney } from '@/core/money.ts';
-import { ready } from '@/server/context.ts';
-import { ownerShopId } from '@/server/http.ts';
+import { ownerView } from '@/server/owner.ts';
 
 export const metadata: Metadata = { title: 'Your say-so' };
 
 export default async function Approve({ params }: { params: Promise<{ id: string }> }) {
   await connection();
   const { id } = await params;
-  const shopId = await ownerShopId();
-  if (!shopId) {
+  const view = await ownerView();
+  if (!view) {
     return (
       <main className="wrap wrap-narrow page stack" style={{ gap: 'var(--s6)' }}>
         <div className="stack" style={{ gap: 'var(--s2)' }}>
@@ -27,7 +26,8 @@ export default async function Approve({ params }: { params: Promise<{ id: string
     );
   }
 
-  const record = await (await ready()).saySo.record(shopId, id).catch(() => undefined);
+  const { redact } = view;
+  const record = await view.saySo.record(view.shopId, id).catch(() => undefined);
   if (!record) {
     return (
       <main className="wrap wrap-narrow page stack">
@@ -42,7 +42,7 @@ export default async function Approve({ params }: { params: Promise<{ id: string
   const pending = record.status === 'pending_approval';
   const decided = record.events.find((e) => e.type === 'approved' || e.type === 'rejected');
   const note = decided?.data?.note;
-  const effects = (record.simulation?.effects ?? []).map((e) => e.replace(/^- /, ''));
+  const effects = (record.simulation?.effects ?? []).map((e) => redact(e.replace(/^- /, '')));
 
   return (
     <main className="wrap wrap-narrow page" style={{ paddingTop: 'var(--s6)' }}>
@@ -57,10 +57,10 @@ export default async function Approve({ params }: { params: Promise<{ id: string
         <div className="stack" style={{ gap: 6 }}>
           <span className="soft">{actionLabel(action.kind)}</span>
           {action.amount !== undefined ? <span className="amount">{formatMoney(action.amount, action.currency ?? DEFAULT_CURRENCY)}</span> : <h1>{actionLabel(action.kind)}</h1>}
-          {action.counterparty && <span className="small soft">to {action.counterparty}</span>}
+          {action.counterparty && <span className="small soft">to {redact(action.counterparty)}</span>}
         </div>
 
-        <p className="reason">&ldquo;{action.reason}&rdquo;</p>
+        <p className="reason">&ldquo;{redact(action.reason)}&rdquo;</p>
 
         <ul className="facts">
           <li>
@@ -75,7 +75,7 @@ export default async function Approve({ params }: { params: Promise<{ id: string
             <span>Needs you</span>
             <span className="stack needs" style={{ gap: 4 }}>
               {record.decision?.hits.map((h) => (
-                <span key={h.ruleId + h.message}>{h.message}</span>
+                <span key={h.ruleId + h.message}>{redact(h.message)}</span>
               ))}
             </span>
           </li>

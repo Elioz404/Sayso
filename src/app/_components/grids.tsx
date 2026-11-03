@@ -16,6 +16,7 @@ import {
   themeQuartz,
   NumberEditorModule,
   RenderApiModule,
+  TextEditorModule,
   RowApiModule,
   UndoRedoEditModule,
   type CellValueChangedEvent,
@@ -26,7 +27,7 @@ import { AgGridReact } from 'ag-grid-react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { VariantRow } from '@/core/catalog-view.ts';
-import { decimalsFor, formatMoney } from '@/core/money.ts';
+import { formatMoney, parseAmount, toMoney } from '@/core/money.ts';
 import { callApi } from './api.ts';
 import { formatWhen } from './time.tsx';
 import { Status } from './ui.tsx';
@@ -41,6 +42,7 @@ ModuleRegistry.registerModules([
   QuickFilterModule,
   TooltipModule,
   NumberEditorModule,
+  TextEditorModule,
   UndoRedoEditModule,
   RowApiModule,
   RenderApiModule,
@@ -369,13 +371,18 @@ export function CatalogGrid({ rows, market: marketEnabled }: { rows: VariantRow[
         type: 'rightAligned',
         cellClass: [...RIGHT, 'cell-editable'],
         editable: true,
-        cellEditor: 'agNumberCellEditor',
-        cellEditorParams: (p: { data?: VariantRow }) => ({ min: 0, precision: decimalsFor(p.data?.currency ?? 'USD'), showStepperButtons: false }),
-        // The grid edits whole units ("24.5"); the shop keeps minor units.
-        valueGetter: (p) => (p.data ? p.data.price / 10 ** decimalsFor(p.data.currency) : null),
+        cellEditor: 'agTextCellEditor',
+        // The owner types an amount ("24.50", "$1,200"); it is read with the same parser the server uses,
+        // into minor units, so no float ever touches a price.
+        valueGetter: (p) => (p.data ? toMoney(p.data.price, p.data.currency).value : null),
         valueSetter: (p) => {
-          if (!p.data || typeof p.newValue !== 'number' || !Number.isFinite(p.newValue)) return false;
-          p.data.price = Math.round(p.newValue * 10 ** decimalsFor(p.data.currency));
+          if (!p.data) return false;
+          const minor = parseAmount(String(p.newValue ?? ''), p.data.currency);
+          if (!minor) {
+            setFeedback({ tone: 'error', text: `Not saved: a price looks like 24.00 (${p.data.currency}).` });
+            return false;
+          }
+          p.data.price = minor;
           return true;
         },
         valueFormatter: (p) => (p.data ? formatMoney(p.data.price, p.data.currency) : ''),
@@ -402,7 +409,7 @@ export function CatalogGrid({ rows, market: marketEnabled }: { rows: VariantRow[
     const row = e.data;
     const field = e.colDef.field as 'price' | 'stock';
     if (reverting.current.delete(`${row.id}:${field}`) || e.oldValue === e.newValue) return;
-    const body = field === 'price' ? { price: (row.price / 10 ** decimalsFor(row.currency)).toFixed(decimalsFor(row.currency)) } : { stock: row.stock };
+    const body = field === 'price' ? { price: toMoney(row.price, row.currency).value } : { stock: row.stock };
     try {
       const saved = await callApi<VariantRow>(`/api/owner/variants/${encodeURIComponent(row.id)}`, 'PATCH', body);
       e.node.setData(saved);

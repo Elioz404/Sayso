@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: 'Activity' };
 export default async function Activity() {
   const view = await ownerView();
   if (!view) return null;
-  const { saySo, shopId, shop } = view;
+  const { saySo, shopId, shop, redact } = view;
   const audit = await saySo.audit(shopId, 500);
   const tampered = audit.filter((r) => !r.chainIntact).length;
 
@@ -23,7 +23,7 @@ export default async function Activity() {
       by: actorName(r.action.actor),
       byAgent: agent,
       status: r.status,
-      why: r.decision?.hits.map((h) => h.message).join(' ') || r.action.reason,
+      why: redact(r.decision?.hits.map((h) => h.message).join(' ') || r.action.reason),
       tampered: !r.chainIntact,
     };
   });
