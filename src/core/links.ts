@@ -3,6 +3,8 @@
 
 export interface Links {
   base: string;
+  /** A full URL for an asset given as a path on this site (/photos/mug.webp); full URLs pass through. */
+  asset(url: string): string;
   /** Every shop, for any shopping assistant. */
   shoppingMcp: string;
   /** Every shop plus the buyer's saved PayPal. */
@@ -39,6 +41,7 @@ export function links(baseUrl: string): Links {
   const base = baseUrl.replace(/\/$/, '');
   return {
     base,
+    asset: (url) => (url.startsWith('/') ? `${base}${url}` : url),
     shoppingMcp: `${base}/api/shopping/mcp`,
     shoppingMcpFor: (key) => `${base}/api/shopping/mcp/${key}`,
     shopMcp: (slug) => `${base}/api/shops/${slug}/mcp`,

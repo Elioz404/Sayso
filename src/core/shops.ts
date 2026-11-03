@@ -57,7 +57,7 @@ export class Shops {
       try {
         const created = await createCatalogProduct(
           this.deps.paypal,
-          { name: product.name, description: product.description, imageUrl: product.imageUrl, homeUrl: this.deps.links.shopPage(catalog.shop.slug) },
+          { name: product.name, description: product.description, imageUrl: product.imageUrl && this.deps.links.asset(product.imageUrl), homeUrl: this.deps.links.shopPage(catalog.shop.slug) },
           `${shopId}-${product.id}-catalog`,
         );
         registered.set(product.id, created.id);

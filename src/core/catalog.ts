@@ -21,28 +21,18 @@ export interface Product {
   description: string;
   category: string;
   tags: string[];
+  /** A full URL, or a path on this site such as /photos/mugs.webp. */
   imageUrl?: string;
-  /** Who took `imageUrl` and under what licence, when it isn't the owner's own photo. */
-  imageCredit?: PhotoCredit;
   /** PayPal Catalog product id once synced (POST /v1/catalogs/products). */
   paypalProductId?: string;
   variants: Variant[];
 }
 
-/** Attribution for an openly licensed photo: shown next to it wherever it appears. */
-export interface PhotoCredit {
-  author: string;
-  /** e.g. "CC BY 4.0" */
-  license: string;
-  /** The photo's page, where its licence is stated. */
-  source: string;
-}
-
 export interface Photo {
+  /** A full URL, or a path on this site. */
   url: string;
   /** What the photo shows, for people who can't see it. */
   alt: string;
-  credit?: PhotoCredit;
 }
 
 export interface ShippingRule {
@@ -71,6 +61,8 @@ export interface Shop {
   returnPolicy: { days: number; buyerPaysReturn: boolean };
   /** A picture of the shop or its workshop, at the top of its page. */
   cover?: Photo;
+  /** A made-up shop for trying Sayso (the demo shop and judges' tour copies): its page says so. */
+  demo?: boolean;
   /** Drafts come out of onboarding; agents can only shop once the owner publishes. Missing = live. */
   status?: 'draft' | 'live';
   /** private: reachable by its own link and its owner, never in shop lists (a judge's tour copy). Missing = public. */

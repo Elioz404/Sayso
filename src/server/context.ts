@@ -9,8 +9,7 @@ import { join } from 'node:path';
 import { Access, MemoryAccessStore, type AccessStore } from '@/core/access.ts';
 import { modelFromEnv, type Budget, type ChatModel } from '@/core/ai/llm.ts';
 import { Commerce } from '@/core/commerce.ts';
-import type { Catalog } from '@/core/catalog.ts';
-import { demoCatalog } from '@/core/demo-shop.ts';
+import { demoCatalog, refreshDemoPresentation } from '@/core/demo-shop.ts';
 import { Guard, MemoryGuardStore } from '@/core/guard/engine.ts';
 import { defaultMerchantPolicy } from '@/core/guard/policy.ts';
 import { MemoryPolicyStore, policyUpdateExecutor, type PolicyStore } from '@/core/guard/policy-store.ts';
@@ -160,25 +159,6 @@ function sessionSecret(): string {
   if (process.env.NODE_ENV === 'production') throw new Error('SAYSO_SECRET must be set in production');
   // Dev only: owner sessions just won't survive a restart.
   return randomBytes(32).toString('hex');
-}
-
-/**
- * The demo shop's words and pictures follow the code (photos, names, descriptions), while what visitors
- * changed (stock, prices, orders, payouts) stays as it is. Returns whether anything changed.
- */
-function refreshDemoPresentation(live: Catalog, template: Catalog): boolean {
-  const before = JSON.stringify(live);
-  live.shop.cover = structuredClone(template.shop.cover);
-  for (const product of live.products) {
-    const from = template.products.find((p) => p.id === product.id);
-    if (!from) continue;
-    Object.assign(product, { name: from.name, description: from.description, imageUrl: from.imageUrl, imageCredit: structuredClone(from.imageCredit) });
-    for (const variant of product.variants) {
-      const v = from.variants.find((x) => x.id === variant.id);
-      if (v) Object.assign(variant, { title: v.title, attributes: structuredClone(v.attributes) });
-    }
-  }
-  return JSON.stringify(live) !== before;
 }
 
 /**

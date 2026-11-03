@@ -30,9 +30,15 @@ const plexMono = localFont({
   display: 'swap',
 });
 
+const DESCRIPTION = 'Sell to AI shoppers and run your shop with your own AI agent. Nothing moves without your say-so.';
+
 export const metadata: Metadata = {
+  // Share cards and canonical links point at this deployment's public address.
+  metadataBase: new URL(process.env.PUBLIC_BASE_URL ?? 'http://localhost:3000'),
   title: { default: 'Sayso', template: '%s · Sayso' },
-  description: 'Sell to AI shoppers and run your shop with your own AI agent. Nothing moves without your say-so.',
+  description: DESCRIPTION,
+  openGraph: { siteName: 'Sayso', title: 'Sayso', description: DESCRIPTION, type: 'website' },
+  twitter: { card: 'summary_large_image', title: 'Sayso', description: DESCRIPTION },
 };
 
 export const viewport: Viewport = {

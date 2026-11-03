@@ -84,7 +84,7 @@ export function shopJsonLd(catalog: Catalog, links: Links): Record<string, unkno
           name: variant.title && variant.title !== 'Default' ? `${product.name} (${variant.title})` : product.name,
           description: product.description,
           category: product.category,
-          image: product.imageUrl,
+          image: product.imageUrl && links.asset(product.imageUrl),
         },
         description: variant.madeToOrderDays !== undefined ? `Made to order in ${variant.madeToOrderDays} days, ${formatMoney(variant.price, shop.currency)}` : undefined,
       })),

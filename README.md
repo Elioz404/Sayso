@@ -230,4 +230,4 @@ APIMatic outputs are rebuilt with `npm run apimatic -- sdk` and `npm run apimati
 
 ## License
 
-[MIT](LICENSE). The *Making* board uses Bryntum Scheduler under the trial Bryntum offers hackathon participants; that package is covered by Bryntum's license, not MIT.
+[MIT](LICENSE). The *Making* board uses Bryntum Scheduler under the trial Bryntum offers hackathon participants; that package is covered by Bryntum's license, not MIT. Maya Ceramics is a made-up demo shop; its photos in `public/photos` are AI-generated.

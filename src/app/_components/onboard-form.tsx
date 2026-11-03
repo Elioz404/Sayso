@@ -38,7 +38,7 @@ async function shrink(file: File, max = 1280): Promise<string> {
 }
 
 const EXAMPLE = `Hand-thrown mugs, 12 oz, $34. Sage green (6 left) and speckled white (1).
-Ramen bowls $48, 3 left. Custom vases $62, made to order in about 10 days.
+Ramen bowls $48, 3 left. Custom bud vases $62, made to order in about 10 days.
 USPS in the US $8.95, free over $75. I also ship to Canada for $28.`;
 
 export function OnboardFlow({ paypalLogin }: { paypalLogin: boolean }) {

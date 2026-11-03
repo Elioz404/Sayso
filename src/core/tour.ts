@@ -178,7 +178,7 @@ export class Tours {
         {
           email: `client-${tour.id.slice(5)}@example.com`,
           name: 'Ana',
-          items: [{ name: 'Cobalt vase, made to order', price: '62.00' }],
+          items: [{ name: 'Cobalt bud vase, made to order', price: '62.00' }],
           deposit: '31.00',
           make_days: 12,
           note: 'Cobalt glaze, as we agreed in DMs. Half now, half when it ships.',

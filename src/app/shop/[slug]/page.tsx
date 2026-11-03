@@ -4,7 +4,7 @@
 import type { Metadata } from 'next';
 import { connection } from 'next/server';
 import { CopyField } from '@/app/_components/client-ui.tsx';
-import { PhotoCredits, ShopPhoto } from '@/app/_components/photo.tsx';
+import { ShopPhoto } from '@/app/_components/photo.tsx';
 import { Icon } from '@/app/_components/ui.tsx';
 import { available, isLive, type Catalog, type Variant } from '@/core/catalog.ts';
 import { jsonLdScript, shopJsonLd } from '@/core/discovery.ts';
@@ -46,10 +46,6 @@ export default async function ShopPage({ params }: { params: Promise<{ slug: str
   const { shop, products } = catalog;
   const money = (minor: number) => formatMoney(minor, shop.currency);
   const freeOver = shop.shipping.find((s) => s.freeAbove && s.countries.includes(shop.country))?.freeAbove;
-  const credits = [
-    ...(shop.cover?.credit ? [{ what: 'The studio', credit: shop.cover.credit }] : []),
-    ...products.flatMap((p) => (p.imageCredit ? [{ what: p.name, credit: p.imageCredit }] : [])),
-  ];
 
   return (
     <main className="storefront">
@@ -163,9 +159,11 @@ export default async function ShopPage({ params }: { params: Promise<{ slug: str
         </div>
       </section>
 
-      <div className="wrap">
-        <PhotoCredits credits={credits} />
-      </div>
+      {shop.demo && (
+        <p className="wrap small muted">
+          {shop.name} is a demo shop on the PayPal sandbox: the maker, the work and the photos (AI-generated) are made up, and no real money moves.
+        </p>
+      )}
     </main>
   );
 }
