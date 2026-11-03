@@ -112,8 +112,27 @@ body::before { content: ''; position: fixed; inset: 0 0 auto; height: env(safe-a
 .nav-link { color: var(--ink-2); text-decoration: none; font-weight: 550; padding-block: 6px; }
 .nav-link:hover { color: var(--ink); }
 .nav-link[aria-current='page'] { color: var(--ink); box-shadow: inset 0 -2px 0 var(--say); }
-.site-footer { border-top: 1px solid var(--rule); color: var(--ink-3); font-size: var(--t-sm); }
-.site-footer .wrap { display: flex; gap: var(--s2) var(--s5); flex-wrap: wrap; padding-block: var(--s5) var(--s6); }
+.site-footer { border-top: 1px solid var(--rule); background: var(--paper-2); color: var(--ink-2); font-size: var(--t-sm); }
+.footer-grid { display: grid; grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr)); gap: var(--s6); padding-block: var(--s7) var(--s6); }
+.footer-about { display: flex; flex-direction: column; gap: var(--s3); max-width: 42ch; }
+.footer-links { display: flex; flex-direction: column; gap: var(--s2); }
+.footer-links b { color: var(--ink); font-size: var(--t-sm); }
+.footer-links a { color: var(--ink-2); text-decoration: none; }
+.footer-links a:hover { color: var(--ink); text-decoration: underline; }
+.footer-base { display: flex; justify-content: space-between; gap: var(--s2) var(--s5); flex-wrap: wrap; padding-block: var(--s4) var(--s5); border-top: 1px solid var(--rule); color: var(--ink-3); }
+
+/* ---------- docs ---------- */
+.docs { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: var(--s7); align-items: start; }
+.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + var(--header-h) + var(--s5)); display: flex; flex-direction: column; gap: var(--s3); }
+.toc ol { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 2px; border-left: 1px solid var(--rule); }
+.toc a { display: block; padding: 5px 0 5px var(--s3); margin-left: -1px; border-left: 2px solid transparent; color: var(--ink-2); text-decoration: none; font-size: var(--t-sm); }
+.toc a:hover { color: var(--ink); border-left-color: var(--rule-strong); }
+.docs-body { display: flex; flex-direction: column; gap: var(--s7); max-width: 760px; min-width: 0; }
+.doc-section { display: flex; flex-direction: column; gap: var(--s4); scroll-margin-top: calc(var(--header-h) + var(--s5)); }
+.doc-section h2 { font-size: var(--t-xl); padding-top: var(--s5); border-top: 1px solid var(--rule); }
+.docs-body p, .docs-body .steps li > span { max-width: 56ch; }
+.doc-section td:first-child { white-space: nowrap; font-weight: 600; }
+.doc-section td.mono { white-space: normal; overflow-wrap: anywhere; font-weight: 500; }
 
 /* ---------- controls ---------- */
 .btn {
@@ -351,7 +370,11 @@ body:has(.owner) .site-header, body:has(.owner) .site-footer { display: none; }
   .rail-backdrop { display: block; position: fixed; inset: 0; z-index: 40; background: rgb(10 16 13 / 0.45); opacity: 0; pointer-events: none; transition: opacity 0.2s; }
   .is-open .rail-backdrop { opacity: 1; pointer-events: auto; }
   .owner-main { padding: var(--s5) max(16px, env(safe-area-inset-right, 0px)) var(--s8) max(16px, env(safe-area-inset-left, 0px)); }
-  .detail-grid, .hero, .split, .split-start { grid-template-columns: minmax(0, 1fr); }
+  .detail-grid, .hero, .split, .split-start, .docs { grid-template-columns: minmax(0, 1fr); }
+  .docs { gap: var(--s5); }
+  .toc { position: static; padding: var(--s4); border: 1px solid var(--rule); border-radius: var(--radius); background: var(--sheet); }
+  .footer-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .footer-about { grid-column: 1 / -1; }
   .hero { gap: var(--s6); }
   .ways > div { grid-template-columns: minmax(0, 1fr); gap: var(--s2); }
   .flow { grid-template-columns: minmax(0, 1fr); }
@@ -360,7 +383,8 @@ body:has(.owner) .site-header, body:has(.owner) .site-footer { display: none; }
 @media (max-width: 640px) {
   .page { padding-block: var(--s5) var(--s7); }
   .nav { gap: var(--s4); }
-  .nav .nav-link:first-child { display: none; }
+  .nav .nav-link:first-child, .nav .nav-link[href='/shop/maya-ceramics'] { display: none; }
+  .doc-section td:first-child { white-space: normal; }
   .field-row { grid-template-columns: minmax(0, 1fr); }
   .ask { grid-template-columns: minmax(0, 1fr); }
   .ask-side { align-items: stretch; }

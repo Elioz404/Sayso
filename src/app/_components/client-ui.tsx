@@ -9,6 +9,7 @@ export function NavLinks({ signedIn }: { signedIn: boolean }) {
   const links = [
     { href: '/start', label: 'Start selling' },
     { href: '/shop/maya-ceramics', label: 'Demo shop' },
+    { href: '/docs', label: 'Docs' },
   ];
   return (
     <nav className="nav" aria-label="Main">

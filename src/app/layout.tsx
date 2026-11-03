@@ -40,10 +40,32 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         </header>
         {children}
         <footer className="site-footer">
-          <div className="wrap">
-            <span>Sayso · PayPal sandbox demo</span>
-            <span>Payments by PayPal. Nothing moves without the owner&apos;s say-so.</span>
-            <a href="/api/health">Status</a>
+          <div className="wrap footer-grid">
+            <div className="footer-about">
+              <a href="/" className="brand" aria-label="Sayso home">
+                <Mark size={24} />
+                <span className="brand-word">sayso</span>
+              </a>
+              <p>Small shops for AI shoppers, run by their owners&apos; own agents. Nothing moves without your say-so.</p>
+              <p className="muted">A demo on the PayPal sandbox. No real money moves.</p>
+            </div>
+            <nav aria-label="Product" className="footer-links">
+              <b>Product</b>
+              <a href="/start">Start selling</a>
+              <a href="/shop/maya-ceramics">Demo shop</a>
+              <a href="/owner">Owner sign-in</a>
+              <a href="/docs">Docs</a>
+            </nav>
+            <nav aria-label="Project" className="footer-links">
+              <b>Project</b>
+              <a href="https://github.com/Elioz404/Sayso">Source on GitHub</a>
+              <a href="https://github.com/Elioz404/Sayso/blob/main/LICENSE">MIT license</a>
+              <a href="/api/health">Status</a>
+            </nav>
+          </div>
+          <div className="wrap footer-base">
+            <span>Built for the PayPal AI Hackathon, 2026.</span>
+            <span>Payments by PayPal.</span>
           </div>
         </footer>
       </body>
