@@ -5,7 +5,7 @@
 import 'server-only';
 import { randomBytes } from 'node:crypto';
 import { Access, MemoryAccessStore, type AccessStore } from '@/core/access.ts';
-import { modelFromEnv, type ChatModel } from '@/core/ai/llm.ts';
+import { modelFromEnv, type Budget, type ChatModel } from '@/core/ai/llm.ts';
 import { Commerce, MemoryCartStore, MemoryCatalogStore, type CartStore, type CatalogStore } from '@/core/commerce.ts';
 import { demoCatalog } from '@/core/demo-shop.ts';
 import { Guard, MemoryGuardStore } from '@/core/guard/engine.ts';
@@ -28,6 +28,7 @@ interface Context {
   policies: PolicyStore;
   access: Access;
   model?: ChatModel;
+  aiBudget?: Budget;
   guard: Guard;
   commerce: Commerce;
   shops: Shops;
@@ -62,7 +63,8 @@ async function create(): Promise<Context> {
   const policies = db ? new PgPolicyStore(db) : new MemoryPolicyStore();
   const accessStore: AccessStore = db ? new PgAccessStore(db) : new MemoryAccessStore();
   const access = new Access(accessStore, sessionSecret());
-  const model = modelFromEnv();
+  const ai = modelFromEnv();
+  const model = ai?.model;
   const url = baseUrl();
   const fallbackPolicy = (ownerId: string) => (ownerId.startsWith('shop_') ? defaultMerchantPolicy(ownerId) : defaultBuyerPolicy(ownerId));
 
@@ -84,7 +86,7 @@ async function create(): Promise<Context> {
   const tools: ToolServices = { commerce, seller, shops, catalogs, approvalsUrl: `${url}/approve` };
 
   await seedDemo(catalogs, policies, access);
-  return { paypal, carts, catalogs, guardStore, policies, access, model, guard, commerce, shops, seller, tools, baseUrl: url };
+  return { paypal, carts, catalogs, guardStore, policies, access, model, aiBudget: ai?.budget, guard, commerce, shops, seller, tools, baseUrl: url };
 }
 
 function sessionSecret(): string {

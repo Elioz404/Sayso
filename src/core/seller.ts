@@ -3,7 +3,7 @@
 // changes the rules is submitted to Guard; only `decide()` approves, and only the owner reaches it.
 
 import { draftPolicy } from './ai/policy-draft.ts';
-import type { ChatModel } from './ai/llm.ts';
+import { LlmError, type ChatModel } from './ai/llm.ts';
 import { verifyAuditChain, type Guard } from './guard/engine.ts';
 import { defaultMerchantPolicy, type Policy } from './guard/policy.ts';
 import { describeRule, type PolicyStore } from './guard/policy-store.ts';
@@ -112,8 +112,10 @@ export class Seller {
 
   /** Draft rules from the owner's words and submit them. From an agent this always waits for the owner. */
   async proposePolicy(shopId: string, text: string, actor: Actor, currency: string): Promise<{ record: GuardRecord; unclear: string[] }> {
-    if (!this.deps.model) throw new HttpError(503, 'Policy drafting needs DEEPSEEK_API_KEY to be configured');
+    if (!this.deps.model) throw new HttpError(503, 'Policy drafting needs an AI key (OPENAI_API_KEY or DEEPSEEK_API_KEY) on the server');
     const { policy, unclear } = await draftPolicy(this.deps.model, shopId, text, currency).catch((err: unknown) => {
+      if (err instanceof LlmError && err.status === 429) throw new HttpError(429, err.message);
+      if (err instanceof LlmError) throw new HttpError(502, 'The AI service failed; please try again in a minute');
       throw new HttpError(422, err instanceof Error ? err.message : 'Could not draft that policy');
     });
     const record = await this.deps.guard.submit({

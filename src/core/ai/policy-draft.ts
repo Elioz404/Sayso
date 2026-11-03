@@ -26,7 +26,7 @@ export interface DraftedPolicy {
 
 export async function draftPolicy(model: ChatModel, ownerId: string, text: string, currency: string): Promise<DraftedPolicy> {
   if (!text.trim()) throw new Error('Write at least one rule');
-  const raw = (await model.json({ system: SYSTEM, user: `Currency: ${currency}\nOwner's rules:\n"""\n${text.slice(0, 2_000)}\n"""` })) as {
+  const raw = (await model.json({ system: SYSTEM, user: `Currency: ${currency}\nOwner's rules:\n"""\n${text.slice(0, 2_000)}\n"""`, maxOutputTokens: 600 })) as {
     rules?: unknown;
     unclear?: unknown;
   };

@@ -4,7 +4,7 @@
 
 import type { Access } from './access.ts';
 import { draftCatalog, type OnboardingInput } from './ai/onboarding.ts';
-import type { ChatModel } from './ai/llm.ts';
+import { LlmError, type ChatModel } from './ai/llm.ts';
 import { findVariant, type Catalog } from './catalog.ts';
 import { HttpError, type CatalogStore } from './commerce.ts';
 import type { PayPalClient } from './paypal/client.ts';
@@ -33,8 +33,10 @@ export class Shops {
   }
 
   async onboard(input: OnboardingInput, agentLabel = 'my agent'): Promise<OnboardResult> {
-    if (!this.deps.model) throw new HttpError(503, 'Onboarding needs DEEPSEEK_API_KEY to be configured');
+    if (!this.deps.model) throw new HttpError(503, 'Onboarding needs an AI key (OPENAI_API_KEY or DEEPSEEK_API_KEY) on the server');
     const { catalog, questions } = await draftCatalog(this.deps.model, input).catch((err: unknown) => {
+      if (err instanceof LlmError && err.status === 429) throw new HttpError(429, err.message);
+      if (err instanceof LlmError) throw new HttpError(502, 'The AI service failed; please try again in a minute');
       throw new HttpError(422, err instanceof Error ? err.message : 'Could not read that catalog');
     });
     await this.deps.catalogs.save(catalog);

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { ChatModel } from '../src/core/ai/llm.ts';
-import { openAICompatible } from '../src/core/ai/llm.ts';
+import { Budget, LlmError, modelFromEnv, openAICompatible } from '../src/core/ai/llm.ts';
 import { draftCatalog, normalizeDraft } from '../src/core/ai/onboarding.ts';
 import { draftPolicy, validateRules } from '../src/core/ai/policy-draft.ts';
 import { evaluate } from '../src/core/guard/policy.ts';
@@ -33,7 +33,7 @@ const candleShop = {
     },
     { name: 'Wax Melts', variants: [{ title: 'Sampler', price: '-5' }] },
   ],
-  shipping: [{ name: 'USPS', countries: ['us'], price: '6.50', min_days: 2, max_days: 5 }],
+  shipping: [{ name: 'USPS', countries: ['us'], price: '6.50', free_above: '50', min_days: 2, max_days: 5 }],
   questions: ['Do you ship to Canada?'],
 };
 
@@ -53,7 +53,7 @@ test('draft catalog: prices become cents, unknowns become questions, nothing is 
   assert.equal(cedar.inventory, 1, 'unknown stock defaults to one piece, and asks');
   assert.equal(catalog.products[0].variants.length, 2, 'the unpriced variant is not for sale');
 
-  assert.deepEqual(catalog.shop.shipping.map((s) => [s.countries, s.price]), [[['US'], 650]]);
+  assert.deepEqual(catalog.shop.shipping.map((s) => [s.countries, s.price, s.freeAbove]), [[['US'], 650, 5_000]]);
   assert.ok(questions.includes('Do you ship to Canada?'));
   assert.ok(questions.some((q) => q.includes('Mystery') && q.includes('cost')));
   assert.ok(questions.some((q) => q.includes('Cedar') && q.includes('assumed 1')));
@@ -130,4 +130,39 @@ test('OpenAI-compatible client sends images as content parts and retries non-JSO
   assert.equal(bodies[0].model, 'deepseek-flash');
   assert.deepEqual(bodies[0].response_format, { type: 'json_object' });
   assert.equal(bodies[0].messages[1].content[1].type, 'image_url');
+});
+
+test('OpenAI: low-detail photos, capped output, and a daily budget that stops spending', async () => {
+  const bodies: Record<string, any>[] = [];
+  // $1 per million tokens both ways; each call reports 300k tokens = $0.30.
+  const budget = new Budget(0.5, 1, 1);
+  const model = openAICompatible({
+    provider: 'openai',
+    apiKey: 'k',
+    budget,
+    fetch: (async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(String(init.body)));
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }], usage: { prompt_tokens: 200_000, completion_tokens: 100_000 } }), { status: 200 });
+    }) as typeof fetch,
+  });
+
+  await model.json({ system: 's', user: 'u', images: ['data:image/png;base64,AA'], maxOutputTokens: 600 });
+  assert.equal(bodies[0].model, 'gpt-4.1-mini');
+  assert.equal(bodies[0].max_completion_tokens, 600);
+  assert.equal(bodies[0].max_tokens, undefined);
+  assert.deepEqual(bodies[0].messages[1].content[1].image_url, { url: 'data:image/png;base64,AA', detail: 'low' });
+
+  await model.json({ system: 's', user: 'u' }); // $0.60 spent: over the $0.50 cap now
+  await assert.rejects(model.json({ system: 's', user: 'u' }), (e: LlmError) => e.status === 429 && /budget/.test(e.message));
+  assert.equal(bodies.length, 2, 'the third call never reached the API');
+  assert.equal(budget.status().calls, 2);
+  assert.equal(budget.status(new Date(Date.now() + 86_400_000)).spentUsd, 0, 'resets the next day');
+});
+
+test('modelFromEnv prefers OpenAI, falls back to DeepSeek, and is off without keys', () => {
+  assert.equal(modelFromEnv({}), undefined);
+  assert.equal(modelFromEnv({ OPENAI_API_KEY: 'a', DEEPSEEK_API_KEY: 'b' })?.model.name, 'gpt-4.1-mini');
+  assert.equal(modelFromEnv({ DEEPSEEK_API_KEY: 'b' })?.model.name, 'deepseek-flash');
+  assert.equal(modelFromEnv({ OPENAI_API_KEY: 'a', DEEPSEEK_API_KEY: 'b', AI_PROVIDER: 'deepseek' })?.model.name, 'deepseek-flash');
+  assert.equal(modelFromEnv({ OPENAI_API_KEY: 'a', AI_DAILY_BUDGET_USD: '2' })?.budget.dailyLimitUsd, 2);
 });

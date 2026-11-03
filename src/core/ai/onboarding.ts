@@ -37,7 +37,7 @@ Return one JSON object:
                    "made_to_order_days": integer|null, "attributes": { string: string } }]
   }],
   "shipping": [{ "name": string, "countries": ["ISO-3166 alpha-2" or "*"], "price": "decimal string",
-                 "min_days": integer, "max_days": integer }],
+                 "free_above": "decimal order subtotal"|null, "min_days": integer|null, "max_days": integer|null }],
   "questions": string[]
 }
 Rules:
@@ -59,6 +59,7 @@ export async function draftCatalog(model: ChatModel, input: OnboardingInput): Pr
       .filter(Boolean)
       .join('\n'),
     images: input.images?.slice(0, 8),
+    maxOutputTokens: 2_000,
   });
   return normalizeDraft(raw, input);
 }
@@ -134,11 +135,13 @@ export function normalizeDraft(raw: unknown, input: OnboardingInput = {}): Onboa
     const countries = arr(sd.countries).map(str).filter((c): c is string => Boolean(c)).map((c) => c.toUpperCase());
     if (price === undefined || countries.length === 0) continue;
     const minDays = Math.max(0, int(sd.min_days) ?? 3);
+    const freeAbove = parsePrice(sd.free_above, currency);
     shipping.push({
       id: uniqueId(`ship_${slugify(str(sd.name) ?? 'standard').replace(/-/g, '_')}`),
       name: (str(sd.name) ?? 'Standard shipping').slice(0, 60),
       countries,
       price,
+      ...(freeAbove !== undefined ? { freeAbove } : {}),
       minDays,
       maxDays: Math.max(minDays, int(sd.max_days) ?? minDays + 4),
     });
