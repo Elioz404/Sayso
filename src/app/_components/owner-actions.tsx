@@ -313,3 +313,30 @@ export function AdoptRule({ id }: { id: string }) {
     </div>
   );
 }
+
+/** Sends the owner to PayPal to connect the account their sales are paid into. */
+export function ConnectPayouts({ again = false }: { again?: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <button
+        className={again ? 'btn btn-small' : 'btn btn-paypal'}
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          setError(undefined);
+          try {
+            window.location.assign((await callApi<{ url: string }>('/api/owner/payouts', 'POST')).url);
+          } catch (err) {
+            setError((err as Error).message);
+            setBusy(false);
+          }
+        }}
+      >
+        {busy ? 'Opening PayPal...' : again ? 'Connect a different account' : 'Connect your PayPal'}
+      </button>
+      {error && <p className="error small">{error}</p>}
+    </div>
+  );
+}

@@ -24,6 +24,8 @@ export interface Links {
   paypalSignIn: string;
   /** Where PayPal sends the owner back; registered as a return URL in the PayPal app. */
   paypalSignInReturn: string;
+  /** Where PayPal sends the owner back after connecting their account for payouts. */
+  payoutsReturn: string;
   shopPage(slug: string): string;
   approve(recordId: string): string;
   wallet(walletId: string): string;
@@ -48,6 +50,7 @@ export function links(baseUrl: string): Links {
     cliLogin: (key) => `node cli/sayso.ts login --url ${base} --key ${key}`,
     paypalSignIn: `${base}/api/owner/paypal/start`,
     paypalSignInReturn: `${base}/api/owner/paypal/callback`,
+    payoutsReturn: `${base}/api/owner/payouts/return`,
     shopPage: (slug) => `${base}/shop/${slug}`,
     approve: (id) => `${base}/approve/${id}`,
     wallet: (id) => `${base}/wallet/${id}`,

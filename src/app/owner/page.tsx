@@ -1,15 +1,25 @@
 // Overview: the one job first (what's waiting for the owner), then a single row of figures and the
 // latest orders. Everything else lives in its own view.
-import { Decision, PublishButton } from '@/app/_components/owner-actions.tsx';
+import { ConnectPayouts, Decision, PublishButton } from '@/app/_components/owner-actions.tsx';
 import { actionLabel, Status, Who } from '@/app/_components/ui.tsx';
 import { Ago } from '@/app/_components/time.tsx';
 import { formatMoney } from '@/core/money.ts';
 import { ownerView, pendingFor } from '@/server/owner.ts';
 
-export default async function Overview() {
+/** What PayPal's payout onboarding came back with, as /owner?payouts=... */
+const PAYOUT_OUTCOMES: Record<string, string> = {
+  connected: 'Your PayPal is connected. New sales are paid straight into it.',
+  pending: "PayPal hasn't finished connecting your account yet. If you closed PayPal early, connect again.",
+  incomplete: "PayPal connected the account, but without everything Sayso needs to take payments and refund them for you. Connect again and allow both.",
+  failed: 'Something went wrong while checking with PayPal. Please try again.',
+};
+
+export default async function Overview({ searchParams }: { searchParams: Promise<{ payouts?: string }> }) {
   const view = await ownerView();
   if (!view) return null;
-  const { shop, shopId, orders: shopOrders, catalog, redact, saySo } = view;
+  const { shop, shopId, orders: shopOrders, catalog, redact, saySo, payouts, demo } = view;
+  const outcome = PAYOUT_OUTCOMES[(await searchParams).payouts ?? ''];
+  const onTour = shop.visibility === 'private';
   const [approvals, orders, { suggestions }] = await Promise.all([pendingFor(shopId), shopOrders.list(shopId), saySo.autonomy(shopId)]);
   const money = (minor: number) => formatMoney(minor, shop.currency);
   const paid = orders.filter((o) => o.status === 'paid');
@@ -34,6 +44,22 @@ export default async function Overview() {
             <span className="small soft">Check the catalog, then publish to register it with PayPal and let AI shoppers buy.</span>
           </div>
           <PublishButton />
+        </div>
+      )}
+
+      {outcome && <div className={`callout small ${shop.payout ? 'callout-say' : ''}`}>{outcome}</div>}
+
+      {payouts.enabled && !demo && !onTour && (
+        <div className={`panel payouts ${shop.payout ? 'payouts-on' : ''}`}>
+          <div className="stack" style={{ gap: 4, minWidth: 0 }}>
+            <b>{shop.payout ? 'Sales are paid straight into your PayPal' : 'Get paid into your own PayPal'}</b>
+            <span className="small soft">
+              {shop.payout
+                ? `PayPal account ${shop.payout.merchantId.slice(-4).padStart(8, '•')}. Refunds come out of it too, only with your rules or your OK. Sayso never holds your money.`
+                : "Right now sales go to Sayso's sandbox account. Connect your PayPal and every sale lands in it directly; you allow Sayso to take payments and refund them for you, nothing else."}
+            </span>
+          </div>
+          <ConnectPayouts again={Boolean(shop.payout)} />
         </div>
       )}
 

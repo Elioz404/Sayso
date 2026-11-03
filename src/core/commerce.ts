@@ -123,7 +123,7 @@ export class Commerce {
       const total = stored.cart.totals!.total.value;
       const order = await createOrderFromCart(
         this.deps.paypal,
-        { cart: stored.cart, cartId: stored.id, shopName: catalog.shop.name, returnUrl: '', cancelUrl: '', vaultId },
+        { cart: stored.cart, cartId: stored.id, shopName: catalog.shop.name, returnUrl: '', cancelUrl: '', vaultId, payee: catalog.shop.payout?.merchantId },
         `${stored.id}-saved-${total}`,
       );
       let authorization = order.purchase_units[0]?.payments?.authorizations?.[0];
@@ -132,7 +132,14 @@ export class Commerce {
         authorization = authorized.purchase_units[0]?.payments?.authorizations?.[0];
       }
       if (!authorization) throw new HttpError(502, 'PayPal did not authorize the saved PayPal account');
-      Object.assign(stored, { orderId: order.id, orderTotal: total, approvalUrl: undefined, authorizationId: authorization.id, paidWith: 'saved-paypal' });
+      Object.assign(stored, {
+        orderId: order.id,
+        orderTotal: total,
+        approvalUrl: undefined,
+        authorizationId: authorization.id,
+        paidWith: 'saved-paypal',
+        payee: catalog.shop.payout?.merchantId,
+      });
       await this.deps.carts.put(stored);
       return { orderId: order.id, authorizationId: authorization.id, amount: authorization.amount };
     });
@@ -279,12 +286,14 @@ export class Commerce {
         shopName: catalog.shop.name,
         returnUrl: this.deps.links.payReturn(stored.id),
         cancelUrl: this.deps.links.payCancel(stored.id),
+        payee: catalog.shop.payout?.merchantId,
       },
       `${stored.id}-order-${total}`,
     );
     stored.orderId = order.id;
     stored.orderTotal = total;
     stored.approvalUrl = approvalUrl(order);
+    stored.payee = catalog.shop.payout?.merchantId;
   }
 
   private async stored(cartId: string, shopId?: string): Promise<StoredCart> {

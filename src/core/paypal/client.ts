@@ -49,10 +49,25 @@ export class PayPalClient {
   private readonly config: PayPalConfig;
   private readonly base: string;
   private token?: { value: string; expiresAt: number };
+  /** Set on a client acting for a connected seller: shares the app's token, adds PayPal-Auth-Assertion. */
+  private readonly onBehalf?: { parent: PayPalClient; assertion: string };
 
-  constructor(config: PayPalConfig) {
+  constructor(config: PayPalConfig, onBehalf?: { parent: PayPalClient; merchantId: string }) {
     this.config = config;
     this.base = BASE[config.env ?? 'sandbox'];
+    if (onBehalf) {
+      // An unsigned JWT naming this app and the seller, as PayPal's partner APIs expect.
+      const part = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
+      this.onBehalf = { parent: onBehalf.parent, assertion: `${part({ alg: 'none' })}.${part({ iss: config.clientId, payer_id: onBehalf.merchantId })}.` };
+    }
+  }
+
+  /**
+   * The same app acting for a seller who connected their PayPal through partner onboarding and granted
+   * it permissions (refunds of their sales, for one). PayPal checks those permissions on every call.
+   */
+  actingAs(merchantId: string): PayPalClient {
+    return new PayPalClient(this.config, { parent: this.onBehalf?.parent ?? this, merchantId });
   }
 
   static fromEnv(env: Record<string, string | undefined> = process.env): PayPalClient {
@@ -102,6 +117,7 @@ export class PayPalClient {
   }
 
   async accessToken(): Promise<string> {
+    if (this.onBehalf) return this.onBehalf.parent.accessToken();
     if (this.token && Date.now() < this.token.expiresAt) return this.token.value;
     const { access_token, expires_in } = await this.tokenRequest<{ access_token: string; expires_in: number }>(
       new URLSearchParams({ grant_type: 'client_credentials' }),
@@ -134,6 +150,7 @@ export class PayPalClient {
           Authorization: headers.Authorization ?? `Bearer ${await this.accessToken()}`,
           'Content-Type': 'application/json',
           Prefer: 'return=representation',
+          ...(this.onBehalf ? { 'PayPal-Auth-Assertion': this.onBehalf.assertion } : {}),
           ...headers,
         },
         body: body === undefined ? undefined : JSON.stringify(body),
@@ -142,7 +159,8 @@ export class PayPalClient {
       if (res.ok) return (res.status === 204 ? undefined : await res.json()) as T;
 
       if (res.status === 401 && attempt === 1 && !headers.Authorization) {
-        this.token = undefined;
+        if (this.onBehalf) this.onBehalf.parent.token = undefined;
+        else this.token = undefined;
         continue;
       }
       // Retrying a write is only safe with an idempotency key; PayPal then replays the first result.

@@ -19,6 +19,7 @@ import { Channel3 } from '@/core/channel3.ts';
 import { links, type Links } from '@/core/links.ts';
 import { MarketPrices } from '@/core/market.ts';
 import { Orders } from '@/core/orders.ts';
+import { Payouts } from '@/core/payouts.ts';
 import { PayPalClient } from '@/core/paypal/client.ts';
 import { MemoryJobStore, Production, type JobStore } from '@/core/production.ts';
 import { captureExecutor, refundExecutor, voidExecutor } from '@/core/paypal/executors.ts';
@@ -44,6 +45,7 @@ export interface Context {
   commerce: Commerce;
   shops: Shops;
   sellers: Sellers;
+  payouts: Payouts;
   paypal: PayPalClient;
   /** Owners sign in with PayPal (Log in with PayPal is set up on the PayPal app): PAYPAL_LOGIN=true. */
   paypalLogin: boolean;
@@ -102,13 +104,14 @@ async function create(): Promise<Context> {
   const model = ai?.model;
   const site = siteLinks();
   const policyFor = policyLookup(policies, catalogs);
+  const payouts = new Payouts({ paypal, catalogs, links: site, partnerMerchantId: process.env.PAYPAL_PARTNER_MERCHANT_ID || undefined });
 
   const guard = new Guard({
     store: guardStore,
     executors: {
       'payment.capture': captureExecutor(paypal),
       'payment.void': voidExecutor(paypal),
-      'refund.create': refundExecutor(paypal),
+      'refund.create': refundExecutor(paypal, (shopId) => payouts.merchantFor(shopId)),
       'policy.update': policyUpdateExecutor(policies, policyFor),
       'invoice.send': invoiceExecutor(paypal),
     },
@@ -148,7 +151,7 @@ async function create(): Promise<Context> {
 
   await seedDemo(catalogs, policies, access);
   const paypalLogin = paypalLoginEnabled();
-  return { carts, catalogs, access, model, aiBudget: ai?.budget, guard, commerce, shops, sellers, paypal, paypalLogin, orders, saySo, invoicing, production, tours, wallets, market, tools, links: site };
+  return { carts, catalogs, access, model, aiBudget: ai?.budget, guard, commerce, shops, sellers, payouts, paypal, paypalLogin, orders, saySo, invoicing, production, tours, wallets, market, tools, links: site };
 }
 
 function sessionSecret(): string {

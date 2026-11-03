@@ -455,3 +455,8 @@ body:has(.owner) .site-header, body:has(.owner) .site-footer { display: none; }
 .quiet-details summary { cursor: pointer; color: var(--ink-3); }
 .shop-switch select { width: 100%; }
 .rail-seller { font-size: var(--t-xs); color: var(--ink-3); overflow-wrap: anywhere; }
+
+/* ---------- payouts ---------- */
+.payouts { display: flex; gap: var(--s5); align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.payouts > .stack { flex: 1 1 320px; }
+.payouts-on { border-color: var(--say); }

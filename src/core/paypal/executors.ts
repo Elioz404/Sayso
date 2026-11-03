@@ -3,7 +3,7 @@
 // to what would really move), executes with the Guard record's idempotency key, then reads the result
 // back and checks it moved exactly what was approved.
 
-import type { Executor } from '../guard/types.ts';
+import type { Executor, ProposedAction } from '../guard/types.ts';
 import { formatMoney, toMinor, toMoney } from '../money.ts';
 import type { PayPalClient } from './client.ts';
 import { captureAuthorization, getAuthorization, getCapture, getOrder, getRefund, refundCapture, voidAuthorization } from './orders.ts';
@@ -73,12 +73,26 @@ export function voidExecutor(client: PayPalClient): Executor {
   };
 }
 
+/** The PayPal merchant id an owner connected for payouts, if any. */
+export type PayoutLookup = (ownerId: string) => Promise<string | undefined>;
+
 /**
  * Refunds need `resourceId` = capture id and `params.orderId`, so the simulation can sum earlier
  * refunds on the order and block anything above what is still refundable. Leaving the amount out
  * refunds everything still refundable, and the rules judge that amount.
+ *
+ * A sale paid straight into the owner's own PayPal is refunded from that account, acting for them with
+ * the permission they granted at onboarding. The order says who was paid, so a sale from before they
+ * connected is still refunded from Sayso's account, where its money went.
  */
-export function refundExecutor(client: PayPalClient): Executor {
+export function refundExecutor(client: PayPalClient, payouts?: PayoutLookup): Executor {
+  async function payer(action: ProposedAction): Promise<PayPalClient> {
+    const merchantId = await payouts?.(action.ownerId);
+    if (!merchantId) return client;
+    const order = await getOrder(client, need(action.params?.orderId as string | undefined, 'params.orderId'));
+    return order.purchase_units.some((u) => u.payee?.merchant_id === merchantId) ? client.actingAs(merchantId) : client;
+  }
+
   return {
     async simulate(action) {
       const captureId = need(action.resourceId, 'resourceId (capture id)');
@@ -113,14 +127,15 @@ export function refundExecutor(client: PayPalClient): Executor {
       };
     },
     async execute(action, key) {
-      const capture = await getCapture(client, need(action.resourceId, 'resourceId'));
+      const as = await payer(action);
+      const capture = await getCapture(as, need(action.resourceId, 'resourceId'));
       // Guard filled in the amount from the simulation, so a "full" refund is an exact amount too.
       const amount = toMoney(need(action.amount, 'amount'), capture.amount.currency_code);
-      const refund = await refundCapture(client, capture.id, amount, action.reason, key);
+      const refund = await refundCapture(as, capture.id, amount, action.reason, key);
       return { refund_id: refund.id, status: refund.status, amount: refund.amount };
     },
     async verify(action, result) {
-      const refund = await getRefund(client, String(result.refund_id));
+      const refund = await getRefund(await payer(action), String(result.refund_id));
       const ok = MOVED.has(refund.status) && toMinor(refund.amount) === action.amount;
       return { ok, detail: `Refund ${refund.id} is ${refund.status} for ${formatMoney(toMinor(refund.amount), refund.amount.currency_code)}.` };
     },

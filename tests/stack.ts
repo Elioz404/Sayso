@@ -10,6 +10,7 @@ import { Invoicing } from '../src/core/invoicing.ts';
 import { links } from '../src/core/links.ts';
 import { handleMcp } from '../src/core/mcp.ts';
 import { Orders } from '../src/core/orders.ts';
+import { Payouts } from '../src/core/payouts.ts';
 import { PayPalClient } from '../src/core/paypal/client.ts';
 import { captureExecutor, refundExecutor, voidExecutor } from '../src/core/paypal/executors.ts';
 import { invoiceExecutor } from '../src/core/paypal/invoices.ts';
@@ -33,12 +34,13 @@ export async function stack(model?: ChatModel) {
   const access = new Access(new MemoryAccessStore(), 'test-session-secret-0123456789');
   const site = links('https://sayso.test');
   const approvals: string[] = [];
+  const payouts = new Payouts({ paypal, catalogs, links: site, partnerMerchantId: 'SAYSO_PARTNER' });
   const guard = new Guard({
     store: guardStore,
     executors: {
       'payment.capture': captureExecutor(paypal),
       'payment.void': voidExecutor(paypal),
-      'refund.create': refundExecutor(paypal),
+      'refund.create': refundExecutor(paypal, (shopId) => payouts.merchantFor(shopId)),
       'policy.update': policyUpdateExecutor(policies, policyFor),
       'invoice.send': invoiceExecutor(paypal),
     },
@@ -70,7 +72,7 @@ export async function stack(model?: ChatModel) {
   const buyer: Partial<ToolContext> = { shopSlug: 'maya-ceramics' };
   const owner: Partial<ToolContext> = { agent: { shopId: demoCatalog.shop.id, keyId: key.id, label: key.label } };
 
-  return { pp, paypal, carts, catalogs, guardStore, policies, access, guard, commerce, shops, orders, saySo, invoicing, production, wallets, services, approvals, call, buyer, owner };
+  return { pp, paypal, payouts, carts, catalogs, guardStore, policies, access, guard, commerce, shops, orders, saySo, invoicing, production, wallets, services, approvals, call, buyer, owner };
 }
 
 export const address = { country_code: 'US', admin_area_1: 'TX', admin_area_2: 'Austin', postal_code: '78701', address_line_1: '100 Congress Ave' };

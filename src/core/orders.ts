@@ -28,6 +28,8 @@ export interface OrderSummary {
   items: { name?: string; variant_id?: string; quantity: number }[];
   buyer?: string;
   channel?: string;
+  /** Paid straight into the owner's PayPal (true), or into Sayso's account. */
+  paidToOwner: boolean;
   tracking?: StoredCart['tracking'];
   /** Refunds confirmed with PayPal, in minor units, and formatted. */
   refundedMinor: number;
@@ -128,6 +130,7 @@ export function summarize(c: StoredCart, records: readonly GuardRecord[] = []): 
     items: c.cart.items.map((i) => ({ name: i.name, variant_id: i.variant_id, quantity: i.quantity })),
     buyer: c.payerEmail ?? c.cart.customer?.email_address,
     channel: c.channel,
+    paidToOwner: Boolean(c.payee),
     tracking: c.tracking,
     refundedMinor,
     refunded: refundedMinor ? formatMoney(refundedMinor, currency) : undefined,

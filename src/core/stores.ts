@@ -31,6 +31,8 @@ export interface StoredCart {
   tracking?: { carrier: string; number: string; addedAt: string };
   /** How the buyer paid: approved in PayPal (default), or with their saved PayPal within their limits. */
   paidWith?: 'saved-paypal';
+  /** The owner's own PayPal merchant id the PayPal order pays into. Missing: Sayso's account. */
+  payee?: string;
   /** Who was shopping, as far as we know: e.g. "chatgpt", "mcp-client". */
   channel?: string;
   createdAt: string;

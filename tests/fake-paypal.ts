@@ -23,6 +23,8 @@ export interface FakePayPal {
   /** Make every GET whose path starts with `prefix` fail (undefined: stop failing). */
   failReads(prefix: string | undefined): void;
   authorizations: Map<string, Json>;
+  /** Partner onboarding: the merchant `merchantId` finished the sign-up tracked as `trackingId`. */
+  onboard(trackingId: string, merchantId: string, grants?: { refund?: boolean; receivable?: boolean }): void;
   /** Log in with PayPal: a one-time code for this person, as PayPal's sign-in page would send back. */
   signInCode(person: { user_id: string; payer_id?: string; email?: string; name?: string; verified?: boolean }): string;
 }
@@ -44,6 +46,12 @@ export function fakePayPal(): FakePayPal {
   const requestIds: string[] = [];
   let failingReads: string | undefined;
   const signInCodes = new Map<string, Json>(); // code -> person; each code works once
+  const onboarded = new Map<string, Json>(); // tracking id -> merchant integration
+  /** The merchant a partner call acts for (PayPal-Auth-Assertion), if any. */
+  const actingFor = (headers: Headers): string | undefined => {
+    const assertion = headers.get('PayPal-Auth-Assertion');
+    return assertion ? JSON.parse(Buffer.from(assertion.split('.')[1], 'base64url').toString()).payer_id : undefined;
+  };
   const userTokens = new Map<string, Json>(); // user access token -> person
   let seq = 0;
   const id = (prefix: string) => `${prefix}${(++seq).toString().padStart(6, '0')}`;
@@ -108,7 +116,7 @@ export function fakePayPal(): FakePayPal {
         intent: body.intent,
         status: 'COMPLETED',
         payer: { payer_id: 'BUYER123', email_address: token.payment_source.paypal.email_address },
-        purchase_units: [{ reference_id: body.purchase_units[0].reference_id, amount, payments: { authorizations: [auth] } }],
+        purchase_units: [{ reference_id: body.purchase_units[0].reference_id, amount, payee: body.purchase_units[0].payee, payments: { authorizations: [auth] } }],
         links: [],
       };
       orders.set(orderId, order);
@@ -159,7 +167,7 @@ export function fakePayPal(): FakePayPal {
         id: orderId,
         intent: body.intent,
         status: 'PAYER_ACTION_REQUIRED',
-        purchase_units: body.purchase_units.map((u: Json) => ({ reference_id: u.reference_id, amount: { currency_code: u.amount.currency_code, value: u.amount.value } })),
+        purchase_units: body.purchase_units.map((u: Json) => ({ reference_id: u.reference_id, payee: u.payee, amount: { currency_code: u.amount.currency_code, value: u.amount.value } })),
         links: [{ rel: 'payer-action', href: `https://www.sandbox.paypal.com/checkoutnow?token=${orderId}` }],
       };
       orders.set(orderId, order);
@@ -209,16 +217,35 @@ export function fakePayPal(): FakePayPal {
     if (method === 'POST' && (m = /^\/v2\/payments\/captures\/([^/]+)\/refund$/.exec(path))) {
       const capture = captures.get(m[1]);
       if (!capture) return notFound();
+      const payee = captureOrder.get(m[1])?.purchase_units[0].payee?.merchant_id;
+      if (payee && actingFor(headers) !== payee) return json({ name: 'NOT_AUTHORIZED', details: [{ issue: 'PERMISSION_DENIED' }] }, 403);
       const payments = captureOrder.get(m[1])?.purchase_units[0].payments;
       const refunded = (payments?.refunds ?? []).reduce((sum: number, r: Json) => sum + minor(r.amount), 0);
       const amount = body.amount ?? capture.amount;
       if (minor(amount) > minor(capture.amount) - refunded) return refuse('REFUND_AMOUNT_EXCEEDED');
-      const refund = { id: id('REF'), status: 'COMPLETED', amount };
+      const refund = { id: id('REF'), status: 'COMPLETED', amount, payee };
       refunds.set(refund.id, refund);
       if (payments) payments.refunds = [...(payments.refunds ?? []), refund];
       return remember(refund);
     }
-    if (method === 'GET' && (m = /^\/v2\/payments\/refunds\/([^/]+)$/.exec(path))) return refunds.has(m[1]) ? json(refunds.get(m[1])) : notFound();
+    if (method === 'GET' && (m = /^\/v2\/payments\/refunds\/([^/]+)$/.exec(path))) {
+      const refund = refunds.get(m[1]);
+      if (!refund) return notFound();
+      if (refund.payee && actingFor(headers) !== refund.payee) return json({ name: 'NOT_AUTHORIZED', details: [{ issue: 'PERMISSION_DENIED' }] }, 403);
+      const { payee: _payee, ...shown } = refund;
+      return json(shown);
+    }
+    if (method === 'POST' && path === '/v2/customer/partner-referrals') {
+      return remember({ links: [{ rel: 'action_url', href: `https://www.sandbox.paypal.com/bizsignup/partner/entry?referralToken=${body.tracking_id}` }] }, 201);
+    }
+    if (method === 'GET' && (m = /^\/v1\/customer\/partners\/([^/]+)\/merchant-integrations$/.exec(path))) {
+      const found = onboarded.get(url.searchParams.get('tracking_id') ?? '');
+      return found ? json({ merchant_id: found.merchant_id, tracking_id: url.searchParams.get('tracking_id') }) : json({ name: 'RESOURCE_NOT_FOUND' }, 404);
+    }
+    if (method === 'GET' && (m = /^\/v1\/customer\/partners\/([^/]+)\/merchant-integrations\/([^/]+)$/.exec(path))) {
+      const found = [...onboarded.values()].find((i) => i.merchant_id === m![2]);
+      return found ? json(found) : json({ name: 'AUTHORIZATION_ERROR' }, 401);
+    }
     if (method === 'POST' && (m = /^\/v2\/checkout\/orders\/([^/]+)\/track$/.exec(path))) {
       tracking.push({ orderId: m[1], ...body });
       return remember(orders.get(m[1]) ?? {});
@@ -233,6 +260,16 @@ export function fakePayPal(): FakePayPal {
   };
 
   return {
+    onboard(trackingId, merchantId, grants = {}) {
+      const scopes = ['https://uri.paypal.com/services/payments/payment/authcapture', ...(grants.refund === false ? [] : ['https://uri.paypal.com/services/payments/refund'])];
+      onboarded.set(trackingId, {
+        merchant_id: merchantId,
+        tracking_id: trackingId,
+        payments_receivable: grants.receivable !== false,
+        primary_email_confirmed: true,
+        oauth_integrations: [{ integration_type: 'OAUTH_THIRD_PARTY', oauth_third_party: [{ partner_client_id: 'id', scopes }] }],
+      });
+    },
     signInCode(person) {
       const code = id('code-');
       signInCodes.set(code, person);

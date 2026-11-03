@@ -59,7 +59,18 @@ export interface Shop {
   expiresAt?: string;
   /** The seller account that owns it (signed in with PayPal). Missing: owned through an owner secret only. */
   sellerId?: string;
+  /**
+   * The owner's own PayPal account, connected through PayPal's partner onboarding: sales are paid
+   * straight into it, and refunds are made from it on the owner's behalf. Missing: paid to Sayso's account.
+   */
+  payout?: Payout;
   createdAt?: string;
+}
+
+export interface Payout {
+  /** PayPal merchant id of the owner's account (PayPal's answer, never the browser's). */
+  merchantId: string;
+  connectedAt: string;
 }
 
 export interface Catalog {

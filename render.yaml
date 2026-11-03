@@ -30,6 +30,10 @@ services:
       # <PUBLIC_BASE_URL>/api/owner/paypal/callback). false: owners get an owner secret instead.
       - key: PAYPAL_LOGIN
         value: "true"
+      # Owners' sales paid straight into their own PayPal: the merchant id of the (Platform) app's own
+      # business account. Leave empty to pay every sale into that account.
+      - key: PAYPAL_PARTNER_MERCHANT_ID
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
       # Most the server may spend on AI per day, in USD.

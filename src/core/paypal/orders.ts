@@ -43,6 +43,7 @@ export interface Order {
   purchase_units: {
     reference_id?: string;
     amount: Money;
+    payee?: { merchant_id?: string; email_address?: string };
     payments?: { authorizations?: OrderAuthorization[]; captures?: OrderCapture[]; refunds?: OrderRefund[] };
   }[];
 }
@@ -56,6 +57,8 @@ export interface CreateOrderInput {
   cancelUrl: string;
   /** The buyer's saved PayPal (vault payment token): PayPal authorizes without sending them anywhere. */
   vaultId?: string;
+  /** The shop owner's own PayPal merchant id, when sales are paid straight to them. */
+  payee?: string;
 }
 
 /** Turn a priced, valid cart into a PayPal order the buyer can approve. */
@@ -74,6 +77,7 @@ export function createOrderFromCart(client: PayPalClient, input: CreateOrderInpu
           reference_id: input.cartId,
           custom_id: input.cartId,
           description: `${input.shopName} via Sayso`.slice(0, 127),
+          payee: input.payee ? { merchant_id: input.payee } : undefined,
           amount: {
             currency_code: currency,
             value: totals.total.value,

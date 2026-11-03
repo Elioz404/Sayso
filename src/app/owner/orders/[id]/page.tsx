@@ -122,6 +122,8 @@ export default async function OrderDetail({ params }: { params: Promise<{ id: st
               <dd>{order.channel ?? '-'}</dd>
               <dt>Tracking</dt>
               <dd>{order.tracking ? `${order.tracking.carrier} ${order.tracking.number}` : 'Not added yet'}</dd>
+              <dt>Paid into</dt>
+              <dd>{order.paidToOwner ? 'Your PayPal account' : "Sayso's sandbox account"}</dd>
               <dt>PayPal order</dt>
               <dd className="mono">{cart.orderId ?? '-'}</dd>
             </dl>
