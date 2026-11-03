@@ -11,6 +11,8 @@ export interface Links {
   shopMcp(slug: string): string;
   /** PayPal's Agentic Commerce merchant-cart API for one shop. */
   merchantCart(slug: string): string;
+  /** The REST API described for code generators. */
+  openApi: string;
   /** The owner's agent, with the key in a header. */
   sellerMcp: string;
   /** The owner's agent through a personal URL. */
@@ -33,6 +35,7 @@ export function links(baseUrl: string): Links {
     shoppingMcpFor: (key) => `${base}/api/shopping/mcp/${key}`,
     shopMcp: (slug) => `${base}/api/shops/${slug}/mcp`,
     merchantCart: (slug) => `${base}/api/shops/${slug}/merchant-cart`,
+    openApi: `${base}/openapi.yaml`,
     sellerMcp: `${base}/api/mcp`,
     sellerMcpFor: (key) => `${base}/api/mcp/${key}`,
     cliLogin: (key) => `node cli/sayso.ts login --url ${base} --key ${key}`,

@@ -1,11 +1,16 @@
-// Onboarding: POST { text?, images?: data URLs, shop_name?, currency?, country? } -> a draft shop.
-// Returns the owner secret and a first agent key exactly once; the owner reviews and publishes.
+// GET: every published shop. POST (onboarding): { text?, images?: data URLs, shop_name?, currency?,
+// country? } -> a draft shop, with the owner secret and a first agent key returned exactly once.
 import { HttpError } from '@/core/errors.ts';
+import { shopSummary } from '@/core/search.ts';
 import { ready } from '@/server/context.ts';
 import { handle, readJson } from '@/server/http.ts';
 import { allow, clientAddress } from '@/server/rate-limit.ts';
 
 const MAX_IMAGE_CHARS = 6_000_000; // ~4.5 MB per photo once base64-encoded
+
+export async function GET() {
+  return handle(async () => Response.json((await (await ready()).catalogs.listLive()).map(shopSummary)));
+}
 
 export async function POST(request: Request) {
   return handle(async () => {

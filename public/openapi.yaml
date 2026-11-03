@@ -1,0 +1,513 @@
+openapi: 3.0.3
+info:
+  title: Sayso Shops API
+  version: 0.3.0
+  description: |
+    Buy from small shops on Sayso from any agent platform. Discover shops and products, build a cart
+    with PayPal's Agentic Commerce merchant-cart API, send the buyer to PayPal to approve, then complete
+    the checkout.
+
+    Money only moves with a say-so: the buyer approves in PayPal, and each shop's Guard checks stock and
+    the owner's rules before anything is captured. If an order can't go through, the PayPal hold is
+    released and the buyer is not charged.
+
+    Agents that speak MCP can use `/api/shopping/mcp` instead; it offers the same operations as tools.
+  license:
+    name: MIT
+    url: https://github.com/Elioz404/Sayso/blob/main/LICENSE
+servers:
+  - url: '{baseUrl}'
+    description: A Sayso server
+    variables:
+      baseUrl:
+        default: http://localhost:3000
+        description: Where Sayso runs, without a trailing slash
+tags:
+  - name: Shops
+    description: Find shops and what they sell.
+  - name: Merchant cart
+    description: PayPal Agentic Commerce merchant-cart API (v1), one shop at a time.
+  - name: Service
+    description: Is the server up.
+
+paths:
+  /api/shops:
+    get:
+      tags: [Shops]
+      operationId: listShops
+      summary: List shops
+      description: Every published shop, with what it sells and where it ships from.
+      responses:
+        '200':
+          description: Published shops
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ShopSummary' }
+        '500': { $ref: '#/components/responses/ServerError' }
+
+  /api/shops/{slug}/products:
+    get:
+      tags: [Shops]
+      operationId: searchProducts
+      summary: Search a shop's products
+      description: Products whose name, description, category or tags contain every word of `query`.
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - name: query
+          in: query
+          description: Words to match, e.g. "green mug". Leave out to list everything.
+          schema: { type: string, maxLength: 200 }
+        - name: max_price
+          in: query
+          description: Highest price per item in the shop's currency, e.g. "40.00".
+          schema: { type: string, pattern: '^\d+(\.\d{1,2})?$' }
+        - name: in_stock_only
+          in: query
+          description: Leave out sold-out variants (made-to-order ones always stay).
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: What the shop offers for this search
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ShopOffer' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/shops/{slug}/merchant-cart:
+    post:
+      tags: [Merchant cart]
+      operationId: createCart
+      summary: Create a cart
+      description: |
+        Prices the cart from the shop's catalog (shipping and tax included) and validates it. A valid cart
+        comes back `CREATED` with `payment_method.approval_url`: send the buyer there to approve in PayPal.
+        An invalid one comes back `INCOMPLETE` with `validation_issues`, each with `resolution_options`
+        an agent can apply before calling `updateCart`.
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/Channel'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CartRequest' }
+      responses:
+        '201':
+          description: The priced cart
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Cart' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '502': { $ref: '#/components/responses/PayPalError' }
+
+  /api/shops/{slug}/merchant-cart/{cartId}:
+    get:
+      tags: [Merchant cart]
+      operationId: getCart
+      summary: Get a cart
+      description: The cart as it is now. Once paid, `status` is `COMPLETED`.
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/CartId'
+      responses:
+        '200':
+          description: The cart
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Cart' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Merchant cart]
+      operationId: updateCart
+      summary: Replace a cart
+      description: Replaces the whole cart, per the merchant-cart spec. A changed total gets a new PayPal approval link.
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/CartId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CartRequest' }
+      responses:
+        '200':
+          description: The re-priced cart
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Cart' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422':
+          description: The cart is already completed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '502': { $ref: '#/components/responses/PayPalError' }
+
+  /api/shops/{slug}/merchant-cart/{cartId}/checkout:
+    post:
+      tags: [Merchant cart]
+      operationId: checkout
+      summary: Complete checkout
+      description: |
+        Call after the buyer approved in PayPal. Sayso re-checks stock and price, authorizes the payment,
+        takes the stock and submits the capture to the shop's Guard. Big orders may wait for the owner:
+        then `payment_status` is `AUTHORIZED_PENDING_MERCHANT_REVIEW` and the buyer is charged only if the
+        owner agrees. Calling it again for a completed cart returns the same result; it never charges twice.
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/CartId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CheckoutRequest' }
+      responses:
+        '200':
+          description: The order was placed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CheckoutResult' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422':
+          description: |
+            The order was not placed and the buyer was not charged: the buyer hasn't approved yet, the token
+            doesn't match, or the cart changed (stock, price). The body is the cart with `validation_issues`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Cart' }
+        '502': { $ref: '#/components/responses/PayPalError' }
+
+  /api/health:
+    get:
+      tags: [Service]
+      operationId: health
+      summary: Health check
+      responses:
+        '200':
+          description: The server and its storage answer
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+        '503':
+          description: The server is up but its storage is not
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Health' }
+
+components:
+  parameters:
+    Slug:
+      name: slug
+      in: path
+      required: true
+      description: The shop, e.g. maya-ceramics
+      schema: { type: string, maxLength: 80 }
+    CartId:
+      name: cartId
+      in: path
+      required: true
+      description: From createCart, e.g. cart_6dadca42ea7819f7
+      schema: { type: string, maxLength: 60 }
+    Channel:
+      name: X-Sayso-Channel
+      in: header
+      required: false
+      description: Which assistant or platform is shopping, shown to the shop owner (e.g. "chatgpt").
+      schema: { type: string, maxLength: 40 }
+
+  responses:
+    BadRequest:
+      description: The request is malformed
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: No such published shop, or no such cart at this shop
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: The cart is being paid and can't be changed; start a new cart
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    PayPalError:
+      description: PayPal refused or failed the call. `debug_id` helps PayPal support trace it.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ServerError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  schemas:
+    Error:
+      type: object
+      required: [name, message]
+      properties:
+        name: { type: string, example: ERROR }
+        message: { type: string }
+        debug_id: { type: string, description: PayPal's debug id, when PayPal answered }
+
+    Money:
+      type: object
+      description: An amount as PayPal writes it.
+      required: [currency_code, value]
+      properties:
+        currency_code: { type: string, example: USD }
+        value: { type: string, example: '44.99' }
+
+    Address:
+      type: object
+      required: [country_code]
+      properties:
+        address_line_1: { type: string, maxLength: 300 }
+        address_line_2: { type: string, maxLength: 300 }
+        admin_area_2: { type: string, description: City }
+        admin_area_1: { type: string, description: State or province code, e.g. TX }
+        postal_code: { type: string }
+        country_code: { type: string, pattern: '^[A-Z]{2}$', description: ISO-3166 alpha-2 }
+
+    Customer:
+      type: object
+      properties:
+        email_address: { type: string, maxLength: 254 }
+        phone: { type: string }
+        name:
+          type: object
+          properties:
+            given_name: { type: string }
+            surname: { type: string }
+
+    CartItem:
+      type: object
+      required: [quantity]
+      properties:
+        variant_id: { type: string, example: var_mug_sage }
+        quantity: { type: integer, minimum: 1 }
+        parent_id: { type: string, readOnly: true }
+        name: { type: string, readOnly: true }
+        description: { type: string, readOnly: true }
+        price: { $ref: '#/components/schemas/Money' }
+        selected_attributes:
+          type: array
+          readOnly: true
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              value: { type: string }
+
+    ShippingOption:
+      type: object
+      required: [id, name, price, is_selected]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        price: { $ref: '#/components/schemas/Money' }
+        is_selected: { type: boolean }
+        description: { type: string }
+        estimated_delivery: { type: string, format: date }
+
+    PaymentMethod:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, enum: [paypal] }
+        token: { type: string, description: The PayPal order id }
+        payer_id: { type: string }
+        approval_url: { type: string, description: Where the buyer approves the payment in PayPal }
+
+    CartTotals:
+      type: object
+      required: [total]
+      properties:
+        subtotal: { $ref: '#/components/schemas/Money' }
+        shipping: { $ref: '#/components/schemas/Money' }
+        tax: { $ref: '#/components/schemas/Money' }
+        discount: { $ref: '#/components/schemas/Money' }
+        total: { $ref: '#/components/schemas/Money' }
+
+    ResolutionOption:
+      type: object
+      required: [action, label]
+      properties:
+        action: { type: string, example: REDUCE_QUANTITY }
+        label: { type: string, example: Buy 1 instead }
+        metadata:
+          type: object
+          additionalProperties: true
+          properties:
+            priority: { type: integer }
+            auto_applicable: { type: boolean }
+            cost_impact: { $ref: '#/components/schemas/Money' }
+
+    ValidationIssue:
+      type: object
+      required: [code, type, message]
+      properties:
+        code: { type: string, enum: [INVENTORY_ISSUE, PRICING_ERROR, SHIPPING_ERROR, PAYMENT_ERROR, DATA_ERROR, BUSINESS_RULE_ERROR] }
+        type: { type: string, enum: [MISSING_FIELD, INVALID_DATA, BUSINESS_RULE] }
+        message: { type: string }
+        user_message: { type: string }
+        variant_id: { type: string }
+        field: { type: string }
+        context: { type: object, additionalProperties: true }
+        resolution_options:
+          type: array
+          items: { $ref: '#/components/schemas/ResolutionOption' }
+
+    CartRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/CartItem' }
+        shipping_address: { $ref: '#/components/schemas/Address' }
+        billing_address: { $ref: '#/components/schemas/Address' }
+        customer: { $ref: '#/components/schemas/Customer' }
+        available_shipping_options:
+          type: array
+          description: Mark one `is_selected` to pick it; the rest is ignored.
+          items: { $ref: '#/components/schemas/ShippingOption' }
+
+    Cart:
+      type: object
+      required: [items]
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [CREATED, INCOMPLETE, READY, COMPLETED] }
+        validation_status: { type: string, enum: [VALID, INVALID, REQUIRES_ADDITIONAL_INFORMATION] }
+        validation_issues:
+          type: array
+          items: { $ref: '#/components/schemas/ValidationIssue' }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/CartItem' }
+        totals: { $ref: '#/components/schemas/CartTotals' }
+        available_shipping_options:
+          type: array
+          items: { $ref: '#/components/schemas/ShippingOption' }
+        customer: { $ref: '#/components/schemas/Customer' }
+        shipping_address: { $ref: '#/components/schemas/Address' }
+        billing_address: { $ref: '#/components/schemas/Address' }
+        payment_method: { $ref: '#/components/schemas/PaymentMethod' }
+
+    CheckoutRequest:
+      type: object
+      required: [payment_method]
+      properties:
+        items:
+          type: array
+          description: Ignored; the stored cart is what gets paid.
+          items: { $ref: '#/components/schemas/CartItem' }
+        payment_method:
+          type: object
+          required: [type, token]
+          properties:
+            type: { type: string, enum: [paypal] }
+            token: { type: string, description: The PayPal order id the buyer approved }
+            payer_id: { type: string, description: PayerID from PayPal's return URL }
+
+    CheckoutResult:
+      allOf:
+        - $ref: '#/components/schemas/Cart'
+        - type: object
+          required: [payment_confirmation]
+          properties:
+            payment_confirmation:
+              type: object
+              required: [merchant_order_number, payment_status]
+              properties:
+                merchant_order_number: { type: string, example: SAY-CSPMFQB9 }
+                paypal_order_id: { type: string }
+                payment_status:
+                  type: string
+                  enum: [CAPTURED, AUTHORIZED_PENDING_MERCHANT_REVIEW]
+                  description: CAPTURED means charged; otherwise authorized and waiting for the shop owner.
+                guard_record_id: { type: string, description: The shop's say-so record for the capture }
+
+    ShopSummary:
+      type: object
+      required: [shop, name, ships_from, currency, sells, products]
+      properties:
+        shop: { type: string, description: The slug to use in other calls, example: maya-ceramics }
+        name: { type: string }
+        ships_from: { type: string }
+        currency: { type: string }
+        sells:
+          type: array
+          items: { type: string }
+        products: { type: integer, description: How many products it has }
+
+    ProductVariant:
+      type: object
+      required: [variant_id, title, price, in_stock]
+      properties:
+        variant_id: { type: string }
+        title: { type: string }
+        price: { type: string, description: Formatted price, e.g. "$34.00" }
+        in_stock:
+          description: Units on hand, or a made-to-order lead time
+          oneOf:
+            - type: integer
+            - type: string
+
+    Product:
+      type: object
+      required: [id, name, description, category, variants]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        category: { type: string }
+        variants:
+          type: array
+          items: { $ref: '#/components/schemas/ProductVariant' }
+
+    ShippingMethod:
+      type: object
+      required: [name, to, price, days]
+      properties:
+        name: { type: string }
+        to: { type: string, description: Comma-separated country codes, or * }
+        price: { type: string }
+        days: { type: string, example: 3-5 }
+
+    ShopOffer:
+      type: object
+      required: [shop, products, shipping, returns]
+      properties:
+        shop:
+          type: object
+          required: [slug, name, currency, ships_from, status]
+          properties:
+            slug: { type: string }
+            name: { type: string }
+            currency: { type: string }
+            ships_from: { type: string }
+            status: { type: string, enum: [draft, live] }
+        products:
+          type: array
+          items: { $ref: '#/components/schemas/Product' }
+        shipping:
+          type: array
+          items: { $ref: '#/components/schemas/ShippingMethod' }
+        returns: { type: string, example: 30 days }
+
+    Health:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+        storage: { type: string, enum: [memory, postgres] }
+        ai: { type: string }

@@ -6,10 +6,8 @@ import type { Commerce } from '../commerce.ts';
 import type { Actor } from '../guard/types.ts';
 import type { Invoicing } from '../invoicing.ts';
 import type { Links } from '../links.ts';
-import { parseAmount } from '../money.ts';
 import type { Orders } from '../orders.ts';
 import type { SaySo } from '../say-so.ts';
-import { parseWords, type ProductQuery } from '../search.ts';
 import type { Shops } from '../shops.ts';
 import type { CatalogStore } from '../stores.ts';
 import type { Wallet, Wallets } from '../wallets.ts';
@@ -102,9 +100,3 @@ export function shopFor(ctx: ToolContext, given: string | undefined): string {
   return given;
 }
 
-/** search_products arguments as a query in the shop's currency. */
-export function query(catalog: Catalog, input: { query?: string; max_price?: string; in_stock_only?: boolean }): ProductQuery {
-  const maxPrice = input.max_price === undefined ? undefined : parseAmount(input.max_price, catalog.shop.currency);
-  if (input.max_price !== undefined && maxPrice === undefined) throw new ToolError('max_price must look like 25.00');
-  return { words: parseWords(input.query), maxPrice, inStockOnly: input.in_stock_only };
-}

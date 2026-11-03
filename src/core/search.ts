@@ -2,7 +2,8 @@
 // over the price cap (or out of stock, if asked) are left out. Results are written for agents to read.
 
 import type { Catalog } from './catalog.ts';
-import { formatMoney } from './money.ts';
+import { HttpError } from './errors.ts';
+import { formatMoney, parseAmount } from './money.ts';
 
 export interface ProductQuery {
   /** Lower-case words; empty matches everything. */
@@ -14,6 +15,25 @@ export interface ProductQuery {
 
 export function parseWords(text: unknown): string[] {
   return String(text ?? '').toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+/** Search input as people and agents send it, read in the shop's currency. */
+export function productQuery(catalog: Catalog, input: { query?: string; max_price?: string; in_stock_only?: boolean }): ProductQuery {
+  const maxPrice = input.max_price === undefined ? undefined : parseAmount(input.max_price, catalog.shop.currency);
+  if (input.max_price !== undefined && maxPrice === undefined) throw new HttpError(400, 'max_price must look like 25.00');
+  return { words: parseWords(input.query), maxPrice, inStockOnly: input.in_stock_only };
+}
+
+/** One line about a shop for a list of shops. */
+export function shopSummary({ shop, products }: Catalog) {
+  return {
+    shop: shop.slug,
+    name: shop.name,
+    ships_from: shop.country,
+    currency: shop.currency,
+    sells: [...new Set(products.map((p) => p.category))].slice(0, 6),
+    products: products.length,
+  };
 }
 
 export function searchCatalog(catalog: Catalog, query: ProductQuery) {

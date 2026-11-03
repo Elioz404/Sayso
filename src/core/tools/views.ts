@@ -5,6 +5,7 @@ import type { Catalog } from '../catalog.ts';
 import type { PayPalCart } from '../cart/spec.ts';
 import type { GuardRecord, RecordStatus } from '../guard/types.ts';
 import { DEFAULT_CURRENCY, formatMoney } from '../money.ts';
+import { searchCatalog, type ProductQuery } from '../search.ts';
 import type { ToolContext } from './context.ts';
 
 /** Plain catalog view for agents: what's for sale, at what price, how many. */
@@ -26,6 +27,12 @@ export function catalogView(catalog: Catalog) {
     })),
     shipping: shop.shipping.map((s) => ({ name: s.name, to: s.countries.join(', '), price: formatMoney(s.price, shop.currency), days: `${s.minDays}-${s.maxDays}` })),
   };
+}
+
+/** What one shop offers for a search: matching products, shipping and returns. */
+export function shopOffer(catalog: Catalog, query: ProductQuery) {
+  const view = catalogView(catalog);
+  return { shop: view.shop, products: searchCatalog(catalog, query), shipping: view.shipping, returns: `${catalog.shop.returnPolicy.days} days` };
 }
 
 export function cartForAgent(cart: PayPalCart) {

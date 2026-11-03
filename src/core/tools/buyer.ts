@@ -2,10 +2,10 @@
 // shop's own endpoint. Paying with a saved PayPal goes through the buyer's own Guard (their limits).
 
 import { formatMoney } from '../money.ts';
-import { searchCatalog } from '../search.ts';
+import { productQuery, shopSummary } from '../search.ts';
 import { address, customer, items, money, shopArg } from './args.ts';
-import { buyerActor, liveCatalog, ownCart, query, shopFor, ToolError, walletFrom, type Tool } from './context.ts';
-import { cartForAgent, catalogView, orderForBuyer, refundRequestForBuyer } from './views.ts';
+import { buyerActor, liveCatalog, ownCart, shopFor, ToolError, walletFrom, type Tool } from './context.ts';
+import { cartForAgent, orderForBuyer, refundRequestForBuyer, shopOffer } from './views.ts';
 
 export const buyerTools: Tool[] = [
   {
@@ -17,15 +17,7 @@ export const buyerTools: Tool[] = [
     annotations: { readOnlyHint: true },
     inputSchema: { type: 'object', properties: {} },
     async run(_input, ctx) {
-      const live = await ctx.services.catalogs.listLive();
-      return live.map(({ shop, products }) => ({
-        shop: shop.slug,
-        name: shop.name,
-        ships_from: shop.country,
-        currency: shop.currency,
-        sells: [...new Set(products.map((p) => p.category))].slice(0, 6),
-        products: products.length,
-      }));
+      return (await ctx.services.catalogs.listLive()).map(shopSummary);
     },
   },
   {
@@ -48,23 +40,15 @@ export const buyerTools: Tool[] = [
       if (ctx.shopSlug) {
         const catalog = await liveCatalog(ctx);
         if (input.shop && input.shop !== catalog.shop.slug) throw new ToolError(`This endpoint only sells ${catalog.shop.name}; drop the shop argument.`);
-        const view = catalogView(catalog);
-        return { shop: view.shop, products: searchCatalog(catalog, query(catalog, input)), shipping: view.shipping, returns: `${catalog.shop.returnPolicy.days} days` };
+        return shopOffer(catalog, productQuery(catalog, input));
       }
       const live = (await ctx.services.catalogs.listLive()).filter((c) => !input.shop || c.shop.slug === input.shop);
       if (input.shop && live.length === 0) throw new ToolError(`No open shop called ${input.shop}. Use list_shops.`);
       const results = live
-        .map((catalog) => ({ catalog, products: searchCatalog(catalog, query(catalog, input)) }))
-        .filter((r) => r.products.length > 0)
+        .map((catalog) => shopOffer(catalog, productQuery(catalog, input)))
+        .filter((offer) => offer.products.length > 0)
         .slice(0, 10)
-        .map(({ catalog, products }) => ({
-          shop: catalog.shop.slug,
-          name: catalog.shop.name,
-          ships_from: catalog.shop.country,
-          products: products.slice(0, 10),
-          shipping: catalogView(catalog).shipping,
-          returns: `${catalog.shop.returnPolicy.days} days`,
-        }));
+        .map(({ shop, products, shipping, returns }) => ({ shop: shop.slug, name: shop.name, ships_from: shop.ships_from, products: products.slice(0, 10), shipping, returns }));
       return { results, next: results.length ? 'Pass the shop and variant_id to create_cart. One cart per shop.' : 'Nothing matched. Try fewer words or list_shops.' };
     },
   },

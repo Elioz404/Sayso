@@ -220,6 +220,10 @@ export default async function Docs() {
               <code>POST</code> creates a priced cart, <code>PUT /{'{id}'}</code> replaces it, <code>POST /{'{id}'}/checkout</code> completes it after the
               buyer approves. Problems come back as validation issues with resolution options an agent can apply.
             </p>
+            <p>
+              To find shops and products over plain HTTP, use <code>GET /api/shops</code> and <code>GET /api/shops/{'{shop}'}/products?query=</code>. The whole
+              API is described in an <a href={links.openApi}>OpenAPI spec</a>, ready for code generators.
+            </p>
           </section>
 
           <section id="reference" className="doc-section">
