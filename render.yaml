@@ -1,17 +1,23 @@
-# Render Blueprint: one Node web service + Postgres. Secrets marked sync: false are entered in the
-# Render dashboard when the Blueprint is created.
-# Use a paid Postgres plan: free databases expire after 30 days, and judging runs past that.
+# Render Blueprint: the Next.js web service, its Postgres, and an hourly cron job that cleans up
+# expired judges' tour copies. Values marked sync: false are entered in the Render dashboard when the
+# Blueprint is created (or later, under the service's Environment).
+# Postgres is on a paid plan: free databases expire after 30 days, and judging runs past that.
 services:
   - type: web
     name: sayso
     runtime: node
     plan: starter
-    buildCommand: npm ci && npm run build
+    # The developer portal is generated for this deployment's address when APIMATIC_AUTH_KEY is set;
+    # without it (or if APIMatic is down) the deploy goes on and the app hides the portal link.
+    buildCommand: npm ci && npm run apimatic -- portal --optional && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION
         value: "24"
+      # The public address, e.g. https://sayso.onrender.com: PayPal return links, MCP URLs, the portal.
+      - key: PUBLIC_BASE_URL
+        sync: false
       - key: PAYPAL_ENV
         value: sandbox
       - key: PAYPAL_CLIENT_ID
@@ -20,33 +26,33 @@ services:
         sync: false
       - key: OPENAI_API_KEY
         sync: false
+      # Most the server may spend on AI per day, in USD.
+      - key: AI_DAILY_BUDGET_USD
+        value: "0.50"
       # Market prices for owners (optional): https://trychannel3.com/developers
       - key: CHANNEL3_API_KEY
         sync: false
-      # DeepSeek instead of OpenAI (optional; OpenAI wins when both are set).
-      - key: DEEPSEEK_API_KEY
-        sync: false
-      - key: DEEPSEEK_MODEL
-        value: deepseek-flash
-      - key: PUBLIC_BASE_URL
+      # Generates the developer portal at build time (optional): an API key from the APIMatic dashboard.
+      - key: APIMATIC_AUTH_KEY
         sync: false
       # Signs owner sessions. Generated once by Render; rotating it signs every owner out.
       - key: SAYSO_SECRET
         generateValue: true
-      # Lets judges open the demo shop's owner view without its secret.
+      # The public demo: the demo shop's shared owner view and the judges' tour.
       - key: SAYSO_DEMO
         value: "true"
       - key: SAYSO_DEMO_OWNER_SECRET
         sync: false
       - key: SAYSO_DEMO_AGENT_KEY
         sync: false
-      # The judges' tour: the connected saved-PayPal wallet (wal_...) tour assistants pay with.
+      # The connected saved-PayPal wallet (wal_...) the tour's buyer assistants pay with. Set after the
+      # first deploy, once a sandbox buyer has connected PayPal; until then the tour hands out PayPal links.
       - key: SAYSO_TOUR_WALLET
         sync: false
-      # Authenticates the scheduled cleanup of expired tour copies (POST /api/internal/sweep).
+      # Authenticates the cron job below when it cleans up expired tour copies.
       - key: SAYSO_CRON_SECRET
         generateValue: true
-      # Optional: push the demo shop's say-so requests to the owner's phone (ntfy app, subscribe to this topic).
+      # Optional: push the demo shop's say-so requests to a phone (ntfy app, subscribe to this topic).
       - key: SAYSO_NTFY_TOPIC
         sync: false
       - key: SAYSO_NTFY_SHOP
@@ -55,6 +61,28 @@ services:
         fromDatabase:
           name: sayso-db
           property: connectionString
+
+  - type: cron
+    name: sayso-sweep
+    runtime: node
+    plan: starter
+    schedule: "0 * * * *"
+    buildCommand: "true"
+    startCommand: node scripts/sweep.ts
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      # The web service over Render's private network, and the secret it expects.
+      - key: SAYSO_APP_URL
+        fromService:
+          type: web
+          name: sayso
+          property: hostport
+      - key: SAYSO_CRON_SECRET
+        fromService:
+          type: web
+          name: sayso
+          envVarKey: SAYSO_CRON_SECRET
 
 databases:
   - name: sayso-db
