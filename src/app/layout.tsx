@@ -1,13 +1,34 @@
 import type { Metadata, Viewport } from 'next';
-import { Bricolage_Grotesque, Figtree, IBM_Plex_Mono } from 'next/font/google';
+import localFont from 'next/font/local';
 import { NavLinks } from '@/app/_components/client-ui.tsx';
 import { Mark } from '@/app/_components/ui.tsx';
 import { ABOUT } from '@/core/about.ts';
 import './globals.css';
 
-const display = Bricolage_Grotesque({ subsets: ['latin'], weight: ['600', '700', '800'], variable: '--font-bricolage', display: 'swap' });
-const body = Figtree({ subsets: ['latin'], weight: ['400', '500', '600', '700'], variable: '--font-figtree', display: 'swap' });
-const mono = IBM_Plex_Mono({ subsets: ['latin'], weight: ['400', '500', '600'], variable: '--font-plex-mono', display: 'swap' });
+// Self-hosted from the Fontsource packages (Latin only), not fetched from Google at build time: the
+// server and browser builds each fetched the CSS on their own, and when Google answered differently the
+// page's font class no longer matched the stylesheet and text fell back to the browser default.
+const bricolage = localFont({
+  src: '../../node_modules/@fontsource-variable/bricolage-grotesque/files/bricolage-grotesque-latin-wght-normal.woff2',
+  weight: '200 800',
+  variable: '--font-bricolage',
+  display: 'swap',
+});
+const figtree = localFont({
+  src: '../../node_modules/@fontsource-variable/figtree/files/figtree-latin-wght-normal.woff2',
+  weight: '300 900',
+  variable: '--font-figtree',
+  display: 'swap',
+});
+const plexMono = localFont({
+  src: [
+    { path: '../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2', weight: '400' },
+    { path: '../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2', weight: '500' },
+    { path: '../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-600-normal.woff2', weight: '600' },
+  ],
+  variable: '--font-plex-mono',
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: { default: 'Sayso', template: '%s · Sayso' },
@@ -27,7 +48,7 @@ export const viewport: Viewport = {
 // No cookies or database here, so pages that don't need them can be rendered ahead of time.
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${display.variable} ${body.variable} ${mono.variable}`}>
+    <html lang="en" className={`${bricolage.variable} ${figtree.variable} ${plexMono.variable}`}>
       <body>
         <header className="site-header">
           <div className="wrap">
