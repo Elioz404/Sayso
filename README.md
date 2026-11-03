@@ -100,7 +100,7 @@ The agent skill in [`skills/sayso/SKILL.md`](skills/sayso/SKILL.md) (open Agent 
 
 | Endpoint | Auth | Tools |
 |---|---|---|
-| `POST /api/shopping/mcp` | none | Every published shop: `list_shops`, `search_products` (grouped by shop), `create_cart` (with `shop`), `update_cart`, `get_cart`, `request_refund` |
+| `POST /api/shopping/mcp` | none (optional `Bearer sk_wallet_...`) | Every published shop: `list_shops`, `search_products` (grouped by shop), `create_cart` (with `shop`), `update_cart`, `get_cart`, `request_refund`, `connect_paypal`, `wallet_status`, `pay_with_paypal` |
 | `POST /api/shops/<slug>/mcp` | none | `search_products`, `create_cart`, `update_cart`, `get_cart` (order status, refunds, tracking), `request_refund` (goes to the owner) |
 | `POST /api/mcp` | `Authorization: Bearer sk_agent_...` | `shop_overview`, `list_products`, `update_variant`, `list_orders`, `get_order`, `refund_order`, `add_tracking`, `list_approvals`, `get_say_so`, `get_policy`, `propose_policy`, `audit_log` |
 
@@ -112,6 +112,19 @@ Streamable HTTP, stateless JSON responses, protocol versions `2025-11-25`, `2025
 
 A stdio client can use `{ "command": "node", "args": ["cli/sayso.ts", "mcp"] }` after `sayso login`.
 
+### Paying without a link each time (saved PayPal)
+
+A buyer can let their assistant pay on its own, inside limits they choose:
+
+1. The assistant calls `connect_paypal` and hands the buyer a Sayso link.
+2. The buyer picks a per-order and a daily limit there, then approves once in PayPal (**Payment Method Tokens**, saved without a purchase). The limits are shown in PayPal's approval screen and fixed from then on; no tool can raise them.
+3. `pay_with_paypal` goes through the **buyer's own Guard** first. Inside the limits, PayPal authorizes the saved account at once and the shop's Guard captures as usual (stock re-check, owner's rules). Over a limit, nothing is charged and the buyer gets the normal approval link for that one order.
+4. The buyer can disconnect from the same page; Sayso deletes the PayPal token.
+
+Tested on the sandbox: a $44.99 order paid with no redirect; a $108.12 order over a $100 limit came back for approval.
+
+In this demo every shop is paid into Sayso's sandbox merchant account, so one saved token covers all shops. With shops that have their own PayPal accounts, this would use PayPal's platform (multiparty) vaulting.
+
 ## PayPal integration
 
 | PayPal | Used for |
@@ -120,6 +133,7 @@ A stdio client can use `{ "command": "node", "args": ["cli/sayso.ts", "mcp"] }` 
 | **Orders v2** | `intent: AUTHORIZE` orders from priced carts, buyer approval, authorize, shipment tracking |
 | **Payments v2** | Capture and void authorizations, refunds, reading captures and refunds back to verify |
 | **Catalog Products API** | Products registered when a shop is published |
+| **Payment Method Tokens (Vault v3)** | Setup token -> buyer approval -> payment token; orders paid with `payment_source.paypal.vault_id`; tokens deleted on disconnect |
 | **Idempotency** | `PayPal-Request-Id` on every write, tied to the Guard record |
 | **Webhooks** | Signature verification helper (`verify-webhook-signature`) |
 
