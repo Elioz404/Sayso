@@ -344,6 +344,24 @@ body:has(.owner) .site-header, body:has(.owner) .site-footer { display: none; }
 .stock-out { color: var(--stop); }
 
 /* ---------- judges' tour ---------- */
+.tour-progress { display: flex; align-items: center; gap: var(--s3); }
+.tour-bar { flex: 1; height: 6px; border-radius: 999px; background: var(--paper-2); overflow: hidden; }
+.tour-bar span { display: block; height: 100%; background: var(--say); border-radius: inherit; transition: width 0.3s ease; }
+.tour-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s3); }
+/* One step: its number (a check once done) and its content. Only the step at hand is open. */
+.tour-step { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: var(--s3); padding: var(--s4); border: 1px solid var(--rule); border-radius: var(--radius); background: var(--sheet); }
+.tour-num { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: var(--t-sm); border: 1.5px solid var(--rule-strong); color: var(--ink-3); }
+.tour-step-next, .tour-step-needs-you { border-color: var(--say); box-shadow: 0 0 0 3px var(--say-soft); }
+.tour-step-next .tour-num, .tour-step-needs-you .tour-num { border-color: var(--say); color: var(--say); }
+.tour-step-needs-you { border-color: var(--hold); box-shadow: 0 0 0 3px var(--hold-soft); }
+.tour-step-needs-you .tour-num { border-color: var(--hold); color: var(--hold); }
+.tour-step-done .tour-num { background: var(--say); border-color: var(--say); color: var(--say-ink); }
+.tour-step-later { align-items: center; padding-block: var(--s3); background: transparent; }
+.tour-outcome { margin: 0; font-weight: 600; }
+.tour-step-needs-you .tour-outcome { color: var(--hold); }
+.tour-details summary { cursor: pointer; color: var(--ink-3); font-size: var(--t-sm); }
+.tour-details[open] { display: grid; gap: var(--s3); }
+
 /* What the scripted agents did: who, the tool, and what came back, one row per call. */
 .tour-log { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s3); }
 .tour-log li { display: grid; grid-template-columns: 11rem minmax(0, 1fr); gap: var(--s3); align-items: start; }
