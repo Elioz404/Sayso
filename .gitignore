@@ -10,3 +10,7 @@ next-env.d.ts
 .vercel
 coverage/
 cli/dist/
+.apimatic/
+
+# The APIMatic portal is generated (npm run apimatic -- portal); its template bundle is not ours to commit.
+public/developers/

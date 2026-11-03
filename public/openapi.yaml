@@ -16,12 +16,8 @@ info:
     name: MIT
     url: https://github.com/Elioz404/Sayso/blob/main/LICENSE
 servers:
-  - url: '{baseUrl}'
-    description: A Sayso server
-    variables:
-      baseUrl:
-        default: http://localhost:3000
-        description: Where Sayso runs, without a trailing slash
+  - url: http://localhost:3000
+    description: A Sayso server running locally. Point clients at your own Sayso server's address instead.
 tags:
   - name: Shops
     description: Find shops and what they sell.

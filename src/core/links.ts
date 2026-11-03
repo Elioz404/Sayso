@@ -13,6 +13,8 @@ export interface Links {
   merchantCart(slug: string): string;
   /** The REST API described for code generators. */
   openApi: string;
+  /** The developer portal APIMatic generates from that description. */
+  developers: string;
   /** The owner's agent, with the key in a header. */
   sellerMcp: string;
   /** The owner's agent through a personal URL. */
@@ -36,6 +38,7 @@ export function links(baseUrl: string): Links {
     shopMcp: (slug) => `${base}/api/shops/${slug}/mcp`,
     merchantCart: (slug) => `${base}/api/shops/${slug}/merchant-cart`,
     openApi: `${base}/openapi.yaml`,
+    developers: `${base}/developers`,
     sellerMcp: `${base}/api/mcp`,
     sellerMcpFor: (key) => `${base}/api/mcp/${key}`,
     cliLogin: (key) => `node cli/sayso.ts login --url ${base} --key ${key}`,

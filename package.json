@@ -16,7 +16,7 @@
     "typecheck": "tsc --noEmit",
     "sayso": "node cli/sayso.ts",
     "cli:build": "tsc -p cli/tsconfig.json",
-    "sdk": "node scripts/sdk.ts"
+    "apimatic": "node scripts/apimatic.ts"
   },
   "dependencies": {
     "@bryntum/scheduler": "npm:@bryntum/scheduler-trial@7.3.8",

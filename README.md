@@ -155,6 +155,15 @@ In this demo every shop is paid into Sayso's sandbox merchant account, so one sa
 - Any agent the owner already uses can run the shop through the CLI, MCP and skill, and any shopping assistant can buy through MCP or PayPal's platform.
 - **Channel3** product search: what similar items sell for at other stores, so a small seller can price with confidence. The owner's agent asks with `price_check` (or `sayso market`), and the catalog grid shows the usual range next to each price. It only informs; prices change only when someone changes them.
 
+## API, SDKs and developer portal (APIMatic)
+
+The REST API (shop discovery plus the merchant-cart flow) is described once in [`public/openapi.yaml`](public/openapi.yaml). From that file APIMatic generates:
+
+- typed SDKs in [`sdk/typescript`](sdk/typescript) and [`sdk/python`](sdk/python);
+- the developer portal served at `/developers`: API reference with a try-it console, SDK docs and a checkout guide (its pages live in [`apimatic/src`](apimatic/src)).
+
+[`examples/sdk-checkout`](examples/sdk-checkout) is an agent platform buying through the TypeScript SDK: it finds a shop, searches it, prices a cart and gets the buyer's PayPal approval link. Regenerate everything with `npm run apimatic -- sdk` and `npm run apimatic -- portal` (APIMatic CLI, signed in).
+
 ## How it fits together
 
 ```

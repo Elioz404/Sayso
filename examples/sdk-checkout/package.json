@@ -1,0 +1,12 @@
+{
+  "name": "sayso-sdk-checkout-example",
+  "private": true,
+  "type": "module",
+  "description": "An agent platform buying from a Sayso shop through the APIMatic-generated TypeScript SDK.",
+  "scripts": {
+    "start": "node index.ts"
+  },
+  "dependencies": {
+    "sayso-shops-api": "file:../../sdk/typescript"
+  }
+}

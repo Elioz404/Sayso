@@ -222,7 +222,9 @@ export default async function Docs() {
             </p>
             <p>
               To find shops and products over plain HTTP, use <code>GET /api/shops</code> and <code>GET /api/shops/{'{shop}'}/products?query=</code>. The whole
-              API is described in an <a href={links.openApi}>OpenAPI spec</a>, ready for code generators.
+              API is described in an <a href={links.openApi}>OpenAPI spec</a>. From it, APIMatic generates the{' '}
+              <a href={links.developers}>developer portal</a> (reference, try-it console and guides) and typed SDKs for TypeScript and Python, in the
+              repository&apos;s <code>sdk/</code> folder.
             </p>
           </section>
 
