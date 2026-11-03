@@ -9,6 +9,8 @@ services:
     plan: starter
     # The developer portal is generated for this deployment's address when APIMATIC_AUTH_KEY is set;
     # without it (or if APIMatic is down) the deploy goes on and the app hides the portal link.
+    # `npm run build` uses Webpack: a clean Turbopack production build of this app peaked near 25 GB,
+    # over the build machine's 8 GB; Webpack peaked at 2.5 GB and finished in a seventh of the time.
     buildCommand: npm ci && npm run apimatic -- portal --optional && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
