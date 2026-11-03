@@ -6,6 +6,7 @@ import { Decision, LoginForm } from '@/app/_components/owner-actions.tsx';
 import { actionLabel, Status, Who } from '@/app/_components/ui.tsx';
 import { When } from '@/app/_components/time.tsx';
 import { DEFAULT_CURRENCY, formatMoney } from '@/core/money.ts';
+import { paypalLoginEnabled } from '@/server/context.ts';
 import { ownerView } from '@/server/owner.ts';
 
 export const metadata: Metadata = { title: 'Your say-so' };
@@ -21,7 +22,7 @@ export default async function Approve({ params }: { params: Promise<{ id: string
           <h1>Sign in to decide</h1>
           <p className="soft">Only the shop owner can see and approve this request.</p>
         </div>
-        <LoginForm demo={process.env.SAYSO_DEMO === 'true'} />
+        <LoginForm demo={process.env.SAYSO_DEMO === 'true'} paypal={paypalLoginEnabled()} next={`/approve/${id}`} />
       </main>
     );
   }

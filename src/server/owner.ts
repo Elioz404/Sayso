@@ -5,6 +5,7 @@ import { cache } from 'react';
 import { maskPersonalData } from '@/core/privacy.ts';
 import { ready } from './context.ts';
 import { ownerSession } from './http.ts';
+import { sellerId } from './seller-session.ts';
 
 /**
  * The signed-in shop with every service, or undefined when nobody is signed in. `redact` is what every
@@ -23,3 +24,12 @@ export const ownerView = cache(async () => {
 
 /** What waits for the owner's say-so. */
 export const pendingFor = cache(async (shopId: string) => (await ready()).saySo.pending(shopId));
+
+/** The seller signed in with PayPal in this browser, and their shops (for switching between them). */
+export const signedInSeller = cache(async () => {
+  const id = await sellerId();
+  if (!id) return undefined;
+  const { sellers } = await ready();
+  const [seller, shops] = await Promise.all([sellers.get(id), sellers.shops(id)]);
+  return seller && { id, email: seller.email, name: seller.name, shops: shops.map(({ shop }) => ({ slug: shop.slug, name: shop.name })) };
+});

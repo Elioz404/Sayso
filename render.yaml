@@ -26,6 +26,10 @@ services:
         sync: false
       - key: PAYPAL_CLIENT_SECRET
         sync: false
+      # Owners sign in with PayPal (needs "Log in with PayPal" on the app, returning to
+      # <PUBLIC_BASE_URL>/api/owner/paypal/callback). false: owners get an owner secret instead.
+      - key: PAYPAL_LOGIN
+        value: "true"
       - key: OPENAI_API_KEY
         sync: false
       # Most the server may spend on AI per day, in USD.

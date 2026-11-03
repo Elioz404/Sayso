@@ -280,6 +280,32 @@ export const sellerTools: Tool[] = [
     },
   },
   {
+    name: 'rule_suggestions',
+    title: 'Rules the owner has earned you',
+    description:
+      "Limits the owner's own approvals support raising: when they kept approving the same kind of request, Sayso suggests letting you handle those alone, with the decisions behind it. Also how many more approvals each rule needs.",
+    side: 'seller',
+    annotations: { readOnlyHint: true },
+    inputSchema: { type: 'object', properties: {} },
+    async run(_input, ctx) {
+      const { suggestions, learning } = await ctx.services.saySo.autonomy(shop(ctx));
+      return {
+        suggestions: suggestions.map(({ id, title, evidence }) => ({ id, title, evidence })),
+        learning: learning.map((l) => ({ rule: l.ruleId, kind: l.kind, approvals: l.approvals, needed: l.needed, rejections: l.rejections })),
+      };
+    },
+  },
+  {
+    name: 'propose_rule_suggestion',
+    title: 'Ask the owner for an earned rule',
+    description: 'Send one of rule_suggestions to the owner. It only applies after the owner approves it.',
+    side: 'seller',
+    inputSchema: { type: 'object', properties: { suggestion_id: { type: 'string', pattern: '^sug_[a-f0-9]{12}$' } }, required: ['suggestion_id'] },
+    async run(input, ctx) {
+      return sayso(await ctx.services.saySo.adoptSuggestion(shop(ctx), input.suggestion_id, actor(ctx)), ctx);
+    },
+  },
+  {
     name: 'propose_policy',
     title: 'Propose new rules',
     description: 'Turn the owner\'s words into say-so rules, e.g. "refunds over $30 need my OK; invoices to new clients always need my OK". The new rules only apply after the owner approves them.',

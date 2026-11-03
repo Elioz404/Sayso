@@ -41,6 +41,7 @@ If `sayso` is not installed, run it from the repo with `node cli/sayso.ts` inste
 | "Raise the bowl to $52" | `sayso price <variant_id> 52.00 --json` |
 | "Am I charging too little for the mugs?" | `sayso market <variant_id> --json`: the usual range at other stores and where your price sits (read-only) |
 | "Refunds over $30 should need my OK" | `sayso policy propose "refunds over $30 need my OK" --json` |
+| "Do I still have to OK every refund?" | `sayso policy earned --json`: rules the owner's own approvals support, with the decisions behind them |
 | "Did I approve that refund?" | `sayso check <say_so_id> --json` |
 | "Grace wants a cobalt vase for $62, half up front, ready in 12 days" | `sayso invoice grace@example.com "Custom bud vase, cobalt" 62.00 --deposit 31.00 --make-days 12 --json` |
 | "What am I making this week?" | `sayso making --json`: made-to-order work, whether PayPal says it is paid, and when it is planned |
@@ -66,6 +67,11 @@ to get around a rule.
 `sayso policy propose "<owner's words>"` drafts rules and always waits for the owner's approval, even
 if you think it's harmless. Pass the owner's words as they said them; don't add rules they didn't ask
 for. Show them `not_understood` if it's not empty.
+
+When the owner keeps approving the same kind of request, `sayso policy earned --json` lists a rule
+their approvals support (for example "refunds up to $80 on your own"), with the evidence. Mention it
+when it fits, in one sentence, and only send it with `sayso policy earned ask <id>` if they say yes.
+It still waits for their approval in Sayso: you never loosen a rule yourself.
 
 ## Safety
 

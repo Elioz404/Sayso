@@ -5,7 +5,7 @@
 import { formatMoney } from '../money.ts';
 import { canonicalJson } from './engine.ts';
 import type { Policy, Rule } from './policy.ts';
-import type { Executor } from './types.ts';
+import { ACTIONS, type ActionKind, type Executor } from './types.ts';
 
 export interface PolicyStore {
   get(ownerId: string): Promise<Policy | undefined>;
@@ -57,26 +57,34 @@ export function policyUpdateExecutor(store: PolicyStore, current: (ownerId: stri
   };
 }
 
-/** One line per rule, for approval screens, the CLI and agents. */
+/** One line per rule, for approval screens, the CLI and agents: "Refunds over $50.00 need the owner's OK". */
 export function describeRule(rule: Rule, currency: string): string {
-  const kinds = rule.kinds.join(', ');
-  const then = 'then' in rule ? (rule.then === 'deny' ? 'block' : 'ask the owner') : '';
+  const what = nouns(rule.kinds);
+  const money = (minor: number) => formatMoney(minor, currency);
+  const then = 'then' in rule ? (rule.then === 'deny' ? 'are blocked' : "need the owner's OK") : '';
   switch (rule.type) {
     case 'max_amount':
-      return `${kinds} over ${formatMoney(rule.limit, currency)}: ${then}`;
+      return `${what} over ${money(rule.limit)} ${then}`;
     case 'daily_total':
-      return `${kinds} over ${formatMoney(rule.limit, currency)} in 24h: ${then}`;
+      return `${what} adding up to more than ${money(rule.limit)} in 24 hours ${then}`;
     case 'always_approve':
-      return `${kinds}: always ask the owner`;
+      return `${what} always need the owner's OK`;
     case 'never':
-      return `${kinds}: never allowed for agents`;
+      return `${what} are never allowed for agents`;
     case 'known_counterparty':
-      return `${kinds} to anyone but ${rule.allowed.join(', ')}: ${then}`;
+      return `${what} to anyone but ${rule.allowed.join(', ')} ${then}`;
     case 'categories':
-      return `${kinds} outside ${rule.allowed.join(', ')}: ${then}`;
+      return `${what} outside ${rule.allowed.join(', ')} ${then}`;
     case 'no_duplicates':
-      return `${kinds} repeated within ${rule.windowMinutes} min: block`;
+      return `${what} repeated within ${rule.windowMinutes} minutes are blocked`;
     case 'new_counterparty':
-      return `${kinds} to someone who has never paid you: ${then}`;
+      return `${what} to someone who has never paid the shop ${then}`;
   }
+}
+
+/** ["refund.create", "invoice.send"] -> "Refunds and invoices". */
+function nouns(kinds: readonly ActionKind[]): string {
+  const words = kinds.map((k) => ACTIONS[k].noun);
+  const list = words.length > 1 ? `${words.slice(0, -1).join(', ')} and ${words.at(-1)}` : (words[0] ?? 'Actions');
+  return list.charAt(0).toUpperCase() + list.slice(1);
 }

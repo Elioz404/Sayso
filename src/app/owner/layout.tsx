@@ -2,9 +2,10 @@
 import type { Metadata } from 'next';
 import { connection } from 'next/server';
 import { RailDrawer, RailNav } from '@/app/_components/client-ui.tsx';
-import { LoginForm, SignOut } from '@/app/_components/owner-actions.tsx';
+import { LoginForm, ShopSwitcher, SignOut } from '@/app/_components/owner-actions.tsx';
 import { Icon, Mark, Status } from '@/app/_components/ui.tsx';
-import { ownerView, pendingFor } from '@/server/owner.ts';
+import { paypalLoginEnabled } from '@/server/context.ts';
+import { ownerView, pendingFor, signedInSeller } from '@/server/owner.ts';
 
 export const metadata: Metadata = { title: 'Your shop' };
 
@@ -18,7 +19,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
           <h1>Sign in to your shop</h1>
           <p className="soft">Approve what your agents ask for, publish your catalog and manage agent keys.</p>
         </div>
-        <LoginForm demo={process.env.SAYSO_DEMO === 'true'} />
+        <LoginForm demo={process.env.SAYSO_DEMO === 'true'} paypal={paypalLoginEnabled()} />
         <p className="small soft">
           No shop yet? <a href="/start">Draft one from photos and a price list</a>.
         </p>
@@ -27,7 +28,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
   }
 
   const { shop, shopId } = view;
-  const pending = (await pendingFor(shopId)).length;
+  const [pending, seller] = await Promise.all([pendingFor(shopId).then((p) => p.length), signedInSeller()]);
   const onTour = Boolean(await view.tours?.forShop(shopId));
   const status = shop.status ?? 'live';
 
@@ -44,8 +45,9 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
           waiting={pending}
         >
           <div className="rail-shop">
-            <b>{shop.name}</b>
+            {seller && seller.shops.length > 1 ? <ShopSwitcher shops={seller.shops} current={shop.slug} /> : <b>{shop.name}</b>}
             <Status value={status} />
+            {seller && shop.sellerId === seller.id && <span className="rail-seller">PayPal: {seller.email ?? seller.name ?? 'signed in'}</span>}
           </div>
           <RailNav
             items={[

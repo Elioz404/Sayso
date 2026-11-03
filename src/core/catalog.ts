@@ -57,6 +57,8 @@ export interface Shop {
   visibility?: 'public' | 'private';
   /** When a temporary shop (a tour copy) is cleaned up. */
   expiresAt?: string;
+  /** The seller account that owns it (signed in with PayPal). Missing: owned through an owner secret only. */
+  sellerId?: string;
   createdAt?: string;
 }
 

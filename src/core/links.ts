@@ -20,6 +20,10 @@ export interface Links {
   /** The owner's agent through a personal URL. */
   sellerMcpFor(agentKey: string): string;
   cliLogin(agentKey: string): string;
+  /** Starts Log in with PayPal for an owner. */
+  paypalSignIn: string;
+  /** Where PayPal sends the owner back; registered as a return URL in the PayPal app. */
+  paypalSignInReturn: string;
   shopPage(slug: string): string;
   approve(recordId: string): string;
   wallet(walletId: string): string;
@@ -42,6 +46,8 @@ export function links(baseUrl: string): Links {
     sellerMcp: `${base}/api/mcp`,
     sellerMcpFor: (key) => `${base}/api/mcp/${key}`,
     cliLogin: (key) => `node cli/sayso.ts login --url ${base} --key ${key}`,
+    paypalSignIn: `${base}/api/owner/paypal/start`,
+    paypalSignInReturn: `${base}/api/owner/paypal/callback`,
     shopPage: (slug) => `${base}/shop/${slug}`,
     approve: (id) => `${base}/approve/${id}`,
     wallet: (id) => `${base}/wallet/${id}`,

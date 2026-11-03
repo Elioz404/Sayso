@@ -110,7 +110,7 @@ test('an agent cannot loosen its own rules: policy changes always wait for the o
   const again = await s.call('propose_policy', { rules: 'Refunds over $100 need my OK' }, s.owner);
   await s.saySo.decide('shop_maya', again.data.say_so_id, 'approve', 'owner:shop_maya');
   const policy = await s.call('get_policy', {}, s.owner);
-  assert.deepEqual(policy.data.rules, ['refund.create over $10,000.00: ask the owner']);
+  assert.deepEqual(policy.data.rules, ["Refunds over $10,000.00 need the owner's OK"]);
 });
 
 test('owner rejects a big capture: the hold is released and the buyer is never charged', async () => {
@@ -172,8 +172,8 @@ test('onboarding: a new shop starts as a draft, and publishing registers it with
   };
   const s = await stack(model);
   const { catalog, ownerSecret, agentKey } = await s.shops.onboard({ text: 'Soy candles, $18' });
-  assert.ok(ownerSecret.startsWith('sk_owner_') && agentKey.startsWith('sk_agent_'));
-  assert.ok(await s.access.checkOwnerSecret(catalog.shop.id, ownerSecret));
+  assert.ok(ownerSecret?.startsWith('sk_owner_') && agentKey.startsWith('sk_agent_'));
+  assert.ok(await s.access.checkOwnerSecret(catalog.shop.id, ownerSecret!));
 
   const closed = await s.call('search_products', {}, { shopSlug: catalog.shop.slug });
   assert.equal(closed.isError, true, 'drafts are invisible to buyer agents');
@@ -353,4 +353,33 @@ test('custom orders: invoices go through Guard, a first invoice to a new client 
 
   const bad = await s.call('send_invoice', { email: 'not-an-email', items: [{ name: 'Vase', price: '10.00' }] }, s.owner);
   assert.equal(bad.data.status, 'denied', 'the simulation catches a bad address before PayPal');
+});
+
+test('autonomy is earned: approvals the owner keeps giving become a rule the agent can ask for, never apply', async () => {
+  const s = await stack();
+  const orders = [await buyMug(s, 'var_mug_sage', 2), await buyMug(s, 'var_mug_sage', 2), await buyMug(s, 'var_mug_sage', 2)];
+  for (const [i, order] of orders.entries()) {
+    const held = await s.call('refund_order', { order_id: order, amount: ['55.00', '60.00', '72.00'][i], reason: 'Arrived broken' }, s.owner);
+    assert.equal(held.data.status, 'pending_approval');
+    await s.saySo.decide('shop_maya', held.data.say_so_id, 'approve', 'owner:shop_maya');
+  }
+
+  const { data } = await s.call('rule_suggestions', {}, s.owner);
+  assert.equal(data.suggestions.length, 1);
+  assert.match(data.suggestions[0].title, /refunds up to \$80\.00/);
+
+  // The agent can ask for it, but asking changes nothing until the owner says yes.
+  const asked = await s.call('propose_rule_suggestion', { suggestion_id: data.suggestions[0].id }, s.owner);
+  assert.equal(asked.data.status, 'pending_approval');
+  assert.equal(((await s.saySo.policy('shop_maya')).rules[0] as { limit: number }).limit, 5_000);
+  await s.saySo.decide('shop_maya', asked.data.say_so_id, 'approve', 'owner:shop_maya');
+  assert.equal(((await s.saySo.policy('shop_maya')).rules[0] as { limit: number }).limit, 8_000);
+
+  // A refund like the ones the owner kept approving no longer trips the per-refund limit. Today's
+  // $187 of refunds still count toward the daily limit, which the owner never loosened.
+  const order = await buyMug(s, 'var_bowl_sand', 3);
+  const next = await s.call('refund_order', { order_id: order, amount: '70.00', reason: 'Arrived broken' }, s.owner);
+  assert.equal(next.data.status, 'pending_approval');
+  assert.deepEqual(next.data.why.map((w: string) => /daily limit/.test(w)), [true]);
+  assert.equal((await s.call('rule_suggestions', {}, s.owner)).data.suggestions.length, 0);
 });

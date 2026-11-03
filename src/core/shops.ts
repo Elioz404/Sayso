@@ -1,6 +1,6 @@
 // Shop lifecycle: onboard (AI draft) -> owner reviews -> publish (PayPal Catalog Products) -> live for
-// buyer agents. Creating a shop also returns its two credentials, each exactly once: the owner secret
-// and a first agent key for the owner's own AI agent.
+// buyer agents. Creating a shop also returns a first agent key for the owner's own AI agent, once. The
+// owner signs in with PayPal; where PayPal sign-in isn't set up, they get an owner secret instead, once.
 
 import type { Access } from './access.ts';
 import { draftCatalog, type OnboardingInput } from './ai/onboarding.ts';
@@ -23,7 +23,8 @@ export interface ShopsDeps {
 export interface OnboardResult {
   catalog: Catalog;
   questions: string[];
-  ownerSecret: string;
+  /** Only when the owner signs in with a secret instead of PayPal. */
+  ownerSecret?: string;
   agentKey: string;
 }
 
@@ -34,13 +35,14 @@ export class Shops {
     this.deps = deps;
   }
 
-  async onboard(input: OnboardingInput, agentLabel = 'my agent'): Promise<OnboardResult> {
+  /** `ownerSecret: false` when the owner will claim the shop by signing in with PayPal. */
+  async onboard(input: OnboardingInput, agentLabel = 'my agent', options: { ownerSecret: boolean } = { ownerSecret: true }): Promise<OnboardResult> {
     if (!this.deps.model) throw new HttpError(503, 'Onboarding needs an AI key (OPENAI_API_KEY or DEEPSEEK_API_KEY) on the server');
     const { catalog, questions } = await draftCatalog(this.deps.model, input).catch((err: unknown) => {
       throw fromLlmError(err, 'Could not read that catalog');
     });
     await this.deps.catalogs.save(catalog);
-    const ownerSecret = await this.deps.access.createOwner(catalog.shop.id);
+    const ownerSecret = options.ownerSecret ? await this.deps.access.createOwner(catalog.shop.id) : undefined;
     const { secret: agentKey } = await this.deps.access.createAgentKey(catalog.shop.id, agentLabel);
     return { catalog, questions, ownerSecret, agentKey };
   }

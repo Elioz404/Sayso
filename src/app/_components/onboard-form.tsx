@@ -12,7 +12,10 @@ interface Created {
   shop: { slug: string; name: string };
   products: number;
   questions: string[];
-  owner_secret: string;
+  /** Only where owners sign in with a secret instead of PayPal. */
+  owner_secret?: string;
+  /** Where owners sign in with PayPal: this browser claims the shop there. */
+  claim_url?: string;
   agent_key: string;
   review_url: string;
   mcp: { seller: string; buyer: string; this_shop: string };
@@ -157,24 +160,48 @@ function CreatedShop({ created }: { created: Created }) {
         )}
       </div>
 
-      <div className="panel panel-hold stack" style={{ gap: 14 }}>
-        <div className="stack" style={{ gap: 4 }}>
-          <h2>Save these two keys now</h2>
-          <p className="small soft">They are shown only once. Store them in a password manager.</p>
+      {created.claim_url ? (
+        <>
+          <div className="panel panel-raised stack" style={{ gap: 14 }}>
+            <div className="stack" style={{ gap: 4 }}>
+              <h2>Make it yours with PayPal</h2>
+              <p className="small soft">
+                Sign in with the PayPal account you sell with. It becomes your login: no password to keep, and only you can approve what
+                your agent asks for.
+              </p>
+            </div>
+            <a className="btn btn-paypal" href={created.claim_url}>
+              Continue with PayPal
+            </a>
+          </div>
+          <div className="panel panel-hold stack" style={{ gap: 14 }}>
+            <div className="stack" style={{ gap: 4 }}>
+              <h2>Save your agent&apos;s key now</h2>
+              <p className="small soft">It is shown only once. Your AI agent runs the shop with it, and it can never approve anything.</p>
+            </div>
+            <CopyField value={created.agent_key} secret />
+          </div>
+        </>
+      ) : (
+        <div className="panel panel-hold stack" style={{ gap: 14 }}>
+          <div className="stack" style={{ gap: 4 }}>
+            <h2>Save these two keys now</h2>
+            <p className="small soft">They are shown only once. Store them in a password manager.</p>
+          </div>
+          <div className="stack" style={{ gap: 6 }}>
+            <b className="small">Owner secret: for you. It signs you in and approves money moves.</b>
+            <CopyField value={created.owner_secret ?? ''} secret />
+          </div>
+          <div className="stack" style={{ gap: 6 }}>
+            <b className="small">Agent key: for your AI agent. It runs the shop but can never approve.</b>
+            <CopyField value={created.agent_key} secret />
+          </div>
+          <div className="stack" style={{ gap: 6 }}>
+            <b className="small">Shop ID</b>
+            <CopyField value={created.shop.slug} />
+          </div>
         </div>
-        <div className="stack" style={{ gap: 6 }}>
-          <b className="small">Owner secret: for you. It signs you in and approves money moves.</b>
-          <CopyField value={created.owner_secret} secret />
-        </div>
-        <div className="stack" style={{ gap: 6 }}>
-          <b className="small">Agent key: for your AI agent. It runs the shop but can never approve.</b>
-          <CopyField value={created.agent_key} secret />
-        </div>
-        <div className="stack" style={{ gap: 6 }}>
-          <b className="small">Shop ID</b>
-          <CopyField value={created.shop.slug} />
-        </div>
-      </div>
+      )}
 
       <div className="panel stack" style={{ gap: 16 }}>
         <h2>Next</h2>
@@ -182,7 +209,7 @@ function CreatedShop({ created }: { created: Created }) {
           <li>
             <span className="stack" style={{ gap: 6 }}>
               <span>
-                <a href="/owner">Sign in as the owner</a>, check the catalog and press <b>Publish shop</b>.
+                {created.claim_url ? 'Continue with PayPal' : <a href="/owner">Sign in as the owner</a>}, check the catalog and press <b>Publish shop</b>.
               </span>
             </span>
           </li>

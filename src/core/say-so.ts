@@ -5,6 +5,7 @@
 import { draftPolicy } from './ai/policy-draft.ts';
 import type { ChatModel } from './ai/llm.ts';
 import { fromLlmError, HttpError, notFound } from './errors.ts';
+import { earnedAutonomy, LOOKBACK_DAYS, type Autonomy } from './guard/autonomy.ts';
 import { verifyAuditChain, type Guard } from './guard/engine.ts';
 import type { Policy } from './guard/policy.ts';
 import { describeRule } from './guard/policy-store.ts';
@@ -65,6 +66,22 @@ export class SaySo {
       throw fromLlmError(err, 'Could not draft that policy');
     });
     return { record: await this.submitPolicy(policy, `New rules: "${text.slice(0, 200)}"`, actor), unclear };
+  }
+
+  /** Rules the owner's own approvals support, and how close the others are. Recomputed every time. */
+  async autonomy(shopId: string, now = new Date()): Promise<Autonomy> {
+    const history = await this.deps.guard.list(shopId, { since: new Date(now.getTime() - LOOKBACK_DAYS * 86_400_000) });
+    return earnedAutonomy(await this.policy(shopId), history, now);
+  }
+
+  /**
+   * Submit a suggested rule. From the owner it applies at once; from an agent it waits for the owner
+   * like any policy change. The suggestion is recomputed here, never taken from the caller.
+   */
+  async adoptSuggestion(shopId: string, suggestionId: string, actor: Actor): Promise<GuardRecord> {
+    const found = (await this.autonomy(shopId)).suggestions.find((s) => s.id === suggestionId);
+    if (!found) throw new HttpError(409, 'That suggestion no longer applies; your rules or decisions have changed since');
+    return this.submitPolicy(found.policy, `${found.title}. ${found.evidence}`, actor);
   }
 
   /** Ask to replace a shop's rules. Goes through Guard; from an agent it always waits for the owner. */

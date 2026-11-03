@@ -35,6 +35,11 @@ const BASE: Record<PayPalEnv, string> = {
   sandbox: 'https://api-m.sandbox.paypal.com',
   live: 'https://api-m.paypal.com',
 };
+/** Where people sign in to PayPal (Log in with PayPal, onboarding links). */
+const WEB: Record<PayPalEnv, string> = {
+  sandbox: 'https://www.sandbox.paypal.com',
+  live: 'https://www.paypal.com',
+};
 
 const MAX_ATTEMPTS = 4;
 /** A PayPal call that hangs longer than this fails instead of holding the request (and a cart lock) open. */
@@ -57,8 +62,30 @@ export class PayPalClient {
     return new PayPalClient({ clientId, clientSecret, env: env.PAYPAL_ENV === 'live' ? 'live' : 'sandbox' });
   }
 
+  /** The app's client id: public, it appears in PayPal sign-in links. */
+  get clientId(): string {
+    return this.config.clientId;
+  }
+
+  /** PayPal's website for this environment, where people sign in. */
+  get webBase(): string {
+    return WEB[this.config.env ?? 'sandbox'];
+  }
+
   get<T>(path: string): Promise<T> {
     return this.request<T>('GET', path);
+  }
+
+  /** A read on behalf of a person signed in with Log in with PayPal, with their token instead of the app's. */
+  getAsUser<T>(path: string, userToken: string): Promise<T> {
+    return this.request<T>('GET', path, undefined, { Authorization: `Bearer ${userToken}` });
+  }
+
+  /** Log in with PayPal: trade the one-time code PayPal sent back for that person's access token. */
+  async userAccessToken(code: string, redirectUri: string): Promise<string> {
+    const body = new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri });
+    const { access_token } = await this.tokenRequest<{ access_token: string }>(body);
+    return access_token;
   }
 
   /** Writes always carry an idempotency key; pass the Guard record's key so retries are safe. */
@@ -76,6 +103,14 @@ export class PayPalClient {
 
   async accessToken(): Promise<string> {
     if (this.token && Date.now() < this.token.expiresAt) return this.token.value;
+    const { access_token, expires_in } = await this.tokenRequest<{ access_token: string; expires_in: number }>(
+      new URLSearchParams({ grant_type: 'client_credentials' }),
+    );
+    this.token = { value: access_token, expiresAt: Date.now() + (expires_in - 60) * 1000 };
+    return access_token;
+  }
+
+  private async tokenRequest<T>(body: URLSearchParams): Promise<T> {
     const doFetch = this.config.fetch ?? fetch;
     const res = await doFetch(`${this.base}/v1/oauth2/token`, {
       method: 'POST',
@@ -83,13 +118,11 @@ export class PayPalClient {
         Authorization: `Basic ${Buffer.from(`${this.config.clientId}:${this.config.clientSecret}`).toString('base64')}`,
         'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: 'grant_type=client_credentials',
+      body: body.toString(),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     if (!res.ok) throw new PayPalError(res.status, '/v1/oauth2/token', await safeJson(res), res.headers.get('paypal-debug-id') ?? undefined);
-    const { access_token, expires_in } = (await res.json()) as { access_token: string; expires_in: number };
-    this.token = { value: access_token, expiresAt: Date.now() + (expires_in - 60) * 1000 };
-    return access_token;
+    return (await res.json()) as T;
   }
 
   private async request<T>(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {
@@ -98,7 +131,7 @@ export class PayPalClient {
       const res = await doFetch(`${this.base}${path}`, {
         method,
         headers: {
-          Authorization: `Bearer ${await this.accessToken()}`,
+          Authorization: headers.Authorization ?? `Bearer ${await this.accessToken()}`,
           'Content-Type': 'application/json',
           Prefer: 'return=representation',
           ...headers,
@@ -108,7 +141,7 @@ export class PayPalClient {
       });
       if (res.ok) return (res.status === 204 ? undefined : await res.json()) as T;
 
-      if (res.status === 401 && attempt === 1) {
+      if (res.status === 401 && attempt === 1 && !headers.Authorization) {
         this.token = undefined;
         continue;
       }

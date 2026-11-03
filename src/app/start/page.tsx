@@ -1,9 +1,13 @@
 import type { Metadata } from 'next';
+import { connection } from 'next/server';
 import { OnboardForm } from '@/app/_components/onboard-form.tsx';
+import { paypalLoginEnabled } from '@/server/context.ts';
 
 export const metadata: Metadata = { title: 'Open your shop' };
 
-export default function Start() {
+export default async function Start() {
+  await connection();
+  const paypalLogin = paypalLoginEnabled();
   return (
     <main className="wrap page">
       <div className="split split-start">
@@ -26,8 +30,17 @@ export default function Start() {
             </li>
             <li>
               <span className="stack" style={{ gap: 2 }}>
-                <b>You get two keys, once</b>
-                <span className="small soft">An owner secret for you, and an agent key for the AI agent that will run the shop.</span>
+                {paypalLogin ? (
+                  <>
+                    <b>You make it yours with PayPal</b>
+                    <span className="small soft">Your PayPal sign-in is your login, and your agent gets a key that can never approve.</span>
+                  </>
+                ) : (
+                  <>
+                    <b>You get two keys, once</b>
+                    <span className="small soft">An owner secret for you, and an agent key for the AI agent that will run the shop.</span>
+                  </>
+                )}
               </span>
             </li>
             <li>

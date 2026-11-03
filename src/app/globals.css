@@ -24,6 +24,9 @@
   --stop-soft: #fbe8e5;
   --term: #111815;
   --term-ink: #d5ded9;
+  --paypal: #003087; /* PayPal's own blue, for "Continue with PayPal" */
+  --paypal-hover: #00246b;
+  --paypal-ink: #ffffff;
   --shadow: 0 1px 2px rgb(21 32 27 / 0.05), 0 12px 28px -14px rgb(21 32 27 / 0.22);
 
   /* Type: Figtree for everything you operate; Bricolage Grotesque only for the landing page's display
@@ -53,10 +56,12 @@
     --rule: #26302c; --rule-strong: #35413c; --field: #56625c; --say: #43c49d; --say-hover: #63d3b1; --say-ink: #05201a; --say-soft: #133129;
     --agent: #a5a8ff; --agent-soft: #23244a; --hold: #f0a34c; --hold-soft: #33250f; --stop: #f48c81; --stop-soft: #3b1916;
     --term: #0a0e0c; --term-ink: #d5ded9; --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 14px 32px -14px rgb(0 0 0 / 0.65);
+    --paypal: #ffc439; --paypal-hover: #f2ba36; --paypal-ink: #111111;
     color-scheme: dark;
   }
 }
 :root[data-theme='dark'] {
+  --paypal: #ffc439; --paypal-hover: #f2ba36; --paypal-ink: #111111;
   --paper: #0e1412; --paper-2: #131a17; --sheet: #172019; --ink: #e8eeea; --ink-2: #b7c2bc; --ink-3: #8e9a94;
   --rule: #26302c; --rule-strong: #35413c; --field: #56625c; --say: #43c49d; --say-hover: #63d3b1; --say-ink: #05201a; --say-soft: #133129;
   --agent: #a5a8ff; --agent-soft: #23244a; --hold: #f0a34c; --hold-soft: #33250f; --stop: #f48c81; --stop-soft: #3b1916;
@@ -145,6 +150,8 @@ body::before { content: ''; position: fixed; inset: 0 0 auto; height: env(safe-a
 .btn:active { transform: translateY(1px); }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
 .btn-primary { background: var(--say); border-color: var(--say); color: var(--say-ink); }
+.btn-paypal { background: var(--paypal); border-color: var(--paypal); color: var(--paypal-ink); }
+@media (hover: hover) { .btn-paypal:hover { background: var(--paypal-hover); border-color: var(--paypal-hover); color: var(--paypal-ink); } }
 @media (hover: hover) { .btn-primary:hover { background: var(--say-hover); border-color: var(--say-hover); color: var(--say-ink); } }
 .btn-danger { color: var(--stop); }
 @media (hover: hover) { .btn-danger:hover { border-color: var(--stop); color: var(--stop); background: var(--stop-soft); } }
@@ -432,3 +439,19 @@ body:has(.owner) .site-header, body:has(.owner) .site-footer { display: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
+
+/* ---------- earned rules ---------- */
+.callout-say { background: var(--say-soft); }
+.earned { display: flex; gap: var(--s5); align-items: center; justify-content: space-between; flex-wrap: wrap; border-color: var(--say); background: var(--say-soft); }
+.earned > .stack { flex: 1 1 320px; }
+.learning { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--s3); }
+.learning li { display: flex; gap: var(--s3); align-items: center; }
+.learning-meter { display: inline-flex; gap: 4px; flex: none; }
+.learning-meter i { width: 18px; height: 6px; border-radius: 3px; background: var(--rule-strong); }
+.learning-meter i.on { background: var(--say); }
+
+/* ---------- sign-in ---------- */
+.quiet-details { display: grid; gap: var(--s4); }
+.quiet-details summary { cursor: pointer; color: var(--ink-3); }
+.shop-switch select { width: 100%; }
+.rail-seller { font-size: var(--t-xs); color: var(--ink-3); overflow-wrap: anywhere; }

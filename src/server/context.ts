@@ -25,13 +25,14 @@ import { captureExecutor, refundExecutor, voidExecutor } from '@/core/paypal/exe
 import { invoiceExecutor } from '@/core/paypal/invoices.ts';
 import { policyLookup } from '@/core/policies.ts';
 import { SaySo } from '@/core/say-so.ts';
+import { MemorySellerStore, Sellers } from '@/core/sellers.ts';
 import { MemoryTourStore, Tours } from '@/core/tour.ts';
 import { Shops } from '@/core/shops.ts';
 import { MemoryCartStore, MemoryCatalogStore, type CartStore, type CatalogStore } from '@/core/stores.ts';
 import type { ToolServices } from '@/core/tools/registry.ts';
 import { MemoryWalletStore, walletCheckoutExecutor, Wallets, type WalletStore } from '@/core/wallets.ts';
 import { notifyOwner } from './notify.ts';
-import { Db, PgAccessStore, PgCartStore, PgCatalogStore, PgGuardStore, PgJobStore, PgPolicyStore, PgTourStore, PgWalletStore } from './pg-stores.ts';
+import { Db, PgAccessStore, PgCartStore, PgCatalogStore, PgGuardStore, PgJobStore, PgPolicyStore, PgSellerStore, PgTourStore, PgWalletStore } from './pg-stores.ts';
 
 export interface Context {
   carts: CartStore;
@@ -42,6 +43,10 @@ export interface Context {
   guard: Guard;
   commerce: Commerce;
   shops: Shops;
+  sellers: Sellers;
+  paypal: PayPalClient;
+  /** Owners sign in with PayPal (Log in with PayPal is set up on the PayPal app): PAYPAL_LOGIN=true. */
+  paypalLogin: boolean;
   orders: Orders;
   saySo: SaySo;
   invoicing: Invoicing;
@@ -59,6 +64,11 @@ const globalForSayso = globalThis as unknown as { sayso?: Promise<Context> };
 /** Every public URL, from PUBLIC_BASE_URL. Safe to call without the database (static pages use it). */
 export function siteLinks(): Links {
   return links(process.env.PUBLIC_BASE_URL ?? 'http://localhost:3000');
+}
+
+/** Owners sign in with PayPal on this deployment (Log in with PayPal is set up on the PayPal app). */
+export function paypalLoginEnabled(): boolean {
+  return process.env.PAYPAL_LOGIN === 'true';
 }
 
 /** Whether the APIMatic developer portal was generated into public/developers for this deployment. */
@@ -110,6 +120,7 @@ async function create(): Promise<Context> {
   guard.register('checkout.create', walletCheckoutExecutor({ commerce, store: walletStore, paypal }));
 
   const shops = new Shops({ catalogs, access, paypal, model, links: site });
+  const sellers = new Sellers({ store: db ? new PgSellerStore(db) : new MemorySellerStore(), catalogs });
   const orders = new Orders({ carts, guard, paypal });
   const saySo = new SaySo({ guard, policyFor, shops, model });
   const invoicing = new Invoicing({ guard, carts, shops, paypal });
@@ -136,7 +147,8 @@ async function create(): Promise<Context> {
       : undefined;
 
   await seedDemo(catalogs, policies, access);
-  return { carts, catalogs, access, model, aiBudget: ai?.budget, guard, commerce, shops, orders, saySo, invoicing, production, tours, wallets, market, tools, links: site };
+  const paypalLogin = paypalLoginEnabled();
+  return { carts, catalogs, access, model, aiBudget: ai?.budget, guard, commerce, shops, sellers, paypal, paypalLogin, orders, saySo, invoicing, production, tours, wallets, market, tools, links: site };
 }
 
 function sessionSecret(): string {

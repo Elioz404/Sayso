@@ -1,8 +1,8 @@
 // Who may do what. Two kinds of credentials, deliberately separate:
 //   - agent keys (sk_agent_...): what the owner's own AI agent holds. They can run the shop through the
 //     tools, but money-moving actions go through Guard, and they can never approve a Guard record.
-//   - the owner secret (sk_owner_...) and the signed owner session it unlocks: the only way to approve,
-//     reject, publish a shop or change its policy.
+//   - the owner's signed session, opened by signing in with PayPal (or, where PayPal sign-in isn't set
+//     up, the owner secret sk_owner_...): the only way to approve, reject, publish a shop or change its policy.
 // Secrets are stored as sha256 hashes and shown exactly once.
 
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -24,7 +24,7 @@ export interface AgentKey {
 
 export interface OwnerSession {
   shopId: string;
-  /** owner: signed in with the owner secret. demo: the shared public demo session. */
+  /** owner: the shop's owner (owner secret or PayPal). demo: the shared public demo session. */
   kind: 'owner' | 'demo';
 }
 
@@ -140,6 +140,24 @@ export class Access {
     if (!safeEqual(sig, this.hmac(`${shopId}.${expires}.${kind}`))) return undefined;
     if (kind !== 'owner' && kind !== 'demo') return undefined;
     return Number(expires) > now ? { shopId, kind } : undefined;
+  }
+
+  /**
+   * A signed, expiring token for one value, bound to what it is for: "<value>.<expiresMs>.<hmac>". A
+   * claim token can't be passed off as a seller token, and neither can be edited or outlive `ttlMs`.
+   */
+  signValue(purpose: string, value: string, ttlMs: number, now = Date.now()): string {
+    const payload = `${value}.${now + ttlMs}`;
+    return `${payload}.${this.hmac(`${purpose}:${payload}`)}`;
+  }
+
+  /** The value, or undefined if the token is forged, expired or for another purpose. */
+  verifyValue(purpose: string, token: string | undefined, now = Date.now()): string | undefined {
+    const parts = token?.split('.') ?? [];
+    if (parts.length !== 3) return undefined;
+    const [value, expires, sig] = parts;
+    if (!safeEqual(sig, this.hmac(`${purpose}:${value}.${expires}`))) return undefined;
+    return Number(expires) > now ? value : undefined;
   }
 
   private hmac(payload: string): string {

@@ -1,10 +1,12 @@
 // GET: every published shop. POST (onboarding): { text?, images?: data URLs, shop_name?, currency?,
-// country? } -> a draft shop, with the owner secret and a first agent key returned exactly once.
+// country? } -> a draft shop and a first agent key, returned exactly once. Where owners sign in with
+// PayPal, this browser may then claim the shop (claim_url); otherwise the owner secret comes back, once.
 import { HttpError } from '@/core/errors.ts';
 import { shopSummary } from '@/core/search.ts';
 import { ready } from '@/server/context.ts';
 import { handle, readJson } from '@/server/http.ts';
 import { clientAddress, onboarding } from '@/server/rate-limit.ts';
+import { rememberClaim } from '@/server/seller-session.ts';
 
 const MAX_IMAGE_CHARS = 6_000_000; // ~4.5 MB per photo once base64-encoded
 
@@ -24,18 +26,21 @@ export async function POST(request: Request) {
       throw new HttpError(400, 'Photos must be PNG, JPEG, WebP or GIF under ~4 MB');
     }
 
-    const { shops, links } = await ready();
+    const { shops, links, paypalLogin } = await ready();
     const result = await shops.onboard(
       { text: body.text?.slice(0, 8_000), images, shopName: body.shop_name?.slice(0, 80), currency: body.currency, country: body.country },
       body.agent_label?.slice(0, 60) || 'my agent',
+      { ownerSecret: !paypalLogin },
     );
     const { shop } = result.catalog;
+    if (paypalLogin) await rememberClaim(shop.id);
     return Response.json(
       {
         shop: { id: shop.id, slug: shop.slug, name: shop.name, status: shop.status },
         products: result.catalog.products.length,
         questions: result.questions,
         owner_secret: result.ownerSecret,
+        claim_url: paypalLogin ? links.paypalSignIn : undefined,
         agent_key: result.agentKey,
         review_url: `${links.base}/owner`,
         mcp: { seller: links.sellerMcpFor(result.agentKey), buyer: links.shoppingMcp, this_shop: links.shopMcp(shop.slug) },

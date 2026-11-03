@@ -1,5 +1,7 @@
 import type { Metadata } from 'next';
 import { CopyField } from '@/app/_components/client-ui.tsx';
+import { AdoptRule } from '@/app/_components/owner-actions.tsx';
+import { ACTIONS } from '@/core/guard/types.ts';
 import { describeRule } from '@/core/guard/policy-store.ts';
 import { ownerView } from '@/server/owner.ts';
 
@@ -8,8 +10,9 @@ export const metadata: Metadata = { title: 'Rules' };
 export default async function Rules() {
   const view = await ownerView();
   if (!view) return null;
-  const { saySo, shopId } = view;
-  const policy = await saySo.policy(shopId);
+  const { saySo, shopId, demo } = view;
+  const [policy, { suggestions, learning }] = await Promise.all([saySo.policy(shopId), saySo.autonomy(shopId)]);
+  const watching = learning.filter((l) => l.approvals < l.needed);
 
   return (
     <>
@@ -38,6 +41,43 @@ export default async function Rules() {
           </ul>
         </div>
         {policy.source && <p className="small soft">Written from: &ldquo;{policy.source}&rdquo;</p>}
+      </section>
+
+      <section className="block" aria-labelledby="earned">
+        <div className="stack" style={{ gap: 4 }}>
+          <h2 id="earned">Earned from your decisions</h2>
+          <p className="soft">
+            When you keep approving the same kind of request, Sayso suggests letting your agent handle those alone, never past anything you
+            turned down. An agent can ask for one too, but only you can say yes.
+          </p>
+        </div>
+        {suggestions.map((s) => (
+          <div className="panel earned" key={s.id}>
+            <div className="stack" style={{ gap: 6, minWidth: 0 }}>
+              <b>{s.title}</b>
+              <p className="small soft">{s.evidence}</p>
+            </div>
+            {demo ? <p className="small muted">The shared demo keeps its rules. Your tour copy can take this.</p> : <AdoptRule id={s.id} />}
+          </div>
+        ))}
+        {watching.length > 0 && (
+          <ul className="learning">
+            {watching.map((l) => (
+              <li key={`${l.ruleId}-${l.kind}`}>
+                <span className="learning-meter" aria-hidden="true">
+                  {Array.from({ length: l.needed }, (_, i) => (
+                    <i key={i} className={i < l.approvals ? 'on' : undefined} />
+                  ))}
+                </span>
+                <span className="small">
+                  {ACTIONS[l.kind].label}: you approved {l.approvals} of the {l.needed} Sayso needs to see before it suggests anything
+                  {l.rejections ? ` (and turned down ${l.rejections})` : ''}.
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {!suggestions.length && !watching.length && <p className="small muted">None of your rules ask for your OK, so there is nothing to learn yet.</p>}
       </section>
 
       <section className="block" aria-labelledby="change">

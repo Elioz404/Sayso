@@ -12,6 +12,7 @@ import type { JobNotes, JobStore } from '@/core/production.ts';
 import type { Tour, TourStore } from '@/core/tour.ts';
 import type { GuardRecord, GuardStore, RecordQuery, RecordStatus } from '@/core/guard/types.ts';
 import type { CartStore, CatalogStore, StoredCart } from '@/core/stores.ts';
+import type { Seller, SellerStore } from '@/core/sellers.ts';
 import type { Wallet, WalletStore } from '@/core/wallets.ts';
 
 const SCHEMA = `
@@ -30,7 +31,7 @@ create unique index if not exists sayso_docs_slug on sayso_docs (kind, slug) whe
 create index if not exists sayso_docs_hash on sayso_docs (kind, hash) where hash is not null;
 `;
 
-type Kind = 'catalog' | 'cart' | 'guard' | 'owner' | 'key' | 'policy' | 'wallet' | 'wallet-key' | 'jobs' | 'tour';
+type Kind = 'catalog' | 'cart' | 'guard' | 'owner' | 'key' | 'policy' | 'wallet' | 'wallet-key' | 'jobs' | 'tour' | 'seller';
 type Queryable = pg.Pool | pg.PoolClient;
 
 interface Doc {
@@ -121,12 +122,15 @@ export class PgCatalogStore implements CatalogStore {
     return this.db.one<Catalog>('catalog', 'slug', slug);
   }
   async save(catalog: Catalog, client?: Queryable) {
-    await this.db.put({ kind: 'catalog', id: catalog.shop.id, slug: catalog.shop.slug, createdAt: catalog.shop.createdAt, data: catalog }, client);
+    await this.db.put({ kind: 'catalog', id: catalog.shop.id, owner: catalog.shop.sellerId, slug: catalog.shop.slug, createdAt: catalog.shop.createdAt, data: catalog }, client);
   }
   listLive() {
     return this.db.list<Catalog>('catalog', null, {
       where: ["coalesce(data->'shop'->>'status', 'live') = 'live'", "coalesce(data->'shop'->>'visibility', 'public') = 'public'"],
     });
+  }
+  listBySeller(sellerId: string) {
+    return this.db.list<Catalog>('catalog', sellerId);
   }
   async remove(shopId: string) {
     await this.db.pool.query("delete from sayso_docs where kind = 'catalog' and id = $1", [shopId]);
@@ -308,5 +312,21 @@ export class PgWalletStore implements WalletStore {
   }
   async removeKeys(walletId: string) {
     await this.db.pool.query("delete from sayso_docs where kind = 'wallet-key' and owner = $1", [walletId]);
+  }
+}
+
+export class PgSellerStore implements SellerStore {
+  private readonly db: Db;
+  constructor(db: Db) {
+    this.db = db;
+  }
+  get(id: string) {
+    return this.db.get<Seller>('seller', id);
+  }
+  byPayPalUser(paypalUserId: string) {
+    return this.db.one<Seller>('seller', 'hash', paypalUserId);
+  }
+  async put(seller: Seller) {
+    await this.db.put({ kind: 'seller', id: seller.id, hash: seller.paypalUserId, createdAt: seller.createdAt, data: seller });
   }
 }

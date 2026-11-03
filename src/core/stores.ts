@@ -56,6 +56,8 @@ export interface CatalogStore {
   save(catalog: Catalog): Promise<void>;
   /** Published, listed shops: what buyers' assistants can browse. */
   listLive(): Promise<Catalog[]>;
+  /** Every shop a seller owns, drafts and private ones too, newest first. */
+  listBySeller(sellerId: string): Promise<Catalog[]>;
   remove(shopId: string): Promise<void>;
   /**
    * Change a catalog atomically: `change` edits it and returns true to save, false to leave it as it
@@ -113,6 +115,12 @@ export class MemoryCatalogStore implements CatalogStore {
   }
   async listLive() {
     return [...this.catalogs.values()].filter(isListed).map((c) => structuredClone(c));
+  }
+  async listBySeller(sellerId: string) {
+    return [...this.catalogs.values()]
+      .filter((c) => c.shop.sellerId === sellerId)
+      .sort((a, b) => (b.shop.createdAt ?? '').localeCompare(a.shop.createdAt ?? ''))
+      .map((c) => structuredClone(c));
   }
   async remove(shopId: string) {
     this.catalogs.delete(shopId);

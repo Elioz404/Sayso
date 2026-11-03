@@ -133,7 +133,7 @@ The skill in [`skills/sayso/SKILL.md`](skills/sayso/SKILL.md) teaches an agent t
 |---|---|---|
 | `POST /api/shopping/mcp` | none | Every published shop: `list_shops`, `search_products`, `create_cart`, `update_cart`, `get_cart`, `request_refund`, `connect_paypal`, `wallet_status`, `pay_with_paypal` |
 | `POST /api/shops/<slug>/mcp` | none | One shop's buyer tools |
-| `POST /api/mcp` | `Bearer sk_agent_...` | `shop_overview`, `list_products`, `update_variant`, `price_check`, `production_board`, `plan_job`, `list_orders`, `get_order`, `refund_order`, `add_tracking`, `send_invoice`, `list_invoices`, `list_approvals`, `get_say_so`, `get_policy`, `propose_policy`, `audit_log` |
+| `POST /api/mcp` | `Bearer sk_agent_...` | `shop_overview`, `list_products`, `update_variant`, `price_check`, `production_board`, `plan_job`, `list_orders`, `get_order`, `refund_order`, `add_tracking`, `send_invoice`, `list_invoices`, `list_approvals`, `get_say_so`, `get_policy`, `propose_policy`, `rule_suggestions`, `propose_rule_suggestion`, `audit_log` |
 
 Streamable HTTP with stateless JSON responses (protocol `2025-11-25`, `2025-06-18`, `2025-03-26`). Connector screens that take only a URL get a **personal URL** with the key in the path: `/api/mcp/<sk_agent_...>` for the owner's agent, `/api/shopping/mcp/<sk_wallet_...>` for a buyer with saved PayPal. Revoking the key kills the URL.
 

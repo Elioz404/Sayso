@@ -3,15 +3,26 @@
 // Client islands for owner actions. Each calls an owner-only API route (signed session cookie) and
 // refreshes the server-rendered page.
 
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { callApi } from './api.ts';
 import { CopyField } from './client-ui.tsx';
 import { Icon } from './ui.tsx';
 
 
-export function LoginForm({ demo }: { demo: boolean }) {
+/** What PayPal sign-in came back with, as /owner?signin=... */
+const SIGN_IN_OUTCOMES: Record<string, string> = {
+  cancelled: 'You left PayPal before signing in. Nothing changed.',
+  expired: 'That sign-in took too long or came from another browser. Please try again.',
+  'no-shop': 'You signed in with PayPal, but no shop belongs to that account yet. Create one first.',
+  taken: 'That shop already belongs to another PayPal account.',
+  failed: 'PayPal sign-in did not go through. Please try again.',
+};
+
+/** `next`: where to land after signing in with PayPal (this page by default lands on /owner). */
+export function LoginForm({ demo, paypal, next }: { demo: boolean; paypal: boolean; next?: string }) {
   const router = useRouter();
+  const outcome = useSearchParams().get('signin') ?? undefined;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -27,31 +38,49 @@ export function LoginForm({ demo }: { demo: boolean }) {
     }
   }
 
+  const secretForm = (
+    <form
+      className="stack"
+      style={{ gap: 16 }}
+      onSubmit={(e) => {
+        e.preventDefault();
+        const form = new FormData(e.currentTarget);
+        void login({ shop: form.get('shop'), secret: form.get('secret') });
+      }}
+    >
+      <div className="field">
+        <label htmlFor="shop">Shop ID</label>
+        <input id="shop" name="shop" placeholder="lumen-candles-807b" autoComplete="username" required />
+      </div>
+      <div className="field">
+        <label htmlFor="secret">Owner secret</label>
+        <input id="secret" name="secret" type="password" placeholder="sk_owner_..." autoComplete="current-password" required />
+        <span className="hint">You got it once, when the shop was created. Your agent&apos;s key won&apos;t work here, on purpose.</span>
+      </div>
+      <button className={paypal ? 'btn' : 'btn btn-primary'} disabled={busy}>
+        {busy ? 'Signing in...' : 'Sign in'}
+      </button>
+    </form>
+  );
+
   return (
     <div className="stack" style={{ gap: 'var(--s4)' }}>
-      <form
-        className="panel panel-raised stack"
-        style={{ gap: 16 }}
-        onSubmit={(e) => {
-          e.preventDefault();
-          const form = new FormData(e.currentTarget);
-          void login({ shop: form.get('shop'), secret: form.get('secret') });
-        }}
-      >
-        <div className="field">
-          <label htmlFor="shop">Shop ID</label>
-          <input id="shop" name="shop" placeholder="lumen-candles-807b" autoComplete="username" required />
+      {outcome && SIGN_IN_OUTCOMES[outcome] && <div className="callout small">{SIGN_IN_OUTCOMES[outcome]}</div>}
+      {paypal ? (
+        <div className="panel panel-raised stack" style={{ gap: 16 }}>
+          <a className="btn btn-paypal" href={`/api/owner/paypal/start${next ? `?next=${encodeURIComponent(next)}` : ''}`}>
+            Sign in with PayPal
+          </a>
+          <p className="small soft">Use the PayPal account your shop is paid into. There is no Sayso password to remember or lose.</p>
+          <details className="quiet-details">
+            <summary className="small">Have an owner secret instead?</summary>
+            {secretForm}
+          </details>
         </div>
-        <div className="field">
-          <label htmlFor="secret">Owner secret</label>
-          <input id="secret" name="secret" type="password" placeholder="sk_owner_..." autoComplete="current-password" required />
-          <span className="hint">You got it once, when the shop was created. Your agent&apos;s key won&apos;t work here, on purpose.</span>
-        </div>
-        <button className="btn btn-primary" disabled={busy}>
-          {busy ? 'Signing in...' : 'Sign in'}
-        </button>
-        {error && <p className="error small">{error}</p>}
-      </form>
+      ) : (
+        <div className="panel panel-raised">{secretForm}</div>
+      )}
+      {error && <p className="error small">{error}</p>}
       {demo && (
         <div className="panel panel-tight spread">
           <div className="stack" style={{ gap: 2 }}>
@@ -64,6 +93,29 @@ export function LoginForm({ demo }: { demo: boolean }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** For a seller signed in with PayPal who owns more than one shop. */
+export function ShopSwitcher({ shops, current }: { shops: { slug: string; name: string }[]; current: string }) {
+  const router = useRouter();
+  return (
+    <label className="field shop-switch">
+      <span className="sr-only">Switch shop</span>
+      <select
+        value={current}
+        onChange={async (e) => {
+          await callApi('/api/owner/session', 'POST', { shop: e.target.value, paypal: true }).catch(() => {});
+          router.refresh();
+        }}
+      >
+        {shops.map((s) => (
+          <option key={s.slug} value={s.slug}>
+            {s.name}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
@@ -231,5 +283,33 @@ export function RevokeKey({ id, label }: { id: string; label: string }) {
       </button>
       {error && <span className="error small">{error}</span>}
     </span>
+  );
+}
+
+export function AdoptRule({ id }: { id: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  return (
+    <div className="stack" style={{ gap: 6 }}>
+      <button
+        className="btn btn-primary"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          setError(undefined);
+          try {
+            await callApi(`/api/owner/rules/suggestions/${id}`, 'POST');
+            router.refresh();
+          } catch (err) {
+            setError((err as Error).message);
+          }
+          setBusy(false);
+        }}
+      >
+        {busy ? 'Saving...' : 'Use this rule'}
+      </button>
+      {error && <p className="error small">{error}</p>}
+    </div>
   );
 }

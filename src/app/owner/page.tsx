@@ -9,8 +9,8 @@ import { ownerView, pendingFor } from '@/server/owner.ts';
 export default async function Overview() {
   const view = await ownerView();
   if (!view) return null;
-  const { shop, shopId, orders: shopOrders, catalog, redact } = view;
-  const [approvals, orders] = await Promise.all([pendingFor(shopId), shopOrders.list(shopId)]);
+  const { shop, shopId, orders: shopOrders, catalog, redact, saySo } = view;
+  const [approvals, orders, { suggestions }] = await Promise.all([pendingFor(shopId), shopOrders.list(shopId), saySo.autonomy(shopId)]);
   const money = (minor: number) => formatMoney(minor, shop.currency);
   const paid = orders.filter((o) => o.status === 'paid');
   const charged = paid.reduce((sum, o) => sum + (o.totalMinor ?? 0), 0);
@@ -34,6 +34,18 @@ export default async function Overview() {
             <span className="small soft">Check the catalog, then publish to register it with PayPal and let AI shoppers buy.</span>
           </div>
           <PublishButton />
+        </div>
+      )}
+
+      {suggestions.length > 0 && (
+        <div className="callout callout-say">
+          <div className="stack" style={{ gap: 2 }}>
+            <b>{suggestions[0].title}?</b>
+            <span className="small soft">{suggestions[0].evidence}</span>
+          </div>
+          <a className="btn btn-small" href="/owner/rules#earned">
+            Review
+          </a>
         </div>
       )}
 

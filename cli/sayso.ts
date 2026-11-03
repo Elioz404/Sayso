@@ -445,9 +445,24 @@ const commands: Record<string, { usage: string; summary: string; run: Command }>
     },
   },
   policy: {
-    usage: 'sayso policy [propose "refunds over $30 need my OK; invoices to new clients need my OK"]',
-    summary: 'Show the say-so rules, or propose new ones (the owner approves them)',
+    usage: 'sayso policy [propose "refunds over $30 need my OK; invoices to new clients need my OK" | earned [ask <suggestion_id>]]',
+    summary: "Show the say-so rules, propose new ones, or see the rules the owner's approvals earned (the owner approves them)",
     async run(args, config, json) {
+      if (args.positional[0] === 'earned') {
+        if (args.positional[1] === 'ask') {
+          if (!args.positional[2]) throw new CliError(this.usage, EXIT.usage);
+          const r = await tool(config, 'propose_rule_suggestion', { suggestion_id: args.positional[2] });
+          return json ? printJson(r) : printSayso(r);
+        }
+        const earned = await tool(config, 'rule_suggestions');
+        out(json, earned, () => {
+          for (const s of earned.suggestions) console.log(`  ${c.bold(s.id)}  ${s.title}
+    ${c.dim(s.evidence)}`);
+          for (const l of earned.learning) if (l.approvals < l.needed) console.log(c.dim(`  ${l.kind}: ${l.approvals} of ${l.needed} approvals so far`));
+          if (!earned.suggestions.length && !earned.learning.length) console.log(c.dim('No rule asks the owner, so there is nothing to earn.'));
+        });
+        return;
+      }
       if (args.positional[0] === 'propose') {
         const text = args.positional.slice(1).join(' ');
         if (!text) throw new CliError(this.usage, EXIT.usage);

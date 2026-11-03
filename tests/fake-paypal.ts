@@ -23,6 +23,8 @@ export interface FakePayPal {
   /** Make every GET whose path starts with `prefix` fail (undefined: stop failing). */
   failReads(prefix: string | undefined): void;
   authorizations: Map<string, Json>;
+  /** Log in with PayPal: a one-time code for this person, as PayPal's sign-in page would send back. */
+  signInCode(person: { user_id: string; payer_id?: string; email?: string; name?: string; verified?: boolean }): string;
 }
 
 export function fakePayPal(): FakePayPal {
@@ -41,6 +43,8 @@ export function fakePayPal(): FakePayPal {
   const replays = new Map<string, Json>();
   const requestIds: string[] = [];
   let failingReads: string | undefined;
+  const signInCodes = new Map<string, Json>(); // code -> person; each code works once
+  const userTokens = new Map<string, Json>(); // user access token -> person
   let seq = 0;
   const id = (prefix: string) => `${prefix}${(++seq).toString().padStart(6, '0')}`;
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -52,7 +56,27 @@ export function fakePayPal(): FakePayPal {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
     const method = init?.method ?? 'GET';
     const path = url.pathname;
-    if (path === '/v1/oauth2/token') return json({ access_token: 'fake-token', expires_in: 32_400 });
+    if (path === '/v1/oauth2/token') {
+      const form = new URLSearchParams(String(init?.body ?? ''));
+      if (form.get('grant_type') !== 'authorization_code') return json({ access_token: 'fake-token', expires_in: 32_400 });
+      const person = signInCodes.get(form.get('code') ?? '');
+      if (!person) return json({ error: 'invalid_grant' }, 400);
+      signInCodes.delete(form.get('code')!);
+      const token = id('user-token-');
+      userTokens.set(token, person);
+      return json({ access_token: token, token_type: 'Bearer', expires_in: 28_800 });
+    }
+    if (path === '/v1/identity/oauth2/userinfo') {
+      const person = userTokens.get(new Headers(init?.headers).get('Authorization')?.replace(/^Bearer /, '') ?? '');
+      if (!person) return json({ name: 'AUTHENTICATION_FAILURE' }, 401);
+      return json({
+        user_id: person.user_id,
+        payer_id: person.payer_id,
+        name: person.name,
+        emails: person.email ? [{ value: person.email, primary: true, confirmed: true }] : [],
+        verified_account: String(person.verified ?? true),
+      });
+    }
 
     // 403 rather than a 5xx so the client does not spend seconds retrying in tests.
     if (method === 'GET' && failingReads && path.startsWith(failingReads)) return json({ name: 'NOT_AUTHORIZED' }, 403);
@@ -209,6 +233,11 @@ export function fakePayPal(): FakePayPal {
   };
 
   return {
+    signInCode(person) {
+      const code = id('code-');
+      signInCodes.set(code, person);
+      return code;
+    },
     fetch: handler as typeof fetch,
     orders,
     requestIds,

@@ -263,7 +263,7 @@ export default async function Docs() {
                   <tr>
                     <td className="mono">/api/mcp/&lt;agent key&gt;</td>
                     <td>The owner&apos;s agent</td>
-                    <td className="small">shop_overview, list_products, update_variant, list_orders, get_order, refund_order, add_tracking, send_invoice, list_invoices, list_approvals, get_say_so, get_policy, propose_policy, audit_log</td>
+                    <td className="small">shop_overview, list_products, update_variant, list_orders, get_order, refund_order, add_tracking, send_invoice, list_invoices, list_approvals, get_say_so, get_policy, propose_policy, rule_suggestions, propose_rule_suggestion, audit_log</td>
                   </tr>
                 </tbody>
               </table>
