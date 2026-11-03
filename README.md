@@ -104,7 +104,14 @@ The agent skill in [`skills/sayso/SKILL.md`](skills/sayso/SKILL.md) (open Agent 
 | `POST /api/shops/<slug>/mcp` | none | `search_products`, `create_cart`, `update_cart`, `get_cart` (order status, refunds, tracking), `request_refund` (goes to the owner) |
 | `POST /api/mcp` | `Authorization: Bearer sk_agent_...` | `shop_overview`, `list_products`, `update_variant`, `list_orders`, `get_order`, `refund_order`, `add_tracking`, `list_approvals`, `get_say_so`, `get_policy`, `propose_policy`, `audit_log` |
 
-Streamable HTTP, stateless JSON responses, protocol versions `2025-11-25`, `2025-06-18` and `2025-03-26`. A remote client config:
+Streamable HTTP, stateless JSON responses, protocol versions `2025-11-25`, `2025-06-18` and `2025-03-26`.
+
+**Personal URLs.** Connector screens in assistants such as ChatGPT take a URL, not headers, so every key also works inside a URL:
+
+- Owner's agent: `https://<host>/api/mcp/<sk_agent_...>`, shown when the owner connects an agent (dashboard, Agents). Revoking the key kills the URL.
+- Buyer with saved PayPal: `https://<host>/api/shopping/mcp/<sk_wallet_...>`, shown once after they connect PayPal. Their assistant can then pay inside their limits in any chat.
+
+Treat them like passwords. Clients that can send headers can use the plain endpoints with `Authorization: Bearer ...` instead:
 
 ```json
 { "mcpServers": { "my-shop": { "url": "https://<host>/api/mcp", "headers": { "Authorization": "Bearer sk_agent_..." } } } }

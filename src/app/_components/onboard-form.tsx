@@ -191,14 +191,15 @@ function CreatedShop({ created, origin }: { created: Created; origin: string }) 
           </li>
           <li>
             <span className="stack" style={{ gap: 6, minWidth: 0 }}>
-              <span>Connect your agent from a terminal:</span>
-              <CopyField value={`node cli/sayso.ts login --url ${origin} --key ${created.agent_key}`} />
+              <span>Connect your agent: paste this as a connector in ChatGPT or any MCP client.</span>
+              <CopyField value={`${origin}/api/mcp/${created.agent_key}`} secret />
+              <span className="small muted">From a terminal instead: node cli/sayso.ts login --url {origin} --key (your agent key)</span>
             </span>
           </li>
           <li>
             <span className="stack" style={{ gap: 6, minWidth: 0 }}>
-              <span>After you publish, shoppers&apos; assistants buy here:</span>
-              <CopyField value={created.mcp.buyer} />
+              <span>After you publish, shoppers&apos; assistants buy here (every shop on Sayso):</span>
+              <CopyField value={`${origin}/api/shopping/mcp`} />
             </span>
           </li>
         </ol>

@@ -27,7 +27,7 @@ create unique index if not exists sayso_docs_slug on sayso_docs (kind, slug) whe
 create index if not exists sayso_docs_hash on sayso_docs (kind, hash) where hash is not null;
 `;
 
-type Kind = 'catalog' | 'cart' | 'guard' | 'owner' | 'key' | 'policy' | 'wallet';
+type Kind = 'catalog' | 'cart' | 'guard' | 'owner' | 'key' | 'policy' | 'wallet' | 'wallet-key';
 
 interface Doc {
   kind: Kind;
@@ -204,7 +204,13 @@ export class PgWalletStore implements WalletStore {
   get(id: string) {
     return this.db.get<Wallet>('wallet', id);
   }
-  byHash(hash: string) {
-    return this.db.one<Wallet>('wallet', 'hash', hash);
+  async byHash(hash: string) {
+    const direct = await this.db.one<Wallet>('wallet', 'hash', hash);
+    if (direct) return direct;
+    const alias = await this.db.one<{ walletId: string }>('wallet-key', 'hash', hash);
+    return alias ? this.get(alias.walletId) : undefined;
+  }
+  async addKey(walletId: string, hash: string) {
+    await this.db.put({ kind: 'wallet-key', id: hash, owner: walletId, hash, data: { walletId } });
   }
 }

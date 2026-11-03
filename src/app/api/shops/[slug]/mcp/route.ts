@@ -3,7 +3,7 @@
 import { mcpGet, mcpOptions, mcpPost } from '@/server/mcp-route.ts';
 
 export async function POST(request: Request, { params }: { params: Promise<{ slug: string }> }) {
-  return mcpPost(request, (await params).slug);
+  return mcpPost(request, { shopSlug: (await params).slug });
 }
 export const GET = mcpGet;
 export const OPTIONS = mcpOptions;

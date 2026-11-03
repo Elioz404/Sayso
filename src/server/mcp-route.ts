@@ -1,12 +1,15 @@
 // Streamable HTTP transport for the MCP server: every POST carries one JSON-RPC message and gets one
-// JSON response (or 202 for notifications). Stateless, so it scales and survives restarts. Auth is a
-// bearer agent key only; cookies are never read here, so an agent can't ride the owner's session.
+// JSON response (or 202 for notifications). Stateless, so it scales and survives restarts.
+//
+// Keys travel as `Authorization: Bearer ...` or, for clients whose connector screens take only a URL
+// (as in ChatGPT), inside a personal URL: /api/mcp/<sk_agent_...> or /api/shopping/mcp/<sk_wallet_...>.
+// Cookies are never read here, so an agent can't ride the owner's session.
 
 import 'server-only';
 import { handleMcp } from '@/core/mcp.ts';
 import type { ToolContext } from '@/core/tools/registry.ts';
 import { ready } from './context.ts';
-import { agentFrom, handle } from './http.ts';
+import { handle } from './http.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -14,14 +17,26 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, Mcp-Protocol-Version, Mcp-Session-Id, X-Sayso-Channel',
 };
 
-/** `shopSlug`: one shop's buyer endpoint. `marketplace`: the all-shops buyer endpoint. Neither: seller tools, key required. */
-export async function mcpPost(request: Request, shopSlug?: string, marketplace = false): Promise<Response> {
+export interface McpEndpoint {
+  /** One shop's buyer endpoint. */
+  shopSlug?: string;
+  /** The all-shops buyer endpoint. Neither set: seller tools, agent key required. */
+  marketplace?: boolean;
+  /** A key from a personal URL path; used when no Authorization header is sent. */
+  pathKey?: string;
+}
+
+const bearer = (request: Request, prefix: string) => new RegExp(`^Bearer\\s+(${prefix}[A-Za-z0-9_-]+)$`).exec(request.headers.get('authorization') ?? '')?.[1];
+
+export async function mcpPost(request: Request, endpoint: McpEndpoint = {}): Promise<Response> {
+  const { shopSlug, marketplace = false, pathKey } = endpoint;
   const response = await handle(async () => {
-    const { tools, catalogs } = await ready();
-    const key = await agentFrom(request);
+    const { tools, catalogs, access } = await ready();
+    const agentKey = bearer(request, 'sk_agent_') ?? (pathKey?.startsWith('sk_agent_') ? pathKey : undefined);
+    const key = agentKey ? await access.agentFromHeader(`Bearer ${agentKey}`) : undefined;
     if (!shopSlug && !marketplace && !key) {
       return Response.json(
-        { jsonrpc: '2.0', id: null, error: { code: -32001, message: 'Missing or revoked agent key. Send Authorization: Bearer sk_agent_...' } },
+        { jsonrpc: '2.0', id: null, error: { code: -32001, message: 'Missing or revoked agent key. Use your personal MCP URL from the owner dashboard (Agents).' } },
         { status: 401, headers: { 'WWW-Authenticate': 'Bearer realm="sayso"' } },
       );
     }
@@ -41,7 +56,7 @@ export async function mcpPost(request: Request, shopSlug?: string, marketplace =
       shopSlug,
       marketplace,
       agent,
-      walletKey: /^Bearer\s+(sk_wallet_[A-Za-z0-9_-]+)$/.exec(request.headers.get('authorization') ?? '')?.[1],
+      walletKey: bearer(request, 'sk_wallet_') ?? (pathKey?.startsWith('sk_wallet_') ? pathKey : undefined),
       channel: request.headers.get('x-sayso-channel')?.slice(0, 40) || (agent ? 'owner-agent' : 'mcp'),
     };
 

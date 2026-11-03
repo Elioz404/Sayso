@@ -43,21 +43,17 @@ export default async function Agents() {
             </li>
           ))}
         </ul>
-        <NewKey />
+        <NewKey baseUrl={baseUrl} />
       </section>
 
       <section className="block" aria-labelledby="connect">
-        <h2 id="connect">Connect an agent</h2>
+        <h2 id="connect">Where agents connect</h2>
         <div className="stack" style={{ gap: 'var(--s4)' }}>
-          <div className="field">
-            <span className="field-label">From a terminal</span>
-            <CopyField value={`node cli/sayso.ts login --url ${baseUrl} --key sk_agent_...`} />
-          </div>
-          <div className="field">
-            <span className="field-label">From any MCP client</span>
-            <CopyField value={`${baseUrl}/api/mcp`} />
-            <span className="hint">Send the key as the header Authorization: Bearer sk_agent_...</span>
-          </div>
+          <p className="soft">
+            Connect an agent above: you get a personal URL to paste as a connector in ChatGPT or any MCP client, and the same key works in the
+            terminal. Clients that can send headers can also use <span className="mono">{`${baseUrl}/api/mcp`}</span> with{' '}
+            <span className="mono">Authorization: Bearer sk_agent_...</span>
+          </p>
           <div className="field">
             <span className="field-label">For shoppers&apos; assistants (no key)</span>
             <CopyField value={`${baseUrl}/api/shopping/mcp`} />

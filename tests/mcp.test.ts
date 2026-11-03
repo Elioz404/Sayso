@@ -272,8 +272,11 @@ test("saved PayPal: the buyer approves once and sets limits; the assistant pays 
   await s.wallets.startConnect(walletId, { perOrder: '50', daily: '80' });
   const pending = await s.wallets.get(walletId);
   s.pp.approveSetup(pending.setupTokenId!);
-  const wallet = await s.wallets.finishConnect(walletId);
+  const { wallet, connectorKey } = await s.wallets.finishConnect(walletId);
   assert.equal(wallet.status, 'connected');
+  assert.match(connectorKey!, /^sk_wallet_/);
+  assert.equal((await s.wallets.fromKey(connectorKey))?.id, walletId, 'the personal URL key opens the same wallet');
+  assert.equal((await s.wallets.finishConnect(walletId)).connectorKey, undefined, 'shown once');
   assert.equal(wallet.payerEmail, 'buyer@example.com');
   await assert.rejects(s.wallets.startConnect(walletId, { perOrder: '2000', daily: '2000' }), /already connected/, 'limits are fixed once connected');
 

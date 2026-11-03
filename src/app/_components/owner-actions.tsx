@@ -155,7 +155,8 @@ export function PublishButton() {
   );
 }
 
-export function NewKey() {
+/** Issues an agent key and shows it as a personal MCP URL (what assistant connector screens take). */
+export function NewKey({ baseUrl }: { baseUrl: string }) {
   const router = useRouter();
   const [key, setKey] = useState<string>();
   const [label, setLabel] = useState('');
@@ -178,13 +179,20 @@ export function NewKey() {
         }}
       >
         <label htmlFor="key-label" className="sr-only">Key label</label>
-        <input id="key-label" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Label, e.g. laptop agent" maxLength={60} style={{ flex: 1, minWidth: 180 }} />
-        <button className="btn">New agent key</button>
+        <input id="key-label" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Which agent? e.g. ChatGPT, my laptop" maxLength={60} style={{ flex: 1, minWidth: 180 }} />
+        <button className="btn btn-primary">Connect an agent</button>
       </form>
       {key && (
-        <div className="stack" style={{ gap: 6 }}>
-          <span className="small soft">Copy it now. It won&apos;t be shown again.</span>
-          <CopyField value={key} secret />
+        <div className="stack" style={{ gap: 'var(--s3)' }}>
+          <div className="field">
+            <span className="field-label">Personal MCP URL: paste it as a connector in ChatGPT or any MCP client</span>
+            <CopyField value={`${baseUrl}/api/mcp/${key}`} secret />
+          </div>
+          <div className="field">
+            <span className="field-label">Or from a terminal</span>
+            <CopyField value={`node cli/sayso.ts login --url ${baseUrl} --key ${key}`} secret />
+          </div>
+          <span className="small soft">Shown only now. Treat it like a password; revoke it here if it leaks.</span>
         </div>
       )}
       {error && <p className="error small">{error}</p>}

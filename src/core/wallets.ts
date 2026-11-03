@@ -44,7 +44,9 @@ export interface Wallet {
 export interface WalletStore {
   put(wallet: Wallet): Promise<void>;
   get(id: string): Promise<Wallet | undefined>;
+  /** Finds a wallet by any of its keys: the assistant's, or the one in the buyer's personal URL. */
   byHash(hash: string): Promise<Wallet | undefined>;
+  addKey(walletId: string, hash: string): Promise<void>;
 }
 
 export const DEFAULT_LIMITS: WalletLimits = { perOrder: 100_00, daily: 250_00, currency: 'USD' };
@@ -135,10 +137,13 @@ export class Wallets {
     return link;
   }
 
-  /** Back from PayPal: turn the approved setup token into a payment token. Safe to call twice. */
-  async finishConnect(id: string): Promise<Wallet> {
+  /**
+   * Back from PayPal: turn the approved setup token into a payment token. Also issues the key for the
+   * buyer's personal shopping URL, returned once. Calling it again returns no new key.
+   */
+  async finishConnect(id: string): Promise<{ wallet: Wallet; connectorKey?: string }> {
     const wallet = await this.get(id);
-    if (wallet.status === 'connected') return wallet;
+    if (wallet.status === 'connected') return { wallet };
     if (wallet.status !== 'awaiting_paypal' || !wallet.setupTokenId) throw new HttpError(409, 'Start from the wallet page');
     const setup = await getSetupToken(this.deps.paypal, wallet.setupTokenId);
     if (setup.status !== 'APPROVED') throw new HttpError(409, `PayPal says this approval is ${setup.status.toLowerCase().replace(/_/g, ' ')}`);
@@ -152,7 +157,14 @@ export class Wallets {
       connectedAt: new Date().toISOString(),
     };
     await this.deps.store.put(connected);
-    return connected;
+    const connectorKey = `sk_wallet_${randomBytes(24).toString('base64url')}`;
+    await this.deps.store.addKey(wallet.id, hashOf(connectorKey));
+    return { wallet: connected, connectorKey };
+  }
+
+  /** The URL a buyer adds to ChatGPT or any MCP client: every shop, plus their saved PayPal. */
+  personalUrl(key: string): string {
+    return `${this.deps.baseUrl}/api/shopping/mcp/${key}`;
   }
 
   async disconnect(id: string): Promise<Wallet> {
@@ -253,6 +265,7 @@ function parseLimit(value: string): number {
 
 export class MemoryWalletStore implements WalletStore {
   private readonly wallets = new Map<string, Wallet>();
+  private readonly keys = new Map<string, string>();
   async put(wallet: Wallet) {
     this.wallets.set(wallet.id, structuredClone(wallet));
   }
@@ -261,7 +274,10 @@ export class MemoryWalletStore implements WalletStore {
     return w && structuredClone(w);
   }
   async byHash(hash: string) {
-    const w = [...this.wallets.values()].find((x) => x.hash === hash);
+    const w = [...this.wallets.values()].find((x) => x.hash === hash) ?? this.wallets.get(this.keys.get(hash) ?? '');
     return w && structuredClone(w);
+  }
+  async addKey(walletId: string, hash: string) {
+    this.keys.set(hash, walletId);
   }
 }
