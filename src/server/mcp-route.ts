@@ -14,11 +14,12 @@ const CORS = {
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, Mcp-Protocol-Version, Mcp-Session-Id, X-Sayso-Channel',
 };
 
-export async function mcpPost(request: Request, shopSlug?: string): Promise<Response> {
+/** `shopSlug`: one shop's buyer endpoint. `marketplace`: the all-shops buyer endpoint. Neither: seller tools, key required. */
+export async function mcpPost(request: Request, shopSlug?: string, marketplace = false): Promise<Response> {
   const response = await handle(async () => {
     const { tools, catalogs } = await ready();
     const key = await agentFrom(request);
-    if (!shopSlug && !key) {
+    if (!shopSlug && !marketplace && !key) {
       return Response.json(
         { jsonrpc: '2.0', id: null, error: { code: -32001, message: 'Missing or revoked agent key. Send Authorization: Bearer sk_agent_...' } },
         { status: 401, headers: { 'WWW-Authenticate': 'Bearer realm="sayso"' } },
@@ -34,10 +35,11 @@ export async function mcpPost(request: Request, shopSlug?: string): Promise<Resp
 
     // A key only unlocks seller tools at its own shop's endpoint.
     const shop = shopSlug ? await catalogs.bySlug(shopSlug) : undefined;
-    const agent = key && (!shopSlug || shop?.shop.id === key.shopId) ? { shopId: key.shopId, keyId: key.id, label: key.label } : undefined;
+    const agent = key && !marketplace && (!shopSlug || shop?.shop.id === key.shopId) ? { shopId: key.shopId, keyId: key.id, label: key.label } : undefined;
     const context: ToolContext = {
       services: tools,
       shopSlug,
+      marketplace,
       agent,
       channel: request.headers.get('x-sayso-channel')?.slice(0, 40) || (agent ? 'owner-agent' : 'mcp'),
     };

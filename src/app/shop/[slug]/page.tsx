@@ -43,7 +43,10 @@ export default async function ShopPage({ params }: { params: Promise<{ slug: str
             <b>Shop here with your AI assistant</b>
           </span>
           <p className="small soft">Add this to any MCP client and ask for what you want. You approve the payment in PayPal.</p>
-          <CopyField value={`${baseUrl}/api/shops/${shop.slug}/mcp`} />
+          <CopyField value={`${baseUrl}/api/shopping/mcp`} />
+          <p className="small muted">
+            Covers every shop on Sayso. Just this one: <span className="mono">{`${baseUrl}/api/shops/${shop.slug}/mcp`}</span>
+          </p>
         </div>
       </div>
 

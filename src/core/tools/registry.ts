@@ -2,6 +2,7 @@
 // these same definitions. Buyer tools are public per shop; seller tools need the shop's agent key.
 // Results are plain JSON written for an agent to read and relay to its human.
 
+import { isLive, type Catalog } from '../catalog.ts';
 import type { Commerce, CatalogStore } from '../commerce.ts';
 import type { Actor, GuardRecord } from '../guard/types.ts';
 import { HttpError } from '../commerce.ts';
@@ -23,6 +24,8 @@ export interface ToolContext {
   services: ToolServices;
   /** Shop the buyer endpoint is scoped to. */
   shopSlug?: string;
+  /** The all-shops buyer endpoint: tools search every published shop and take a `shop` argument. */
+  marketplace?: boolean;
   /** Set when an agent key was presented; seller tools act on this shop only. */
   agent?: { shopId: string; keyId: string; label: string };
   /** Who is calling, for the audit trail: "mcp", "cli", a client name... */
@@ -34,6 +37,8 @@ export interface Tool {
   title: string;
   description: string;
   side: 'buyer' | 'seller';
+  /** Only on the all-shops endpoint. */
+  marketplaceOnly?: boolean;
   inputSchema: Extract<JsonSchema, { type: 'object' }>;
   annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean; idempotentHint?: boolean; openWorldHint?: boolean };
   run(input: Record<string, any>, ctx: ToolContext): Promise<unknown>;
@@ -67,50 +72,70 @@ const items: JsonSchema = {
 };
 
 const money = { type: 'string', pattern: '^\\d+(\\.\\d{1,2})?$', description: 'Decimal amount in the shop currency, e.g. "12.50"' } as const;
+const shopArg = { type: 'string', maxLength: 80, description: "The shop's slug from search_products. Only needed on the all-shops endpoint." } as const;
 
 // ---------------------------------------------------------------------------------------------
 // Buyer tools: what any shopping agent can do at a published shop.
 
 const buyerTools: Tool[] = [
   {
+    name: 'list_shops',
+    title: 'List shops',
+    description: 'Every shop you can buy from here, with what it sells and where it ships from.',
+    side: 'buyer',
+    marketplaceOnly: true,
+    annotations: { readOnlyHint: true },
+    inputSchema: { type: 'object', properties: {} },
+    async run(_input, ctx) {
+      const live = (await ctx.services.catalogs.list()).filter(isLive);
+      return live.map(({ shop, products }) => ({
+        shop: shop.slug,
+        name: shop.name,
+        ships_from: shop.country,
+        currency: shop.currency,
+        sells: [...new Set(products.map((p) => p.category))].slice(0, 6),
+        products: products.length,
+      }));
+    },
+  },
+  {
     name: 'search_products',
     title: 'Search products',
-    description: 'Search this shop. Returns products with variant_id, price and stock. Use the variant_id in create_cart.',
+    description:
+      'Search for products. On a shop endpoint it searches that shop; on the all-shops endpoint it searches every shop (or one, with `shop`) and groups results by shop. Use the variant_id and shop in create_cart.',
     side: 'buyer',
     annotations: { readOnlyHint: true },
     inputSchema: {
       type: 'object',
       properties: {
         query: { type: 'string', maxLength: 200, description: 'Words to match, e.g. "green mug". Empty lists everything.' },
-        max_price: money,
+        max_price: { ...money, description: "Highest price per item, in each shop's currency" },
         in_stock_only: { type: 'boolean' },
+        shop: shopArg,
       },
     },
     async run(input, ctx) {
-      const catalog = await liveCatalog(ctx);
-      const { shop } = catalog;
-      const words = String(input.query ?? '').toLowerCase().split(/\s+/).filter(Boolean);
-      const max = input.max_price ? toMinor({ currency_code: shop.currency, value: input.max_price }) : Infinity;
-      const products = catalog.products.flatMap((p) => {
-        const text = [p.name, p.description, p.category, ...p.tags, ...p.variants.map((v) => v.title)].join(' ').toLowerCase();
-        if (!words.every((w) => text.includes(w))) return [];
-        const variants = p.variants.filter((v) => v.price <= max && (!input.in_stock_only || v.madeToOrderDays !== undefined || v.inventory > 0));
-        if (variants.length === 0) return [];
-        return [{
-          id: p.id,
-          name: p.name,
-          description: p.description,
-          category: p.category,
-          variants: variants.map((v) => ({
-            variant_id: v.id,
-            title: v.title,
-            price: formatMoney(v.price, shop.currency),
-            in_stock: v.madeToOrderDays !== undefined ? `made to order, ships in ~${v.madeToOrderDays} days` : v.inventory,
-          })),
-        }];
-      });
-      const view = catalogView(catalog);
-      return { shop: view.shop, products, shipping: view.shipping, returns: `${shop.returnPolicy.days} days` };
+      if (ctx.shopSlug) {
+        const catalog = await liveCatalog(ctx);
+        if (input.shop && input.shop !== catalog.shop.slug) throw new ToolError(`This endpoint only sells ${catalog.shop.name}; drop the shop argument.`);
+        const view = catalogView(catalog);
+        return { shop: view.shop, products: matchProducts(catalog, input), shipping: view.shipping, returns: `${catalog.shop.returnPolicy.days} days` };
+      }
+      const live = (await ctx.services.catalogs.list()).filter((c) => isLive(c) && (!input.shop || c.shop.slug === input.shop));
+      if (input.shop && live.length === 0) throw new ToolError(`No open shop called ${input.shop}. Use list_shops.`);
+      const results = live
+        .map((catalog) => ({ catalog, products: matchProducts(catalog, input) }))
+        .filter((r) => r.products.length > 0)
+        .slice(0, 10)
+        .map(({ catalog, products }) => ({
+          shop: catalog.shop.slug,
+          name: catalog.shop.name,
+          ships_from: catalog.shop.country,
+          products: products.slice(0, 10),
+          shipping: catalogView(catalog).shipping,
+          returns: `${catalog.shop.returnPolicy.days} days`,
+        }));
+      return { results, next: results.length ? 'Pass the shop and variant_id to create_cart. One cart per shop.' : 'Nothing matched. Try fewer words or list_shops.' };
     },
   },
   {
@@ -122,6 +147,7 @@ const buyerTools: Tool[] = [
     inputSchema: {
       type: 'object',
       properties: {
+        shop: shopArg,
         items,
         shipping_address: address,
         customer: { type: 'object', properties: { email_address: { type: 'string', maxLength: 254 } } },
@@ -129,8 +155,9 @@ const buyerTools: Tool[] = [
       required: ['items'],
     },
     async run(input, ctx) {
-      const cart = await ctx.services.commerce.createCart(slug(ctx), { items: input.items, shipping_address: input.shipping_address, customer: input.customer }, ctx.channel);
-      return cartForAgent(cart);
+      const shop = shopFor(ctx, input.shop);
+      const cart = await ctx.services.commerce.createCart(shop, { items: input.items, shipping_address: input.shipping_address, customer: input.customer }, ctx.channel);
+      return { shop, ...cartForAgent(cart) };
     },
   },
   {
@@ -382,8 +409,11 @@ const sellerTools: Tool[] = [
 export const TOOLS: readonly Tool[] = [...buyerTools, ...sellerTools];
 
 /** Tools visible to this caller: buyer tools at a shop endpoint, seller tools with a key. */
-export function toolsFor(ctx: Pick<ToolContext, 'shopSlug' | 'agent'>): Tool[] {
-  return TOOLS.filter((t) => (t.side === 'buyer' ? Boolean(ctx.shopSlug) : Boolean(ctx.agent)));
+export function toolsFor(ctx: Pick<ToolContext, 'shopSlug' | 'agent' | 'marketplace'>): Tool[] {
+  return TOOLS.filter((t) => {
+    if (t.side === 'seller') return Boolean(ctx.agent);
+    return t.marketplaceOnly ? Boolean(ctx.marketplace) : Boolean(ctx.shopSlug || ctx.marketplace);
+  });
 }
 
 /** Validate, authorize and run one tool. Throws ToolError for anything the agent should fix. */
@@ -391,7 +421,9 @@ export async function callTool(name: string, input: unknown, ctx: ToolContext): 
   const tool = TOOLS.find((t) => t.name === name);
   if (!tool) throw new ToolError(`Unknown tool "${name}"`);
   if (tool.side === 'seller' && !ctx.agent) throw new ToolError(`${name} needs the shop's agent key (Authorization: Bearer sk_agent_...)`);
-  if (tool.side === 'buyer' && !ctx.shopSlug) throw new ToolError(`${name} is a buyer tool; call it on a shop endpoint (/api/shops/<slug>/mcp)`);
+  if (tool.side === 'buyer' && !toolsFor(ctx).includes(tool)) {
+    throw new ToolError(tool.marketplaceOnly ? `${name} is only on the all-shops endpoint (/api/shopping/mcp)` : `${name} is a buyer tool; call it on /api/shopping/mcp or a shop's own endpoint`);
+  }
   const args = input ?? {};
   const errors = validate(tool.inputSchema, args);
   if (errors.length) throw new ToolError(`Invalid arguments: ${errors.join('; ')}`);
@@ -425,13 +457,55 @@ async function liveCatalog(ctx: ToolContext) {
   return catalog;
 }
 
-/** A buyer endpoint may only see carts of its own shop. Returns that shop's id. */
+/** Which shop a cart belongs to; a shop's own endpoint may only see that shop's carts. */
 async function ownCart(ctx: ToolContext, cartId: string): Promise<string> {
-  const catalog = await liveCatalog(ctx);
-  const cart = await ctx.services.commerce.getCart(cartId).catch(() => undefined);
-  const stored = cart && (await ctx.services.seller.orders(catalog.shop.id)).some((o) => o.id === cartId);
-  if (!stored) throw new ToolError(`No cart ${cartId} at this shop`);
-  return catalog.shop.id;
+  const shopId = await ctx.services.commerce.shopOf(cartId);
+  if (!shopId) throw new ToolError(`No cart ${cartId}`);
+  if (ctx.shopSlug && (await liveCatalog(ctx)).shop.id !== shopId) throw new ToolError(`No cart ${cartId} at this shop`);
+  return shopId;
+}
+
+/** The shop a new cart is for: the endpoint's own, or the `shop` argument on the all-shops endpoint. */
+function shopFor(ctx: ToolContext, given: string | undefined): string {
+  if (ctx.shopSlug) {
+    if (given && given !== ctx.shopSlug) throw new ToolError(`This endpoint only sells ${ctx.shopSlug}; drop the shop argument.`);
+    return ctx.shopSlug;
+  }
+  if (!given) throw new ToolError('Pass `shop` (from search_products). One cart per shop.');
+  return given;
+}
+
+function matchProducts(catalog: Catalog, input: Record<string, any>) {
+  const { shop } = catalog;
+  const words = String(input.query ?? '').toLowerCase().split(/\s+/).filter(Boolean);
+  let max = Infinity;
+  if (input.max_price) {
+    try {
+      max = toMinor({ currency_code: shop.currency, value: input.max_price });
+    } catch {
+      throw new ToolError('max_price must look like 25.00');
+    }
+  }
+  return catalog.products.flatMap((p) => {
+    const text = [p.name, p.description, p.category, ...p.tags, ...p.variants.map((v) => v.title)].join(' ').toLowerCase();
+    if (!words.every((w) => text.includes(w))) return [];
+    const variants = p.variants.filter((v) => v.price <= max && (!input.in_stock_only || v.madeToOrderDays !== undefined || v.inventory > 0));
+    if (variants.length === 0) return [];
+    return [
+      {
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        category: p.category,
+        variants: variants.map((v) => ({
+          variant_id: v.id,
+          title: v.title,
+          price: formatMoney(v.price, shop.currency),
+          in_stock: v.madeToOrderDays !== undefined ? `made to order, ships in ~${v.madeToOrderDays} days` : v.inventory,
+        })),
+      },
+    ];
+  });
 }
 
 const PAYMENT_FOR_BUYER: Record<string, string> = {

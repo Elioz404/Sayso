@@ -18,6 +18,8 @@ type JsonRpcResponse =
   | { jsonrpc: '2.0'; id: string | number | null; error: { code: number; message: string; data?: unknown } };
 
 const INSTRUCTIONS = {
+  marketplace:
+    "Small independent shops that sell through Sayso and get paid with PayPal. list_shops or search_products (across all shops) -> create_cart with the result's shop and variant_id (one cart per shop) -> fix validation_issues with update_cart -> give the buyer approval_url to pay with PayPal -> get_cart to confirm. Prices, shipping and tax always come from the shop. After the order, get_cart answers where it is and request_refund sends the buyer's request to the shop owner.",
   buyer:
     "Sayso shop. search_products -> create_cart -> (fix validation_issues with update_cart) -> give the buyer approval_url to pay with PayPal -> get_cart to confirm. Prices, shipping and tax always come from the shop, never from you. After the order: get_cart answers where it is (charge, refunds, tracking), and request_refund sends the buyer's refund request to the shop owner, who decides.",
   seller:
@@ -44,8 +46,12 @@ export async function handleMcp(message: unknown, ctx: ToolContext): Promise<Jso
         result: {
           protocolVersion,
           capabilities: { tools: { listChanged: false } },
-          serverInfo: { name: 'sayso', title: ctx.agent ? 'Sayso: run my shop' : `Sayso shop ${ctx.shopSlug ?? ''}`.trim(), version: '0.2.0' },
-          instructions: ctx.agent && ctx.shopSlug ? `${INSTRUCTIONS.seller}\n\nBuyer tools are also available.` : INSTRUCTIONS[side],
+          serverInfo: {
+            name: 'sayso',
+            title: ctx.agent ? 'Sayso: run my shop' : ctx.marketplace ? 'Sayso: shop small sellers' : `Sayso shop ${ctx.shopSlug ?? ''}`.trim(),
+            version: '0.3.0',
+          },
+          instructions: ctx.agent && ctx.shopSlug ? `${INSTRUCTIONS.seller}\n\nBuyer tools are also available.` : ctx.marketplace ? INSTRUCTIONS.marketplace : INSTRUCTIONS[side],
         },
       };
     }

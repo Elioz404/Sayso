@@ -46,10 +46,10 @@ propose -> simulate against live PayPal state -> decide (owner's rules) -> [owne
 
 ### 1. Shop as a buyer agent (no key needed)
 
-Add this MCP server to any MCP client and ask it to buy a mug:
+Add this MCP server to any MCP client and ask it to buy a mug. One URL covers every shop on Sayso:
 
 ```
-https://<host>/api/shops/maya-ceramics/mcp
+https://<host>/api/shopping/mcp
 ```
 
 Ask for two speckled mugs: there's only one, so the cart comes back `INCOMPLETE` with resolution options the agent can apply on its own. Approve the payment with a PayPal sandbox **personal** account.
@@ -100,6 +100,7 @@ The agent skill in [`skills/sayso/SKILL.md`](skills/sayso/SKILL.md) (open Agent 
 
 | Endpoint | Auth | Tools |
 |---|---|---|
+| `POST /api/shopping/mcp` | none | Every published shop: `list_shops`, `search_products` (grouped by shop), `create_cart` (with `shop`), `update_cart`, `get_cart`, `request_refund` |
 | `POST /api/shops/<slug>/mcp` | none | `search_products`, `create_cart`, `update_cart`, `get_cart` (order status, refunds, tracking), `request_refund` (goes to the owner) |
 | `POST /api/mcp` | `Authorization: Bearer sk_agent_...` | `shop_overview`, `list_products`, `update_variant`, `list_orders`, `get_order`, `refund_order`, `add_tracking`, `list_approvals`, `get_say_so`, `get_policy`, `propose_policy`, `audit_log` |
 

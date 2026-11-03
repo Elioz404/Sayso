@@ -220,3 +220,38 @@ test("buyer's assistant: follows the order, asks for a refund, and the owner alw
   assert.equal(nope.isError, true);
   assert.match(nope.text, /not been charged/);
 });
+
+test('all-shops endpoint: one MCP URL searches every shop, carts are per shop', async () => {
+  const model: ChatModel = {
+    name: 'fake',
+    json: async () => ({ shop: { name: 'Lumen Candles' }, products: [{ name: 'Soy Candle', category: 'home/decor', variants: [{ title: 'Lavender', price: '18.00', quantity: 5 }] }] }),
+  };
+  const s = await stack(model);
+  const { catalog } = await s.shops.onboard({ text: 'Soy candles, $18' });
+  const market = { marketplace: true };
+
+  const draftHidden = await s.call('list_shops', {}, market);
+  assert.deepEqual(draftHidden.data.map((x: { shop: string }) => x.shop), ['maya-ceramics'], 'drafts are not listed');
+  await s.shops.publish(catalog.shop.id);
+
+  const shops = await s.call('list_shops', {}, market);
+  assert.equal(shops.data.length, 2);
+  const candles = await s.call('search_products', { query: 'candle' }, market);
+  assert.deepEqual(candles.data.results.map((r: { shop: string }) => r.shop), [catalog.shop.slug]);
+  const everything = await s.call('search_products', {}, market);
+  assert.equal(everything.data.results.length, 2);
+
+  const noShop = await s.call('create_cart', { items: [{ variant_id: 'var_mug_sage', quantity: 1 }] }, market);
+  assert.equal(noShop.isError, true);
+  assert.match(noShop.text, /Pass `shop`/);
+
+  const cart = await s.call('create_cart', { shop: 'maya-ceramics', items: [{ variant_id: 'var_mug_sage', quantity: 1 }], shipping_address: address }, market);
+  assert.equal(cart.data.shop, 'maya-ceramics');
+  assert.match(cart.data.approval_url, /checkoutnow/);
+  assert.equal((await s.call('get_cart', { cart_id: cart.data.cart_id }, market)).data.status, 'CREATED');
+
+  // A shop's own endpoint still only sees its own carts, and list_shops stays on the all-shops endpoint.
+  const elsewhere = await s.call('get_cart', { cart_id: cart.data.cart_id }, { shopSlug: catalog.shop.slug });
+  assert.equal(elsewhere.isError, true);
+  assert.equal((await s.call('list_shops', {}, s.buyer)).isError, true);
+});

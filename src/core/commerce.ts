@@ -97,6 +97,11 @@ export class Commerce {
     return this.view(stored);
   }
 
+  /** The shop a cart belongs to, or undefined if there is no such cart. */
+  async shopOf(cartId: string): Promise<string | undefined> {
+    return (await this.deps.carts.get(cartId))?.shopId;
+  }
+
   async getCart(cartId: string): Promise<PayPalCart> {
     return this.view(await this.stored(cartId));
   }

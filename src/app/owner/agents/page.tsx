@@ -60,7 +60,10 @@ export default async function Agents() {
           </div>
           <div className="field">
             <span className="field-label">For shoppers&apos; assistants (no key)</span>
-            <CopyField value={`${baseUrl}/api/shops/${shop.slug}/mcp`} />
+            <CopyField value={`${baseUrl}/api/shopping/mcp`} />
+            <span className="hint">
+              Every shop on Sayso, yours included. Your shop alone: <span className="mono">{`${baseUrl}/api/shops/${shop.slug}/mcp`}</span>
+            </span>
           </div>
         </div>
       </section>

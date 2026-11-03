@@ -132,14 +132,14 @@ export default function Home() {
       <section className="panel stack" style={{ gap: 'var(--s4)' }}>
         <div className="spread">
           <div className="stack" style={{ gap: 'var(--s1)' }}>
-            <h2 style={{ fontSize: 'var(--t-xl)' }}>Try the demo shop from your own assistant</h2>
-            <p className="soft">Add this MCP server to any MCP client and ask for a hand-thrown mug. No key needed.</p>
+            <h2 style={{ fontSize: 'var(--t-xl)' }}>Shop from your own assistant</h2>
+            <p className="soft">Add this one MCP server to any MCP client and ask for a hand-thrown mug. It searches every shop on Sayso. No key needed.</p>
           </div>
           <a className="btn" href="/owner">
             Watch it as the owner <Icon name="arrow" size={17} />
           </a>
         </div>
-        <CopyField value={`${url}/api/shops/maya-ceramics/mcp`} />
+        <CopyField value={`${url}/api/shopping/mcp`} />
       </section>
     </main>
   );
