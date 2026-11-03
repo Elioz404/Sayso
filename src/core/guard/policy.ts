@@ -1,9 +1,9 @@
-// Declarative say-so policies. Owners write them in plain English in the dashboard; the LLM turns that
-// text into these rules (validated, never executed as code), and they are evaluated here
-// deterministically. The model never decides whether money moves: these rules do.
+// Declarative say-so policies. Owners write them in plain English; the LLM turns that text into these
+// rules (validated, never executed as code), and they are evaluated here deterministically. The model
+// never decides whether money moves: these rules do.
 
-import { formatMoney } from '../money.ts';
-import type { ActionKind, Decision, GuardRecord, ProposedAction, RuleHit, Verdict } from './types.ts';
+import { formatMoney, majorUnits } from '../money.ts';
+import { ACTIONS, SPENDING_STATUSES, type ActionKind, type Decision, type GuardRecord, type ProposedAction, type RuleHit, type Verdict } from './types.ts';
 
 type Escalation = Exclude<Verdict, 'allow'>;
 
@@ -14,7 +14,7 @@ export type Rule =
   | { id: string; type: 'daily_total'; kinds: ActionKind[]; limit: number; then: Escalation }
   /** These kinds always need a human, whatever the amount. */
   | { id: string; type: 'always_approve'; kinds: ActionKind[] }
-  /** These kinds are never allowed for agents. */
+  /** These kinds are never allowed for agents (the owner can still do them). */
   | { id: string; type: 'never'; kinds: ActionKind[] }
   /** Counterparty must be on the allow-list, otherwise escalate. */
   | { id: string; type: 'known_counterparty'; kinds: ActionKind[]; allowed: string[]; then: Escalation }
@@ -25,22 +25,39 @@ export type Rule =
   /** Someone who has never paid this owner (the caller sets `params.newCounterparty`) -> escalate. */
   | { id: string; type: 'new_counterparty'; kinds: ActionKind[]; then: Escalation };
 
+export type RuleType = Rule['type'];
+export const RULE_TYPES: readonly RuleType[] = ['max_amount', 'daily_total', 'always_approve', 'never', 'known_counterparty', 'categories', 'no_duplicates', 'new_counterparty'];
+
 export interface Policy {
   ownerId: string;
   rules: Rule[];
+  /** Currency the limits are written in. */
+  currency: string;
   /** The owner's original words, kept for the audit trail and the UI. */
   source?: string;
 }
 
+const DAY_MS = 86_400_000;
 const SEVERITY: Record<Verdict, number> = { allow: 0, require_approval: 1, deny: 2 };
 
+/** How far back Guard must look for this policy: a day, or the longest duplicate window. */
+export function historyWindowMs(policy: Policy): number {
+  const windows = policy.rules.flatMap((r) => (r.type === 'no_duplicates' ? [r.windowMinutes * 60_000] : []));
+  return Math.max(DAY_MS, ...windows);
+}
+
+export function countsAsSpent(record: GuardRecord): boolean {
+  return SPENDING_STATUSES.includes(record.status);
+}
+
 /**
- * Evaluate a proposed action. `history` is the owner's recent records (for daily totals and
- * duplicates). The most severe hit wins: deny > require_approval > allow.
+ * Evaluate a proposed action. `history` is the owner's recent records (see historyWindowMs). The most
+ * severe hit wins: deny > require_approval > allow.
  */
 export function evaluate(policy: Policy, action: ProposedAction, history: GuardRecord[], now = new Date()): Decision {
   const hits: RuleHit[] = [];
-  const money = (minor: number) => formatMoney(minor, action.currency ?? 'USD');
+  const money = (minor: number) => formatMoney(minor, action.currency ?? policy.currency);
+  const noun = ACTIONS[action.kind].noun;
 
   for (const rule of policy.rules) {
     if (!rule.kinds.includes(action.kind)) continue;
@@ -48,28 +65,28 @@ export function evaluate(policy: Policy, action: ProposedAction, history: GuardR
     switch (rule.type) {
       case 'max_amount':
         if ((action.amount ?? 0) > rule.limit) {
-          hits.push({ ruleId: rule.id, verdict: rule.then, message: `${money(action.amount ?? 0)} is over the ${money(rule.limit)} limit for ${label(action.kind)}.` });
+          hits.push({ ruleId: rule.id, verdict: rule.then, message: `${money(action.amount ?? 0)} is over the ${money(rule.limit)} limit for ${noun}.` });
         }
         break;
 
       case 'daily_total': {
-        const since = now.getTime() - 86_400_000;
+        const since = now.getTime() - DAY_MS;
         const spent = history
           .filter((r) => rule.kinds.includes(r.action.kind) && countsAsSpent(r) && Date.parse(r.createdAt) >= since)
           .reduce((sum, r) => sum + (r.action.amount ?? 0), 0);
         const total = spent + (action.amount ?? 0);
         if (total > rule.limit) {
-          hits.push({ ruleId: rule.id, verdict: rule.then, message: `This would bring today's ${label(action.kind)} total to ${money(total)}, over the ${money(rule.limit)} daily limit.` });
+          hits.push({ ruleId: rule.id, verdict: rule.then, message: `This would bring today's ${noun} total to ${money(total)}, over the ${money(rule.limit)} daily limit.` });
         }
         break;
       }
 
       case 'always_approve':
-        hits.push({ ruleId: rule.id, verdict: 'require_approval', message: `${capitalize(label(action.kind))} always needs your OK.` });
+        hits.push({ ruleId: rule.id, verdict: 'require_approval', message: `${capitalize(noun)} always need your OK.` });
         break;
 
       case 'never':
-        hits.push({ ruleId: rule.id, verdict: 'deny', message: `Agents may not perform ${label(action.kind)}.` });
+        if (action.actor.type === 'agent') hits.push({ ruleId: rule.id, verdict: 'deny', message: `Agents may not do ${noun}.` });
         break;
 
       case 'known_counterparty': {
@@ -93,18 +110,8 @@ export function evaluate(policy: Policy, action: ProposedAction, history: GuardR
         break;
 
       case 'no_duplicates': {
-        const since = now.getTime() - rule.windowMinutes * 60_000;
-        const dup = history.find(
-          (r) =>
-            r.action.kind === action.kind &&
-            r.action.resourceId === action.resourceId &&
-            r.action.amount === action.amount &&
-            countsAsSpent(r) &&
-            Date.parse(r.createdAt) >= since,
-        );
-        if (dup) {
-          hits.push({ ruleId: rule.id, verdict: 'deny', message: `Looks like a duplicate of ${dup.id} from ${minutesAgo(dup.createdAt, now)} min ago.` });
-        }
+        const dup = findDuplicate(action, history, now.getTime() - rule.windowMinutes * 60_000);
+        if (dup) hits.push({ ruleId: rule.id, verdict: 'deny', message: `Looks like a duplicate of ${dup.id} from ${minutesAgo(dup.createdAt, now)} min ago.` });
         break;
       }
     }
@@ -114,55 +121,54 @@ export function evaluate(policy: Policy, action: ProposedAction, history: GuardR
   return { verdict, hits };
 }
 
-/** Records that moved (or are about to move) money count toward limits and duplicate checks. */
-function countsAsSpent(r: GuardRecord): boolean {
-  return r.status === 'executed' || r.status === 'verified' || r.status === 'executing' || r.status === 'pending_approval';
+/** The same kind, resource and amount, still counting as spent, created at or after `sinceMs`. */
+export function findDuplicate(action: ProposedAction, history: GuardRecord[], sinceMs: number): GuardRecord | undefined {
+  return history.find(
+    (r) =>
+      r.action.kind === action.kind &&
+      r.action.resourceId === action.resourceId &&
+      r.action.amount === action.amount &&
+      countsAsSpent(r) &&
+      Date.parse(r.createdAt) >= sinceMs,
+  );
 }
 
-function label(kind: ActionKind): string {
-  return {
-    'checkout.create': 'purchases',
-    'payment.capture': 'payment captures',
-    'payment.void': 'authorization voids',
-    'refund.create': 'refunds',
-    'invoice.send': 'invoices',
-    'dispute.accept': 'accepting disputes',
-    'policy.update': 'policy changes',
-  }[kind];
+export function minutesAgo(iso: string, now: Date): number {
+  return Math.max(0, Math.round((now.getTime() - Date.parse(iso)) / 60_000));
 }
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-function minutesAgo(iso: string, now: Date): number {
-  return Math.max(0, Math.round((now.getTime() - Date.parse(iso)) / 60_000));
-}
-
-/** Sensible defaults for a new shop, so Guard is useful before the owner writes anything. */
-export function defaultMerchantPolicy(ownerId: string): Policy {
+/** Sensible defaults for a new shop, in its currency, so Guard is useful before the owner writes anything. */
+export function defaultMerchantPolicy(ownerId: string, currency: string): Policy {
+  const amount = (units: number) => majorUnits(units, currency);
+  const money = (units: number) => formatMoney(amount(units), currency);
   return {
     ownerId,
-    source:
-      'Default: refunds over $50 and any dispute acceptance need my OK; invoices over $200 or to someone who has never paid me need my OK; never repeat a refund or an invoice.',
+    currency,
+    source: `Default: refunds over ${money(50)} need my OK; invoices over ${money(200)} or to someone who has never paid me need my OK; never repeat a refund or an invoice within the hour.`,
     rules: [
-      { id: 'refund-cap', type: 'max_amount', kinds: ['refund.create'], limit: 5_000, then: 'require_approval' },
-      { id: 'refund-daily', type: 'daily_total', kinds: ['refund.create'], limit: 20_000, then: 'require_approval' },
-      { id: 'refund-dup', type: 'no_duplicates', kinds: ['refund.create', 'payment.capture', 'invoice.send'], windowMinutes: 60 },
-      { id: 'disputes-human', type: 'always_approve', kinds: ['dispute.accept'] },
-      { id: 'invoice-cap', type: 'max_amount', kinds: ['invoice.send'], limit: 20_000, then: 'require_approval' },
+      { id: 'refund-cap', type: 'max_amount', kinds: ['refund.create'], limit: amount(50), then: 'require_approval' },
+      { id: 'refund-daily', type: 'daily_total', kinds: ['refund.create'], limit: amount(200), then: 'require_approval' },
+      { id: 'no-repeats', type: 'no_duplicates', kinds: ['refund.create', 'payment.capture', 'invoice.send'], windowMinutes: 60 },
+      { id: 'invoice-cap', type: 'max_amount', kinds: ['invoice.send'], limit: amount(200), then: 'require_approval' },
       { id: 'invoice-new-client', type: 'new_counterparty', kinds: ['invoice.send'], then: 'require_approval' },
     ],
   };
 }
 
-export function defaultBuyerPolicy(ownerId: string): Policy {
+export function defaultBuyerPolicy(ownerId: string, currency: string): Policy {
+  const amount = (units: number) => majorUnits(units, currency);
+  const money = (units: number) => formatMoney(amount(units), currency);
   return {
     ownerId,
-    source: 'Default: my agent can buy up to $100 per order and $250 a day; ask me above that.',
+    currency,
+    source: `Default: my assistant can buy up to ${money(100)} per order and ${money(250)} a day; ask me above that.`,
     rules: [
-      { id: 'order-cap', type: 'max_amount', kinds: ['checkout.create'], limit: 10_000, then: 'require_approval' },
-      { id: 'daily-cap', type: 'daily_total', kinds: ['checkout.create'], limit: 25_000, then: 'require_approval' },
+      { id: 'order-cap', type: 'max_amount', kinds: ['checkout.create'], limit: amount(100), then: 'require_approval' },
+      { id: 'daily-cap', type: 'daily_total', kinds: ['checkout.create'], limit: amount(250), then: 'require_approval' },
       { id: 'no-dup-orders', type: 'no_duplicates', kinds: ['checkout.create'], windowMinutes: 10 },
     ],
   };

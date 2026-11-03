@@ -1,46 +1,29 @@
 import type { Metadata } from 'next';
 import { OrdersGrid, type OrderRow } from '@/app/_components/grids.tsx';
-import { toMinor } from '@/core/money.ts';
-import { ownerView, when } from '@/server/owner.ts';
+import { Status } from '@/app/_components/ui.tsx';
+import { ownerView } from '@/server/owner.ts';
 
 export const metadata: Metadata = { title: 'Orders' };
-
-const INVOICE_TONE: Record<string, 'ok' | 'hold' | 'stop'> = {
-  paid: 'ok',
-  'marked as paid': 'ok',
-  'partially paid': 'hold',
-  sent: 'hold',
-  unpaid: 'hold',
-  'waiting for the owner': 'hold',
-  denied: 'stop',
-  rejected: 'stop',
-  failed: 'stop',
-  cancelled: 'stop',
-};
 
 export default async function Orders() {
   const view = await ownerView();
   if (!view) return null;
-  const { shopId, seller, carts } = view;
-  const [orders, cartList, invoices] = await Promise.all([seller.orders(shopId), carts.listByShop(shopId), seller.invoices(shopId)]);
-  const totals = new Map(cartList.map((c) => [c.id, c.cart.totals?.total]));
+  const { shopId, orders: shopOrders, invoicing } = view;
+  const [orders, invoices] = await Promise.all([shopOrders.list(shopId), invoicing.list(shopId)]);
   const placed = orders.filter((o) => o.number);
   const open = orders.length - placed.length;
 
-  const rows: OrderRow[] = placed.map((o) => {
-    const total = totals.get(o.id);
-    return {
-      id: o.id,
-      number: o.number!,
-      placed: when(o.createdAt),
-      status: o.status,
-      total: o.total ?? '-',
-      totalMinor: total ? toMinor(total) : 0,
-      refunded: o.refunded ?? '-',
-      items: o.items.map((i) => `${i.quantity}x ${i.name ?? i.variant_id}`).join(', '),
-      via: o.channel ?? 'unknown',
-    };
-  });
+  const rows: OrderRow[] = placed.map((o) => ({
+    id: o.id,
+    number: o.number!,
+    placed: o.createdAt,
+    status: o.status,
+    total: o.total ?? '-',
+    totalMinor: o.totalMinor ?? 0,
+    refunded: o.refunded ?? '-',
+    items: o.items.map((i) => `${i.quantity}x ${i.name ?? i.variant_id}`).join(', '),
+    via: o.channel ?? 'unknown',
+  }));
 
   return (
     <>
@@ -87,7 +70,7 @@ export default async function Orders() {
                   <span className="num" style={{ fontWeight: 650 }}>
                     {i.total}
                   </span>
-                  <span className={`status status-${INVOICE_TONE[i.status] ?? 'quiet'}`}>{i.status.charAt(0).toUpperCase() + i.status.slice(1)}</span>
+                  <Status value={i.status} />
                   {i.payer_url ? (
                     <a className="small" href={i.payer_url}>
                       Payment page

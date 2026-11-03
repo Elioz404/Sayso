@@ -15,7 +15,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 export default async function ShopPage({ params }: { params: Promise<{ slug: string }> }) {
   await connection();
   const { slug } = await params;
-  const { catalogs, baseUrl } = await ready();
+  const { catalogs, links } = await ready();
   const catalog = await catalogs.bySlug(slug);
   if (!catalog || !isLive(catalog)) {
     return (
@@ -43,9 +43,9 @@ export default async function ShopPage({ params }: { params: Promise<{ slug: str
             <b>Shop here with your AI assistant</b>
           </span>
           <p className="small soft">Add this to any MCP client and ask for what you want. You approve the payment in PayPal.</p>
-          <CopyField value={`${baseUrl}/api/shopping/mcp`} />
+          <CopyField value={links.shoppingMcp} />
           <p className="small muted">
-            Covers every shop on Sayso. Just this one: <span className="mono">{`${baseUrl}/api/shops/${shop.slug}/mcp`}</span>
+            Covers every shop on Sayso. Just this one: <span className="mono">{links.shopMcp(shop.slug)}</span>
           </p>
         </div>
       </div>
@@ -103,7 +103,7 @@ export default async function ShopPage({ params }: { params: Promise<{ slug: str
       </div>
 
       <p className="small soft">
-        Assistants on PayPal&apos;s commerce platform use the merchant-cart API at <span className="mono">{`${baseUrl}/api/shops/${shop.slug}/merchant-cart`}</span>.
+        Assistants on PayPal&apos;s commerce platform use the merchant-cart API at <span className="mono">{links.merchantCart(shop.slug)}</span>.
       </p>
     </main>
   );

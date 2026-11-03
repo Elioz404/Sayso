@@ -3,8 +3,9 @@
 import type { Metadata } from 'next';
 import { connection } from 'next/server';
 import { Decision, LoginForm } from '@/app/_components/owner-actions.tsx';
-import { ACTION_LABEL, Status, Who } from '@/app/_components/ui.tsx';
-import { formatMoney } from '@/core/money.ts';
+import { actionLabel, Status, Who } from '@/app/_components/ui.tsx';
+import { When } from '@/app/_components/time.tsx';
+import { DEFAULT_CURRENCY, formatMoney } from '@/core/money.ts';
 import { ready } from '@/server/context.ts';
 import { ownerShopId } from '@/server/http.ts';
 
@@ -26,9 +27,8 @@ export default async function Approve({ params }: { params: Promise<{ id: string
     );
   }
 
-  const { guardStore } = await ready();
-  const record = await guardStore.get(id);
-  if (!record || record.action.ownerId !== shopId) {
+  const record = await (await ready()).saySo.record(shopId, id).catch(() => undefined);
+  if (!record) {
     return (
       <main className="wrap wrap-narrow page stack">
         <h1>Request not found</h1>
@@ -49,12 +49,14 @@ export default async function Approve({ params }: { params: Promise<{ id: string
       <article className="sayso-card" style={{ maxWidth: 'none' }}>
         <div className="spread">
           <Who actor={action.actor} />
-          <span className="small muted">{new Date(record.createdAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+          <span className="small muted">
+            <When iso={record.createdAt} />
+          </span>
         </div>
 
         <div className="stack" style={{ gap: 6 }}>
-          <span className="soft">{ACTION_LABEL[action.kind] ?? action.kind}</span>
-          {action.amount !== undefined ? <span className="amount">{formatMoney(action.amount, action.currency ?? 'USD')}</span> : <h1>{ACTION_LABEL[action.kind]}</h1>}
+          <span className="soft">{actionLabel(action.kind)}</span>
+          {action.amount !== undefined ? <span className="amount">{formatMoney(action.amount, action.currency ?? DEFAULT_CURRENCY)}</span> : <h1>{actionLabel(action.kind)}</h1>}
           {action.counterparty && <span className="small soft">to {action.counterparty}</span>}
         </div>
 
@@ -86,7 +88,9 @@ export default async function Approve({ params }: { params: Promise<{ id: string
             {decided ? (
               <span className={`stamp ${decided.type === 'approved' ? 'stamp-ok' : 'stamp-stop'}`}>
                 {decided.type === 'approved' ? 'Approved' : 'Rejected'}
-                <small>{new Date(decided.at).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</small>
+                <small>
+                  <When iso={decided.at} />
+                </small>
               </span>
             ) : (
               <Status value={record.status} />

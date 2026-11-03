@@ -4,7 +4,7 @@ import { connection } from 'next/server';
 import { RailDrawer, RailNav } from '@/app/_components/client-ui.tsx';
 import { LoginForm, SignOut } from '@/app/_components/owner-actions.tsx';
 import { Icon, Mark, Status } from '@/app/_components/ui.tsx';
-import { ownerView } from '@/server/owner.ts';
+import { ownerView, pendingFor } from '@/server/owner.ts';
 
 export const metadata: Metadata = { title: 'Your shop' };
 
@@ -26,8 +26,8 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
     );
   }
 
-  const { shop, seller, shopId } = view;
-  const pending = (await seller.approvals(shopId)).length;
+  const { shop, shopId } = view;
+  const pending = (await pendingFor(shopId)).length;
   const status = shop.status ?? 'live';
 
   return (

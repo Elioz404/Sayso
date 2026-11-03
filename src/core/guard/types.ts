@@ -2,33 +2,39 @@
 //   propose -> simulate -> decide (policy) -> [human say-so] -> execute -> verify -> audit.
 // These are the shared types. Amounts are integer minor units.
 
-export type ActionKind =
-  | 'checkout.create' // buyer agent opens a PayPal checkout for a cart
-  | 'payment.capture' // merchant captures an authorized payment
-  | 'payment.void' // merchant releases an authorization (buyer is never charged)
-  | 'refund.create'
-  | 'invoice.send'
-  | 'dispute.accept'
-  | 'policy.update'; // replace the owner's say-so rules (never on an agent's word alone)
+/** Every action Guard governs, with how it reads to people. The single list the rest derives from. */
+export const ACTIONS = {
+  'checkout.create': { label: 'Purchase', noun: 'purchases' }, // a buyer's assistant pays with saved PayPal
+  'payment.capture': { label: 'Charge an order', noun: 'payment captures' },
+  'payment.void': { label: 'Release a payment hold', noun: 'authorization voids' },
+  'refund.create': { label: 'Refund', noun: 'refunds' },
+  'invoice.send': { label: 'Send an invoice', noun: 'invoices' },
+  'policy.update': { label: 'Change your rules', noun: 'policy changes' }, // never on an agent's word alone
+} as const;
+
+export type ActionKind = keyof typeof ACTIONS;
+export const ACTION_KINDS = Object.keys(ACTIONS) as ActionKind[];
 
 export type Side = 'buyer' | 'merchant';
 
 export interface Actor {
   type: 'agent' | 'human';
-  id: string; // e.g. "buyer-agent:chatgpt", "ops-agent", "owner:maya"
+  /** "agent:<label>:<key id>", "buyer-agent:<channel>", "owner:<shop id>" or a system actor. */
+  id: string;
   side: Side;
 }
 
 export interface ProposedAction {
   kind: ActionKind;
   actor: Actor;
-  /** Shop or buyer account the action belongs to; policies are looked up per owner. */
+  /** Shop or buyer wallet the action belongs to; policies are looked up per owner. */
   ownerId: string;
+  /** Leave out to let the simulation work it out (e.g. "refund everything still refundable"). */
   amount?: number;
   currency?: string;
   /** Who receives money or the document: buyer email, merchant id... */
   counterparty?: string;
-  /** PayPal object acted on: order id, authorization id, capture id, dispute id... */
+  /** What is acted on: authorization id, capture id, cart id, recipient email... */
   resourceId?: string;
   /** Free-form category, e.g. product category for buyer mandates. */
   category?: string;
@@ -57,6 +63,8 @@ export interface Simulation {
   effects: string[];
   /** Problems PayPal would reject the call for, caught before calling it. */
   blockers: string[];
+  /** The amount the action will actually move, when the proposal left it out. Rules judge this. */
+  amount?: number;
   /** Live state read from PayPal while simulating (capture totals, order status...). */
   observed?: Record<string, unknown>;
 }
@@ -74,11 +82,16 @@ export type RecordStatus =
   | 'executing'
   | 'executed'
   | 'verified'
+  /** PayPal accepted the call but reading it back failed: money may have moved, so never "nothing happened". */
+  | 'unverified'
   | 'failed';
+
+/** Statuses where money moved or may move: they count toward limits and duplicate checks. */
+export const SPENDING_STATUSES: readonly RecordStatus[] = ['pending_approval', 'executing', 'executed', 'verified', 'unverified'];
 
 export interface AuditEvent {
   at: string; // ISO timestamp
-  type: 'proposed' | 'simulated' | 'decided' | 'approved' | 'rejected' | 'executed' | 'verified' | 'failed';
+  type: 'proposed' | 'simulated' | 'decided' | 'approved' | 'rejected' | 'executed' | 'verified' | 'unverified' | 'failed';
   by: string;
   data?: Record<string, unknown>;
   /** sha256(prevHash + this event) — a tamper-evident chain per record. */
@@ -106,10 +119,31 @@ export interface Executor {
   verify(action: ProposedAction, result: Record<string, unknown>): Promise<Verification>;
 }
 
+export interface RecordQuery {
+  since?: Date;
+  status?: RecordStatus | readonly RecordStatus[];
+  kind?: ActionKind;
+  /** Records about one cart (action.params.cartId). */
+  cartId?: string;
+  limit?: number;
+}
+
 export interface GuardStore {
   insert(record: GuardRecord): Promise<void>;
   update(record: GuardRecord): Promise<void>;
+  /** Saves only if the stored record is still in `expected` status. False means someone else moved it first. */
+  updateIf(record: GuardRecord, expected: RecordStatus): Promise<boolean>;
   get(id: string): Promise<GuardRecord | undefined>;
-  /** Records of an owner created at or after `since`, newest first. */
-  listSince(ownerId: string, since: Date): Promise<GuardRecord[]>;
+  /** An owner's records, newest first. */
+  list(ownerId: string, query?: RecordQuery): Promise<GuardRecord[]>;
+}
+
+export function matchesQuery(record: GuardRecord, query: RecordQuery): boolean {
+  const statuses = query.status === undefined ? undefined : ([] as RecordStatus[]).concat(query.status);
+  return (
+    (!query.since || Date.parse(record.createdAt) >= query.since.getTime()) &&
+    (!statuses || statuses.includes(record.status)) &&
+    (!query.kind || record.action.kind === query.kind) &&
+    (!query.cartId || record.action.params?.cartId === query.cartId)
+  );
 }

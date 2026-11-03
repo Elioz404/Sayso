@@ -37,6 +37,8 @@ const BASE: Record<PayPalEnv, string> = {
 };
 
 const MAX_ATTEMPTS = 4;
+/** A PayPal call that hangs longer than this fails instead of holding the request (and a cart lock) open. */
+const TIMEOUT_MS = 20_000;
 
 export class PayPalClient {
   private readonly config: PayPalConfig;
@@ -82,6 +84,7 @@ export class PayPalClient {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: 'grant_type=client_credentials',
+      signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     if (!res.ok) throw new PayPalError(res.status, '/v1/oauth2/token', await safeJson(res), res.headers.get('paypal-debug-id') ?? undefined);
     const { access_token, expires_in } = (await res.json()) as { access_token: string; expires_in: number };
@@ -101,6 +104,7 @@ export class PayPalClient {
           ...headers,
         },
         body: body === undefined ? undefined : JSON.stringify(body),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
       });
       if (res.ok) return (res.status === 204 ? undefined : await res.json()) as T;
 

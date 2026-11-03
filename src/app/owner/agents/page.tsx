@@ -2,14 +2,15 @@ import type { Metadata } from 'next';
 import { CopyField } from '@/app/_components/client-ui.tsx';
 import { NewKey, RevokeKey } from '@/app/_components/owner-actions.tsx';
 import { Icon } from '@/app/_components/ui.tsx';
-import { ago, ownerView } from '@/server/owner.ts';
+import { Ago } from '@/app/_components/time.tsx';
+import { ownerView } from '@/server/owner.ts';
 
 export const metadata: Metadata = { title: 'Agents' };
 
 export default async function Agents() {
   const view = await ownerView();
   if (!view) return null;
-  const { access, shopId, shop, baseUrl } = view;
+  const { access, shopId, shop, links } = view;
   const keys = await access.listKeys(shopId);
   const live = keys.filter((k) => !k.revokedAt);
 
@@ -36,14 +37,22 @@ export default async function Agents() {
                   {k.label}
                 </span>
                 <span className="small muted">
-                  <span className="mono">sk_agent_...{k.hint}</span> · {k.revokedAt ? 'revoked' : k.lastUsedAt ? `used ${ago(k.lastUsedAt)}` : 'never used'}
+                  <span className="mono">sk_agent_...{k.hint}</span> · {k.revokedAt ? (
+                    'revoked'
+                  ) : k.lastUsedAt ? (
+                    <>
+                      used <Ago iso={k.lastUsedAt} />
+                    </>
+                  ) : (
+                    'never used'
+                  )}
                 </span>
               </span>
               {!k.revokedAt && <RevokeKey id={k.id} label={k.label} />}
             </li>
           ))}
         </ul>
-        <NewKey baseUrl={baseUrl} />
+        <NewKey />
       </section>
 
       <section className="block" aria-labelledby="connect">
@@ -51,14 +60,14 @@ export default async function Agents() {
         <div className="stack" style={{ gap: 'var(--s4)' }}>
           <p className="soft">
             Connect an agent above: you get a personal URL to paste as a connector in ChatGPT or any MCP client, and the same key works in the
-            terminal. Clients that can send headers can also use <span className="mono">{`${baseUrl}/api/mcp`}</span> with{' '}
+            terminal. Clients that can send headers can also use <span className="mono">{links.sellerMcp}</span> with{' '}
             <span className="mono">Authorization: Bearer sk_agent_...</span>
           </p>
           <div className="field">
             <span className="field-label">For shoppers&apos; assistants (no key)</span>
-            <CopyField value={`${baseUrl}/api/shopping/mcp`} />
+            <CopyField value={links.shoppingMcp} />
             <span className="hint">
-              Every shop on Sayso, yours included. Your shop alone: <span className="mono">{`${baseUrl}/api/shops/${shop.slug}/mcp`}</span>
+              Every shop on Sayso, yours included. Your shop alone: <span className="mono">{links.shopMcp(shop.slug)}</span>
             </span>
           </div>
         </div>

@@ -3,13 +3,13 @@
 // SAYSO_NTFY_TOPIC is set (the push carries a link, never a secret).
 
 import 'server-only';
-import { formatMoney } from '@/core/money.ts';
-import type { GuardRecord } from '@/core/guard/types.ts';
+import { ACTIONS, type GuardRecord } from '@/core/guard/types.ts';
+import { DEFAULT_CURRENCY, formatMoney } from '@/core/money.ts';
 
 export async function notifyOwner(record: GuardRecord, approveUrl: string): Promise<void> {
-  const amount = record.action.amount !== undefined ? ` ${formatMoney(record.action.amount, record.action.currency ?? 'USD')}` : '';
+  const amount = record.action.amount !== undefined ? ` ${formatMoney(record.action.amount, record.action.currency ?? DEFAULT_CURRENCY)}` : '';
   const why = record.decision?.hits.map((h) => h.message).join(' ') ?? '';
-  const title = `Say-so needed: ${record.action.kind}${amount}`;
+  const title = `Say-so needed: ${ACTIONS[record.action.kind].label}${amount}`;
   console.log(`[guard] ${record.id} ${title}. ${why} -> ${approveUrl}`);
 
   const topic = process.env.SAYSO_NTFY_TOPIC;

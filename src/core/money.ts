@@ -34,7 +34,40 @@ export function toMinor(money: Money): number {
   const [, neg, units, frac = ''] = match;
   if (decimals === 0 && frac) throw new Error(`${money.currency_code} has no decimals: "${money.value}"`);
   const minor = Number(units) * 10 ** decimals + Number(frac.padEnd(decimals, '0') || 0);
+  if (!Number.isSafeInteger(minor)) throw new Error(`Amount out of range: "${money.value}"`);
   return neg ? -minor : minor;
+}
+
+/** The currency used when nothing else says which: new buyer wallets and demo defaults. */
+export const DEFAULT_CURRENCY = 'USD';
+
+/** Whole units of a currency (e.g. 50 dollars, 5000 yen) -> minor units. For defaults written in code. */
+export function majorUnits(units: number, currency: string): number {
+  return units * 10 ** decimalsFor(currency);
+}
+
+const THOUSANDS = /^\d{1,3}(,\d{3})+(\.\d+)?$/;
+
+/**
+ * The one lenient parser for amounts typed by people or produced by models: "$1,250.50", "62", 62.
+ * Returns minor units, or undefined for anything ambiguous or invalid: negatives, a decimal comma
+ * ("12,50" could mean 12.50 or 1250), more decimals than the currency has, or unsafe numbers.
+ */
+export function parseAmount(input: string | number, currency: string): number | undefined {
+  let text: string;
+  if (typeof input === 'number') {
+    if (!Number.isFinite(input) || input < 0) return undefined;
+    text = input.toFixed(decimalsFor(currency));
+  } else {
+    text = input.trim().replace(/^[$€£¥]\s*/, '').replace(new RegExp(`\\s*${currency}$`, 'i'), '');
+    if (THOUSANDS.test(text)) text = text.replace(/,/g, '');
+    if (!/^\d+(\.\d+)?$/.test(text)) return undefined;
+  }
+  try {
+    return toMinor({ currency_code: currency, value: text });
+  } catch {
+    return undefined;
+  }
 }
 
 /** Human-readable amount for UIs, audit messages and agent replies. */

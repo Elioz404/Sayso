@@ -90,6 +90,7 @@ test('policy draft: the model proposes, validation keeps only well-formed rules'
   const model = fakeModel({
     rules: [
       { type: 'max_amount', kinds: ['refund.create'], limit: '30', then: 'require_approval' },
+      { type: 'never', kinds: ['invoice.send'] },
       { type: 'never', kinds: ['dispute.accept'] },
       { type: 'max_amount', kinds: ['refund.create'], limit: 'lots' },
       { type: 'transfer_everything', kinds: ['refund.create'] },
@@ -97,11 +98,11 @@ test('policy draft: the model proposes, validation keeps only well-formed rules'
     ],
     unclear: ['be nice to regulars'],
   });
-  const { policy, unclear } = await draftPolicy(model, 'shop_x', 'Refunds over $30 need my OK. Never accept disputes. Be nice to regulars.', 'USD');
+  const { policy, unclear } = await draftPolicy(model, 'shop_x', 'Refunds over $30 need my OK. Never send invoices. Be nice to regulars.', 'USD');
 
   assert.deepEqual(policy.rules.map((r) => r.type), ['max_amount', 'never']);
-  assert.equal(unclear.length, 4, 'one unclear phrase + three rejected rules, all reported back');
-  assert.equal(policy.source, 'Refunds over $30 need my OK. Never accept disputes. Be nice to regulars.');
+  assert.equal(unclear.length, 5, 'one unclear phrase + four rejected rules (an unknown kind among them), all reported back');
+  assert.equal(policy.source, 'Refunds over $30 need my OK. Never send invoices. Be nice to regulars.');
 
   const refund = { kind: 'refund.create' as const, actor: { type: 'agent' as const, id: 'a', side: 'merchant' as const }, ownerId: 'shop_x', amount: 4_000, currency: 'USD', reason: 'x' };
   assert.equal(evaluate(policy, refund, []).verdict, 'require_approval');

@@ -1,9 +1,8 @@
 import 'server-only';
 import { cookies } from 'next/headers';
-import type { AgentKey } from '@/core/access.ts';
-import { HttpError } from '@/core/commerce.ts';
+import { HttpError, notFound } from '@/core/errors.ts';
 import { PayPalError } from '@/core/paypal/client.ts';
-import { ready } from './context.ts';
+import { ready, siteLinks } from './context.ts';
 
 export const OWNER_COOKIE = 'sayso_owner';
 
@@ -20,17 +19,24 @@ export async function requireOwner(request: Request): Promise<string> {
   return shopId;
 }
 
-export async function agentFrom(request: Request): Promise<AgentKey | undefined> {
-  const { access } = await ready();
-  return access.agentFromHeader(request.headers.get('authorization'));
-}
-
 /** Owner actions are cookie-authenticated, so refuse cross-site requests outright. */
 export function assertSameOrigin(request: Request): void {
   const origin = request.headers.get('origin');
-  if (origin && origin !== new URL(request.url).origin && origin !== process.env.PUBLIC_BASE_URL?.replace(/\/$/, '')) {
+  if (origin && origin !== new URL(request.url).origin && origin !== siteLinks().base) {
     throw new HttpError(403, 'Cross-site request refused');
   }
+}
+
+/** The id of the live shop at `slug`, for routes scoped to one shop. */
+export async function liveShopId(slug: string): Promise<string> {
+  const catalog = await (await ready()).catalogs.bySlug(slug);
+  if (!catalog || (catalog.shop.status ?? 'live') !== 'live') throw notFound(`Shop ${slug}`);
+  return catalog.shop.id;
+}
+
+/** Who is shopping, as the client says (for the owner's dashboard only; never trusted for access). */
+export function channelOf(request: Request, fallback: string): string {
+  return request.headers.get('x-sayso-channel')?.trim().slice(0, 40) || fallback;
 }
 
 /** Run a route body and map known errors to the JSON shapes the merchant-cart spec expects. */
@@ -55,14 +61,4 @@ export async function readJson<T>(request: Request): Promise<T> {
   } catch {
     throw new HttpError(400, 'Request body must be JSON');
   }
-}
-
-/**
- * PayPal's Commerce Platform calls the merchant-cart API with a PayPal-issued JWT. In the sandbox
- * demo our own agents call it, so verification is opt-in until the platform is onboarded.
- * TODO: verify the JWT signature against PayPal's public keys when SAYSO_REQUIRE_PAYPAL_JWT=true.
- */
-export function assertCallerAllowed(request: Request): void {
-  if (process.env.SAYSO_REQUIRE_PAYPAL_JWT !== 'true') return;
-  if (!request.headers.get('authorization')?.startsWith('Bearer ')) throw new HttpError(401, 'Missing PayPal JWT');
 }

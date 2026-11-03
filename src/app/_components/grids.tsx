@@ -3,13 +3,35 @@
 // AG Grid (Community) views for the owner area. Columns fit the container (no sideways scrolling):
 // secondary columns hide on narrow screens, and a row opens its detail page.
 
-import { AllCommunityModule, ModuleRegistry, themeQuartz, type ColDef, type ICellRendererParams } from 'ag-grid-community';
+import {
+  CellStyleModule,
+  ClientSideRowModelModule,
+  ColumnAutoSizeModule,
+  CsvExportModule,
+  ModuleRegistry,
+  PaginationModule,
+  QuickFilterModule,
+  TooltipModule,
+  themeQuartz,
+  type ColDef,
+  type ICellRendererParams,
+} from 'ag-grid-community';
 import { AgGridReact } from 'ag-grid-react';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { formatWhen } from './time.tsx';
 import { Status } from './ui.tsx';
 
-ModuleRegistry.registerModules([AllCommunityModule]);
+// Only the features these grids use, so the bundle carries nothing else.
+ModuleRegistry.registerModules([
+  ClientSideRowModelModule,
+  CellStyleModule,
+  ColumnAutoSizeModule,
+  CsvExportModule,
+  PaginationModule,
+  QuickFilterModule,
+  TooltipModule,
+]);
 
 // Follows the site's light/dark tokens instead of a fixed palette.
 const theme = themeQuartz.withParams({
@@ -65,6 +87,7 @@ const RIGHT = ['ag-right-aligned-cell', 'num'];
 export interface OrderRow {
   id: string;
   number: string;
+  /** ISO time: sorts correctly, shown in the viewer's time zone. */
   placed: string;
   status: string;
   total: string;
@@ -78,7 +101,7 @@ function OrderCell({ data }: ICellRendererParams<OrderRow>) {
   return (
     <span className="cell-two">
       <b>{data?.number}</b>
-      <small>{data?.placed}</small>
+      <small>{data && formatWhen(data.placed)}</small>
     </span>
   );
 }
@@ -104,7 +127,7 @@ export function OrdersGrid({ rows }: { rows: OrderRow[] }) {
   const narrow = width < NARROW;
   const columns = useMemo<ColDef<OrderRow>[]>(
     () => [
-      { field: 'number', headerName: 'Order', cellRenderer: OrderCell, minWidth: 120, flex: 1.2, getQuickFilterText: (p) => `${p.data?.number} ${p.data?.placed}` },
+      { field: 'number', headerName: 'Order', cellRenderer: OrderCell, minWidth: 120, flex: 1.2, getQuickFilterText: (p) => `${p.data?.number} ${p.data ? formatWhen(p.data.placed) : ''}` },
       { field: 'status', cellRenderer: StatusCell, minWidth: 104, flex: 1 },
       { field: 'items', headerName: 'Items', cellRenderer: ItemsCell, minWidth: 180, flex: 2.2, hide: narrow, getQuickFilterText: (p) => `${p.data?.items} ${p.data?.via}` },
       { field: 'refunded', headerName: 'Refunded', minWidth: 96, flex: 0.8, hide: narrow, type: 'rightAligned', cellClass: RIGHT },
@@ -161,6 +184,7 @@ export function OrdersGrid({ rows }: { rows: OrderRow[] }) {
 
 export interface AuditRow {
   id: string;
+  /** ISO time. */
   at: string;
   action: string;
   amount: string;
@@ -175,7 +199,7 @@ function ActionCell({ data }: ICellRendererParams<AuditRow>) {
   return (
     <span className="cell-two">
       <b>{data?.action}</b>
-      <small>{data?.at}</small>
+      <small>{data && formatWhen(data.at)}</small>
     </span>
   );
 }
@@ -197,7 +221,7 @@ export function AuditGrid({ rows }: { rows: AuditRow[] }) {
       { field: 'action', headerName: 'Action', cellRenderer: ActionCell, minWidth: 124, flex: 1.3 },
       { field: 'amount', headerName: 'Amount', minWidth: 80, flex: 0.7, type: 'rightAligned', cellClass: RIGHT },
       { field: 'by', headerName: 'Asked by', cellRenderer: ByCell, minWidth: 130, flex: 1, hide: narrow },
-      { field: 'status', headerName: 'Result', cellRenderer: AuditStatusCell, minWidth: 104, flex: 0.9 },
+      { field: 'status', headerName: 'Result', cellRenderer: AuditStatusCell, minWidth: 140, flex: 1 },
       { field: 'why', headerName: 'Why', minWidth: 200, flex: 2.2, hide: narrow, tooltipField: 'why', cellStyle: { color: 'var(--ink-2)' } },
     ],
     [narrow],

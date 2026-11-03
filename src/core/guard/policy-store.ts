@@ -3,6 +3,7 @@
 // treatment as moving money.
 
 import { formatMoney } from '../money.ts';
+import { canonicalJson } from './engine.ts';
 import type { Policy, Rule } from './policy.ts';
 import type { Executor } from './types.ts';
 
@@ -13,9 +14,6 @@ export interface PolicyStore {
 
 export class MemoryPolicyStore implements PolicyStore {
   private readonly policies = new Map<string, Policy>();
-  constructor(initial: Policy[] = []) {
-    for (const p of initial) this.policies.set(p.ownerId, structuredClone(p));
-  }
   async get(ownerId: string) {
     const p = this.policies.get(ownerId);
     return p && structuredClone(p);
@@ -25,8 +23,8 @@ export class MemoryPolicyStore implements PolicyStore {
   }
 }
 
-/** `params.policy` holds the proposed Policy; `params.currency` formats limits for the owner. */
-export function policyUpdateExecutor(store: PolicyStore, fallback: (ownerId: string) => Policy): Executor {
+/** `params.policy` holds the proposed Policy. `current` is the policy in force (the default if none saved). */
+export function policyUpdateExecutor(store: PolicyStore, current: (ownerId: string) => Promise<Policy>): Executor {
   const proposed = (params: Record<string, unknown> | undefined): Policy => {
     const policy = params?.policy as Policy | undefined;
     if (!policy || !Array.isArray(policy.rules)) throw new Error('Missing params.policy');
@@ -37,16 +35,13 @@ export function policyUpdateExecutor(store: PolicyStore, fallback: (ownerId: str
     async simulate(action) {
       const next = proposed(action.params);
       const blockers = next.ownerId !== action.ownerId ? ['Policy belongs to a different owner.'] : [];
-      const current = (await store.get(action.ownerId)) ?? fallback(action.ownerId);
-      const currency = String(action.params?.currency ?? 'USD');
+      const now = await current(action.ownerId);
       return {
         ok: blockers.length === 0,
         blockers,
-        effects: [
-          `Replace ${current.rules.length} rule(s) with ${next.rules.length}:`,
-          ...next.rules.map((r) => `- ${describeRule(r, currency)}`),
-        ],
-        observed: { current_rules: current.rules.length },
+        amount: 0,
+        effects: [`Replace ${now.rules.length} rule(s) with ${next.rules.length}:`, ...next.rules.map((r) => `- ${describeRule(r, next.currency)}`)],
+        observed: { current_rules: now.rules.length },
       };
     },
     async execute(action) {
@@ -56,8 +51,8 @@ export function policyUpdateExecutor(store: PolicyStore, fallback: (ownerId: str
     },
     async verify(action) {
       const saved = await store.get(action.ownerId);
-      const ok = JSON.stringify(saved?.rules) === JSON.stringify(proposed(action.params).rules);
-      return { ok, detail: ok ? `Policy now has ${saved!.rules.length} rule(s).` : 'Saved policy does not match the proposal.' };
+      const ok = saved !== undefined && canonicalJson(saved.rules) === canonicalJson(proposed(action.params).rules);
+      return { ok, detail: ok ? `Policy now has ${saved.rules.length} rule(s).` : 'Saved policy does not match the proposal.' };
     },
   };
 }

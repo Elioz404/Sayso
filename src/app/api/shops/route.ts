@@ -1,15 +1,15 @@
 // Onboarding: POST { text?, images?: data URLs, shop_name?, currency?, country? } -> a draft shop.
 // Returns the owner secret and a first agent key exactly once; the owner reviews and publishes.
-import { HttpError } from '@/core/commerce.ts';
+import { HttpError } from '@/core/errors.ts';
 import { ready } from '@/server/context.ts';
 import { handle, readJson } from '@/server/http.ts';
-import { allow } from '@/server/rate-limit.ts';
+import { allow, clientAddress } from '@/server/rate-limit.ts';
 
 const MAX_IMAGE_CHARS = 6_000_000; // ~4.5 MB per photo once base64-encoded
 
 export async function POST(request: Request) {
   return handle(async () => {
-    if (!allow(`onboard:${request.headers.get('x-forwarded-for') ?? 'local'}`, 10, 3_600_000)) {
+    if (!allow(`onboard:${clientAddress(request)}`, 10, 3_600_000)) {
       throw new HttpError(429, 'Too many new shops from here; try again later');
     }
     const body = await readJson<{ text?: string; images?: string[]; shop_name?: string; currency?: string; country?: string; agent_label?: string }>(request);
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
       throw new HttpError(400, 'Photos must be PNG, JPEG, WebP or GIF under ~4 MB');
     }
 
-    const { shops, baseUrl } = await ready();
+    const { shops, links } = await ready();
     const result = await shops.onboard(
       { text: body.text?.slice(0, 8_000), images, shopName: body.shop_name?.slice(0, 80), currency: body.currency, country: body.country },
       body.agent_label?.slice(0, 60) || 'my agent',
@@ -32,8 +32,9 @@ export async function POST(request: Request) {
         questions: result.questions,
         owner_secret: result.ownerSecret,
         agent_key: result.agentKey,
-        review_url: `${baseUrl}/owner`,
-        mcp: { seller: `${baseUrl}/api/mcp`, buyer: `${baseUrl}/api/shops/${shop.slug}/mcp` },
+        review_url: `${links.base}/owner`,
+        mcp: { seller: links.sellerMcpFor(result.agentKey), buyer: links.shoppingMcp, this_shop: links.shopMcp(shop.slug) },
+        cli_login: links.cliLogin(result.agentKey),
       },
       { status: 201 },
     );

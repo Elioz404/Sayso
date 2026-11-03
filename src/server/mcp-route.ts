@@ -9,7 +9,7 @@ import 'server-only';
 import { handleMcp } from '@/core/mcp.ts';
 import type { ToolContext } from '@/core/tools/registry.ts';
 import { ready } from './context.ts';
-import { handle } from './http.ts';
+import { channelOf, handle } from './http.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -57,7 +57,7 @@ export async function mcpPost(request: Request, endpoint: McpEndpoint = {}): Pro
       marketplace,
       agent,
       walletKey: bearer(request, 'sk_wallet_') ?? (pathKey?.startsWith('sk_wallet_') ? pathKey : undefined),
-      channel: request.headers.get('x-sayso-channel')?.slice(0, 40) || (agent ? 'owner-agent' : 'mcp'),
+      channel: channelOf(request, agent ? 'owner-agent' : 'mcp'),
     };
 
     const reply = await handleMcp(message, context);

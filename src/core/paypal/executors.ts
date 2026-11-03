@@ -1,49 +1,49 @@
 // Guard executors for money-moving PayPal calls. Each one simulates against live PayPal state first
-// (so impossible or harmful calls are blocked before they are made), executes with the Guard
-// record's idempotency key, then reads the result back to verify it.
+// (so impossible or harmful calls are blocked before they are made, and an amount left out is resolved
+// to what would really move), executes with the Guard record's idempotency key, then reads the result
+// back and checks it moved exactly what was approved.
 
 import type { Executor } from '../guard/types.ts';
 import { formatMoney, toMinor, toMoney } from '../money.ts';
 import type { PayPalClient } from './client.ts';
-import {
-  captureAuthorization,
-  getAuthorization,
-  getCapture,
-  getOrder,
-  getRefund,
-  refundCapture,
-  voidAuthorization,
-} from './orders.ts';
+import { captureAuthorization, getAuthorization, getCapture, getOrder, getRefund, refundCapture, voidAuthorization } from './orders.ts';
 
 const CAPTURABLE = new Set(['CREATED', 'PARTIALLY_CAPTURED', 'PENDING']);
+const MOVED = new Set(['COMPLETED', 'PENDING']);
 
 export function captureExecutor(client: PayPalClient): Executor {
   return {
     async simulate(action) {
       const auth = await getAuthorization(client, need(action.resourceId, 'resourceId (authorization id)'));
+      const currency = auth.amount.currency_code;
       const authorized = toMinor(auth.amount);
       const amount = action.amount ?? authorized;
       const blockers: string[] = [];
       if (!CAPTURABLE.has(auth.status)) blockers.push(`Authorization is ${auth.status}; it can't be captured.`);
-      if (amount > authorized) blockers.push(`Capture ${fmt(amount, auth.amount.currency_code)} exceeds the authorized ${fmt(authorized, auth.amount.currency_code)}.`);
+      if (amount > authorized) blockers.push(`Capture ${formatMoney(amount, currency)} exceeds the authorized ${formatMoney(authorized, currency)}.`);
       if (auth.expiration_time && Date.parse(auth.expiration_time) < Date.now()) blockers.push('Authorization has expired.');
       return {
         ok: blockers.length === 0,
         blockers,
-        effects: [`Charge the buyer ${fmt(amount, auth.amount.currency_code)} (authorized ${fmt(authorized, auth.amount.currency_code)}).`],
+        amount,
+        effects: [`Charge the buyer ${formatMoney(amount, currency)} (authorized ${formatMoney(authorized, currency)}).`],
         observed: { authorization_status: auth.status, expires: auth.expiration_time },
       };
     },
     async execute(action, key) {
-      const auth = await getAuthorization(client, action.resourceId!);
+      const auth = await getAuthorization(client, need(action.resourceId, 'resourceId'));
       const amount = action.amount !== undefined ? toMoney(action.amount, auth.amount.currency_code) : auth.amount;
       const capture = await captureAuthorization(client, auth.id, amount, key);
       return { capture_id: capture.id, status: capture.status, amount: capture.amount };
     },
-    async verify(_action, result) {
+    async verify(action, result) {
       const capture = await getCapture(client, String(result.capture_id));
-      const ok = capture.status === 'COMPLETED' || capture.status === 'PENDING';
-      return { ok, detail: `Capture ${capture.id} is ${capture.status}.`, observed: { status: capture.status } };
+      const amountOk = action.amount === undefined || toMinor(capture.amount) === action.amount;
+      return {
+        ok: MOVED.has(capture.status) && amountOk,
+        detail: `Capture ${capture.id} is ${capture.status} for ${formatMoney(toMinor(capture.amount), capture.amount.currency_code)}.`,
+        observed: { status: capture.status },
+      };
     },
   };
 }
@@ -56,16 +56,18 @@ export function voidExecutor(client: PayPalClient): Executor {
       return {
         ok,
         blockers: ok ? [] : [`Authorization is ${auth.status}; nothing to release.`],
-        effects: [`Release the ${fmt(toMinor(auth.amount), auth.amount.currency_code)} hold. The buyer is not charged.`],
+        amount: 0, // releasing a hold moves no money
+        effects: [`Release the ${formatMoney(toMinor(auth.amount), auth.amount.currency_code)} hold. The buyer is not charged.`],
         observed: { authorization_status: auth.status },
       };
     },
     async execute(action, key) {
-      await voidAuthorization(client, action.resourceId!, key);
-      return { authorization_id: action.resourceId };
+      const authorizationId = need(action.resourceId, 'resourceId');
+      await voidAuthorization(client, authorizationId, key);
+      return { authorization_id: authorizationId };
     },
     async verify(action) {
-      const auth = await getAuthorization(client, action.resourceId!);
+      const auth = await getAuthorization(client, need(action.resourceId, 'resourceId'));
       return { ok: auth.status === 'VOIDED', detail: `Authorization is ${auth.status}.` };
     },
   };
@@ -73,7 +75,8 @@ export function voidExecutor(client: PayPalClient): Executor {
 
 /**
  * Refunds need `resourceId` = capture id and `params.orderId`, so the simulation can sum earlier
- * refunds on the order and block anything above what is still refundable.
+ * refunds on the order and block anything above what is still refundable. Leaving the amount out
+ * refunds everything still refundable, and the rules judge that amount.
  */
 export function refundExecutor(client: PayPalClient): Executor {
   return {
@@ -85,38 +88,41 @@ export function refundExecutor(client: PayPalClient): Executor {
       if (!capture) return { ok: false, effects: [], blockers: [`Capture ${captureId} is not part of order ${order.id}.`] };
 
       const currency = capture.amount.currency_code;
+      const fmt = (minor: number) => formatMoney(minor, currency);
       const captured = toMinor(capture.amount);
       const refunded = payments
         .flatMap((p) => p.refunds ?? [])
-        .filter((r) => r.status === 'COMPLETED' || r.status === 'PENDING')
+        .filter((r) => MOVED.has(r.status))
         .reduce((sum, r) => sum + toMinor(r.amount), 0);
       const refundable = captured - refunded;
       const amount = action.amount ?? refundable;
       const blockers: string[] = [];
       if (refundable <= 0) blockers.push('This payment has already been fully refunded.');
-      else if (amount > refundable) blockers.push(`Refund ${fmt(amount, currency)} exceeds the ${fmt(refundable, currency)} still refundable.`);
+      else if (amount <= 0) blockers.push('A refund must be more than zero.');
+      else if (amount > refundable) blockers.push(`Refund ${fmt(amount)} exceeds the ${fmt(refundable)} still refundable.`);
 
-      const already = refunded ? ` (already refunded ${fmt(refunded, currency)})` : '';
+      const already = refunded ? ` (already refunded ${fmt(refunded)})` : '';
       return {
         ok: blockers.length === 0,
         blockers,
+        amount,
         effects: blockers.length
-          ? [`Nothing would move: ${fmt(Math.max(0, refundable), currency)} of ${fmt(captured, currency)} is still refundable${already}.`]
-          : [`Refund ${fmt(amount, currency)} to the buyer${already}.`, `${fmt(refundable - amount, currency)} of ${fmt(captured, currency)} stays captured.`],
+          ? [`Nothing would move: ${fmt(Math.max(0, refundable))} of ${fmt(captured)} is still refundable${already}.`]
+          : [`Refund ${fmt(amount)} to the buyer${already}.`, `${fmt(refundable - amount)} of ${fmt(captured)} stays captured.`],
         observed: { captured, refunded, refundable, currency },
       };
     },
     async execute(action, key) {
-      const capture = await getCapture(client, action.resourceId!);
-      const amount = action.amount !== undefined ? toMoney(action.amount, capture.amount.currency_code) : capture.amount;
+      const capture = await getCapture(client, need(action.resourceId, 'resourceId'));
+      // Guard filled in the amount from the simulation, so a "full" refund is an exact amount too.
+      const amount = toMoney(need(action.amount, 'amount'), capture.amount.currency_code);
       const refund = await refundCapture(client, capture.id, amount, action.reason, key);
       return { refund_id: refund.id, status: refund.status, amount: refund.amount };
     },
     async verify(action, result) {
       const refund = await getRefund(client, String(result.refund_id));
-      const amountOk = action.amount === undefined || toMinor(refund.amount) === action.amount;
-      const ok = (refund.status === 'COMPLETED' || refund.status === 'PENDING') && amountOk;
-      return { ok, detail: `Refund ${refund.id} is ${refund.status} for ${refund.amount.value} ${refund.amount.currency_code}.` };
+      const ok = MOVED.has(refund.status) && toMinor(refund.amount) === action.amount;
+      return { ok, detail: `Refund ${refund.id} is ${refund.status} for ${formatMoney(toMinor(refund.amount), refund.amount.currency_code)}.` };
     },
   };
 }
@@ -124,8 +130,4 @@ export function refundExecutor(client: PayPalClient): Executor {
 function need<T>(value: T | undefined, what: string): T {
   if (value === undefined || value === null || value === '') throw new Error(`Missing ${what}`);
   return value;
-}
-
-function fmt(minor: number, currency: string): string {
-  return formatMoney(minor, currency);
 }

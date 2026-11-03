@@ -1,5 +1,5 @@
 // Orders v2 + Payments v2 calls Sayso makes directly (money movement stays on typed REST calls with
-// idempotency keys; operational tools like invoicing and disputes go through PayPal's Agent Toolkit).
+// idempotency keys).
 //
 // Payment flow is authorize-then-capture: the buyer approves in PayPal (their say-so), the merchant's
 // Guard checks stock and policy, and only then is the authorization captured. If anything is off the
@@ -145,40 +145,3 @@ export const addTracking = (
     { capture_id: input.captureId, tracking_number: input.trackingNumber, carrier: input.carrier, notify_payer: input.notifyPayer ?? true },
     idempotencyKey,
   );
-
-/** Registers a product in PayPal's Catalog Products API when a shop is published. */
-export const createCatalogProduct = (
-  client: PayPalClient,
-  input: { name: string; description: string; imageUrl?: string; homeUrl?: string },
-  idempotencyKey: string,
-) =>
-  client.post<{ id: string }>(
-    '/v1/catalogs/products',
-    {
-      name: input.name.slice(0, 127),
-      description: input.description.slice(0, 256) || undefined,
-      type: 'PHYSICAL',
-      image_url: input.imageUrl,
-      home_url: input.homeUrl,
-    },
-    idempotencyKey,
-  );
-
-/** Verify a webhook really came from PayPal before acting on it. */
-export async function verifyWebhook(
-  client: PayPalClient,
-  webhookId: string,
-  headers: Headers,
-  event: unknown,
-): Promise<boolean> {
-  const res = await client.post<{ verification_status: string }>('/v1/notifications/verify-webhook-signature', {
-    auth_algo: headers.get('paypal-auth-algo'),
-    cert_url: headers.get('paypal-cert-url'),
-    transmission_id: headers.get('paypal-transmission-id'),
-    transmission_sig: headers.get('paypal-transmission-sig'),
-    transmission_time: headers.get('paypal-transmission-time'),
-    webhook_id: webhookId,
-    webhook_event: event,
-  });
-  return res.verification_status === 'SUCCESS';
-}

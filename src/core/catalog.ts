@@ -91,3 +91,35 @@ export function slugify(name: string): string {
 export function available(variant: Variant): number {
   return variant.madeToOrderDays !== undefined ? Number.POSITIVE_INFINITY : Math.max(0, variant.inventory);
 }
+
+/** Units of one variant taken from (or given back to) stock. */
+export interface StockLine {
+  variantId: string;
+  quantity: number;
+}
+
+/** The same variant on several cart lines counts once, with the quantities added up. */
+export function stockLines(items: readonly { variant_id?: string; quantity: number }[]): StockLine[] {
+  const totals = new Map<string, number>();
+  for (const item of items) if (item.variant_id) totals.set(item.variant_id, (totals.get(item.variant_id) ?? 0) + item.quantity);
+  return [...totals].map(([variantId, quantity]) => ({ variantId, quantity }));
+}
+
+/**
+ * Take `lines` out of stock, all or nothing: false (and the catalog untouched) if any variant is short
+ * or gone. Made-to-order variants are never short. Mutates `catalog`; stores call it inside their lock.
+ */
+export function takeStock(catalog: Catalog, lines: readonly StockLine[]): boolean {
+  const found = lines.map((l) => ({ line: l, variant: findVariant(catalog, l.variantId)?.variant }));
+  if (found.some(({ line, variant }) => !variant || available(variant) < line.quantity)) return false;
+  for (const { line, variant } of found) if (variant!.madeToOrderDays === undefined) variant!.inventory -= line.quantity;
+  return true;
+}
+
+/** Put `lines` back in stock, e.g. when a held order is released. Variants removed since are skipped. */
+export function returnStock(catalog: Catalog, lines: readonly StockLine[]): void {
+  for (const line of lines) {
+    const variant = findVariant(catalog, line.variantId)?.variant;
+    if (variant && variant.madeToOrderDays === undefined) variant.inventory += line.quantity;
+  }
+}

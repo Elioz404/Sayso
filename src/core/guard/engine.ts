@@ -3,37 +3,65 @@
 // only orchestrates, so it is fully testable with fake executors (tests/guard.test.ts).
 
 import { createHash, randomUUID } from 'node:crypto';
-import { evaluate, type Policy } from './policy.ts';
-import type { ActionKind, AuditEvent, Executor, GuardRecord, GuardStore, ProposedAction, RuleHit } from './types.ts';
+import { evaluate, findDuplicate, historyWindowMs, minutesAgo, type Policy } from './policy.ts';
+import { matchesQuery } from './types.ts';
+import type { ActionKind, AuditEvent, Decision, Executor, GuardRecord, GuardStore, ProposedAction, RecordQuery, RecordStatus, RuleHit, Verdict } from './types.ts';
 
+/** Only a person can apply these, whoever proposes them. */
 const HUMAN_ONLY = new Set<ActionKind>(['policy.update']);
+/** The same money move twice within this window is a duplicate, whatever the owner's policy says. */
+const DUPLICATE_WINDOW_MS = 10 * 60_000;
+/** Final states: Guard tells subscribers once a record reaches one of them. */
+const SETTLED: readonly RecordStatus[] = ['verified', 'unverified', 'failed', 'denied', 'rejected'];
+
+export interface SubmitOptions {
+  /** A deterministic PayPal-Request-Id (e.g. "<cart>-capture"), so a retry anywhere replays instead of repeating. */
+  idempotencyKey?: string;
+  /** Tell the owner when the action waits for them. Default true. */
+  notify?: boolean;
+}
+
+export type SettledListener = (record: GuardRecord) => Promise<void> | void;
 
 export interface GuardDeps {
   store: GuardStore;
-  executors: Partial<Record<ActionKind, Executor>>;
+  executors?: Partial<Record<ActionKind, Executor>>;
   policyFor: (ownerId: string) => Promise<Policy>;
-  /** Called when a record needs a human: push to the dashboard, email, etc. */
+  /** Called when a record needs a human: push to the owner's phone, the dashboard... */
   onApprovalNeeded?: (record: GuardRecord) => Promise<void> | void;
   now?: () => Date;
 }
 
 export class Guard {
   private readonly deps: GuardDeps;
+  private readonly executors: Partial<Record<ActionKind, Executor>>;
+  private readonly listeners: SettledListener[] = [];
 
   constructor(deps: GuardDeps) {
     this.deps = deps;
+    this.executors = { ...deps.executors };
   }
 
-  /** Entry point for agents. Returns the record; status tells the agent what happened. */
-  async submit(action: ProposedAction): Promise<GuardRecord> {
+  /** Add how Guard performs one kind of action (lets executors that need Guard's callers be wired later). */
+  register(kind: ActionKind, executor: Executor): void {
+    this.executors[kind] = executor;
+  }
+
+  /** Run `listener` whenever a record reaches a final state, e.g. to keep an order in step with its capture. */
+  subscribe(listener: SettledListener): void {
+    this.listeners.push(listener);
+  }
+
+  /** Entry point for agents. Returns the record; its status tells the caller what happened. */
+  async submit(action: ProposedAction, options: SubmitOptions = {}): Promise<GuardRecord> {
     const executor = this.executor(action.kind);
     const now = this.now();
     const record: GuardRecord = {
-      id: `say_${randomUUID().slice(0, 8)}`,
+      id: `say_${randomUUID().replace(/-/g, '').slice(0, 12)}`,
       createdAt: now.toISOString(),
       action,
       status: 'executing',
-      idempotencyKey: randomUUID(),
+      idempotencyKey: options.idempotencyKey ?? randomUUID(),
       events: [],
     };
     append(record, 'proposed', action.actor.id, { reason: action.reason }, now);
@@ -44,33 +72,29 @@ export class Guard {
       effects: [],
       blockers: [`Simulation failed: ${errorMessage(err)}`],
     }));
+    // Rules judge what will really move: "refund everything" is judged at the refundable amount.
+    if (action.amount === undefined && record.simulation.amount !== undefined) action.amount = record.simulation.amount;
     append(record, 'simulated', 'sayso', { ...record.simulation }, this.now());
 
-    // 2. Decide with the owner's policy. A failed simulation is a hard stop: PayPal would reject it.
-    const history = await this.deps.store.listSince(action.ownerId, new Date(now.getTime() - 86_400_000));
+    // 2. Decide: a failed simulation is a hard stop (PayPal would reject it); otherwise the owner's
+    //    policy plus the built-in rules no policy can switch off.
     const policy = await this.deps.policyFor(action.ownerId);
+    const history = await this.deps.store.list(action.ownerId, { since: new Date(now.getTime() - historyWindowMs(policy)) });
     record.decision = record.simulation.ok
-      ? evaluate(policy, action, history, now)
-      : {
-          verdict: 'deny',
-          hits: record.simulation.blockers.map((message) => ({ ruleId: 'simulation', verdict: 'deny' as const, message })),
-        };
-    // Built in, not part of any policy, so no policy can switch them off.
-    const builtIn = builtInEscalation(action);
-    if (builtIn && record.decision.verdict === 'allow') {
-      record.decision = { verdict: 'require_approval', hits: [...record.decision.hits, builtIn] };
-    }
+      ? withBuiltIns(evaluate(policy, action, history, now), action, history, now)
+      : { verdict: 'deny', hits: record.simulation.blockers.map((message) => ({ ruleId: 'simulation', verdict: 'deny' as const, message })) };
     append(record, 'decided', 'sayso', { ...record.decision }, this.now());
 
     if (record.decision.verdict === 'deny') {
       record.status = 'denied';
       await this.deps.store.insert(record);
+      await this.settled(record);
       return record;
     }
     if (record.decision.verdict === 'require_approval') {
       record.status = 'pending_approval';
       await this.deps.store.insert(record);
-      await this.deps.onApprovalNeeded?.(record);
+      if (options.notify !== false) await this.deps.onApprovalNeeded?.(record);
       return record;
     }
 
@@ -78,12 +102,12 @@ export class Guard {
     return this.run(record);
   }
 
-  /** A human gives their say-so. Only pending records can be approved, and only once. */
+  /** A person gives their say-so. Only pending records can be approved, and only once. */
   async approve(recordId: string, approver: string): Promise<GuardRecord> {
     const record = await this.pending(recordId);
     append(record, 'approved', approver, undefined, this.now());
     record.status = 'executing';
-    await this.deps.store.update(record);
+    if (!(await this.deps.store.updateIf(record, 'pending_approval'))) throw new Error(`Record ${recordId} was already decided`);
     return this.run(record);
   }
 
@@ -91,8 +115,17 @@ export class Guard {
     const record = await this.pending(recordId);
     append(record, 'rejected', approver, note ? { note } : undefined, this.now());
     record.status = 'rejected';
-    await this.deps.store.update(record);
+    if (!(await this.deps.store.updateIf(record, 'pending_approval'))) throw new Error(`Record ${recordId} was already decided`);
+    await this.settled(record);
     return record;
+  }
+
+  get(recordId: string): Promise<GuardRecord | undefined> {
+    return this.deps.store.get(recordId);
+  }
+
+  list(ownerId: string, query?: RecordQuery): Promise<GuardRecord[]> {
+    return this.deps.store.list(ownerId, query);
   }
 
   private async run(record: GuardRecord): Promise<GuardRecord> {
@@ -105,18 +138,28 @@ export class Guard {
       record.status = 'failed';
       append(record, 'failed', 'sayso', { error: errorMessage(err) }, this.now());
       await this.deps.store.update(record);
+      await this.settled(record);
       return record;
     }
 
-    // Never trust a 2xx alone: read the object back from PayPal and check it moved as intended.
-    record.verification = await executor.verify(record.action, record.result).catch((err: unknown) => ({
-      ok: false,
-      detail: `Verification failed: ${errorMessage(err)}`,
-    }));
-    record.status = record.verification.ok ? 'verified' : 'failed';
-    append(record, record.verification.ok ? 'verified' : 'failed', 'sayso', { ...record.verification }, this.now());
+    // Never trust a 2xx alone: read the object back from PayPal and check it moved as intended. If the
+    // read-back itself breaks, the money may still have moved: that is "unverified", not "failed".
+    try {
+      record.verification = await executor.verify(record.action, record.result);
+      record.status = record.verification.ok ? 'verified' : 'failed';
+    } catch (err) {
+      record.verification = { ok: false, detail: `PayPal accepted it, but reading it back failed: ${errorMessage(err)}` };
+      record.status = 'unverified';
+    }
+    append(record, record.status === 'verified' ? 'verified' : record.status === 'unverified' ? 'unverified' : 'failed', 'sayso', { ...record.verification }, this.now());
     await this.deps.store.update(record);
+    await this.settled(record);
     return record;
+  }
+
+  private async settled(record: GuardRecord): Promise<void> {
+    if (!SETTLED.includes(record.status)) return;
+    for (const listener of this.listeners) await listener(record);
   }
 
   private async pending(recordId: string): Promise<GuardRecord> {
@@ -127,7 +170,7 @@ export class Guard {
   }
 
   private executor(kind: ActionKind): Executor {
-    const executor = this.deps.executors[kind];
+    const executor = this.executors[kind];
     if (!executor) throw new Error(`No executor registered for ${kind}`);
     return executor;
   }
@@ -137,18 +180,26 @@ export class Guard {
   }
 }
 
+const SEVERITY: Record<Verdict, number> = { allow: 0, require_approval: 1, deny: 2 };
+
 /**
- * An agent can never change its own rules, and the other side of a sale can never move the shop's
- * money: a refund asked for by the buyer's assistant is a request the owner decides.
+ * Rules that are part of Guard, not of any policy: an agent can never change its own rules, the buyer's
+ * side can never move the shop's money on its own, and the same money move twice is refused.
  */
-function builtInEscalation(action: ProposedAction): RuleHit | undefined {
+function withBuiltIns(decision: Decision, action: ProposedAction, history: GuardRecord[], now: Date): Decision {
+  const hits: RuleHit[] = [...decision.hits];
   if (HUMAN_ONLY.has(action.kind) && action.actor.type === 'agent') {
-    return { ruleId: 'built-in:human-only', verdict: 'require_approval', message: 'Agents can propose policy changes, but only the owner can apply them.' };
+    hits.push({ ruleId: 'built-in:human-only', verdict: 'require_approval', message: 'Agents can propose policy changes, but only the owner can apply them.' });
   }
   if (action.actor.side === 'buyer' && action.kind === 'refund.create') {
-    return { ruleId: 'built-in:buyer-request', verdict: 'require_approval', message: "The buyer's assistant asked for this refund. Only you decide." };
+    hits.push({ ruleId: 'built-in:buyer-request', verdict: 'require_approval', message: "The buyer's assistant asked for this refund. Only you decide." });
   }
-  return undefined;
+  if (!HUMAN_ONLY.has(action.kind) && !hits.some((h) => h.verdict === 'deny')) {
+    const dup = findDuplicate(action, history, now.getTime() - DUPLICATE_WINDOW_MS);
+    if (dup) hits.push({ ruleId: 'built-in:duplicate', verdict: 'deny', message: `Looks like a repeat of ${dup.id} from ${minutesAgo(dup.createdAt, now)} min ago.` });
+  }
+  const verdict = hits.reduce<Verdict>((worst, h) => (SEVERITY[h.verdict] > SEVERITY[worst] ? h.verdict : worst), 'allow');
+  return { verdict, hits };
 }
 
 function append(record: GuardRecord, type: AuditEvent['type'], by: string, data: Record<string, unknown> | undefined, at: Date): void {
@@ -196,14 +247,20 @@ export class MemoryGuardStore implements GuardStore {
   async update(record: GuardRecord): Promise<void> {
     this.records.set(record.id, structuredClone(record));
   }
+  async updateIf(record: GuardRecord, expected: RecordStatus): Promise<boolean> {
+    if (this.records.get(record.id)?.status !== expected) return false;
+    this.records.set(record.id, structuredClone(record));
+    return true;
+  }
   async get(id: string): Promise<GuardRecord | undefined> {
     const r = this.records.get(id);
     return r && structuredClone(r);
   }
-  async listSince(ownerId: string, since: Date): Promise<GuardRecord[]> {
+  async list(ownerId: string, query: RecordQuery = {}): Promise<GuardRecord[]> {
     return [...this.records.values()]
-      .filter((r) => r.action.ownerId === ownerId && Date.parse(r.createdAt) >= since.getTime())
+      .filter((r) => r.action.ownerId === ownerId && matchesQuery(r, query))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, query.limit ?? Infinity)
       .map((r) => structuredClone(r));
   }
 }

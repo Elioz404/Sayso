@@ -3,6 +3,7 @@
 // Photos + a few lines about the shop -> draft catalog. Photos are downscaled in the browser so a
 // phone picture uploads fast and stays under the server's limit.
 
+import { callApi } from './api.ts';
 import { useState } from 'react';
 import { CopyField } from './client-ui.tsx';
 import { Icon } from './ui.tsx';
@@ -14,7 +15,8 @@ interface Created {
   owner_secret: string;
   agent_key: string;
   review_url: string;
-  mcp: { seller: string; buyer: string };
+  mcp: { seller: string; buyer: string; this_shop: string };
+  cli_login: string;
 }
 
 async function shrink(file: File, max = 1280): Promise<string> {
@@ -31,14 +33,14 @@ const EXAMPLE = `Hand-thrown mugs, 12 oz, $34. Sage green (6 left) and speckled 
 Ramen bowls $48, 3 left. Custom bud vases $62, made to order in about 10 days.
 USPS in the US $8.95, free over $75. I also ship to Canada for $28.`;
 
-export function OnboardForm({ origin }: { origin: string }) {
+export function OnboardForm() {
   const [images, setImages] = useState<string[]>([]);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [created, setCreated] = useState<Created>();
 
-  if (created) return <CreatedShop created={created} origin={origin} />;
+  if (created) return <CreatedShop created={created} />;
 
   return (
     <form
@@ -50,20 +52,15 @@ export function OnboardForm({ origin }: { origin: string }) {
         setBusy(true);
         setError(undefined);
         try {
-          const res = await fetch('/api/shops', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
+          setCreated(
+            await callApi<Created>('/api/shops', 'POST', {
               shop_name: form.get('name') || undefined,
               text: text || undefined,
               currency: form.get('currency') || undefined,
               country: form.get('country') || undefined,
               images,
             }),
-          });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.message ?? `Something went wrong (${res.status})`);
-          setCreated(data);
+          );
         } catch (err) {
           setError((err as Error).message);
         }
@@ -140,7 +137,7 @@ export function OnboardForm({ origin }: { origin: string }) {
   );
 }
 
-function CreatedShop({ created, origin }: { created: Created; origin: string }) {
+function CreatedShop({ created }: { created: Created }) {
   return (
     <div className="stack" style={{ gap: 'var(--s5)' }}>
       <div className="panel stack" style={{ gap: 'var(--s3)' }}>
@@ -192,14 +189,15 @@ function CreatedShop({ created, origin }: { created: Created; origin: string }) 
           <li>
             <span className="stack" style={{ gap: 6, minWidth: 0 }}>
               <span>Connect your agent: paste this as a connector in ChatGPT or any MCP client.</span>
-              <CopyField value={`${origin}/api/mcp/${created.agent_key}`} secret />
-              <span className="small muted">From a terminal instead: node cli/sayso.ts login --url {origin} --key (your agent key)</span>
+              <CopyField value={created.mcp.seller} secret />
+              <span className="small muted">From a terminal instead:</span>
+              <CopyField value={created.cli_login} secret />
             </span>
           </li>
           <li>
             <span className="stack" style={{ gap: 6, minWidth: 0 }}>
               <span>After you publish, shoppers&apos; assistants buy here (every shop on Sayso):</span>
-              <CopyField value={`${origin}/api/shopping/mcp`} />
+              <CopyField value={created.mcp.buyer} />
             </span>
           </li>
         </ol>

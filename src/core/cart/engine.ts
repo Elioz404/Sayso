@@ -27,6 +27,7 @@ export function priceCart(catalog: Catalog, input: PayPalCart, options: PriceCar
   const issues: ValidationIssue[] = [];
   const items: CartItem[] = [];
   let subtotal = 0;
+  const wanted = new Map<string, number>();
 
   if (!input.items?.length) {
     issues.push({
@@ -73,19 +74,23 @@ export function priceCart(catalog: Catalog, input: PayPalCart, options: PriceCar
       });
     }
 
+    // The same variant on several lines draws on one stock: judge the total asked for.
     const stock = available(variant);
-    if (quantity > stock) {
+    const requested = (wanted.get(variant.id) ?? 0) + quantity;
+    wanted.set(variant.id, requested);
+    if (requested > stock) {
       const alternatives = product.variants.filter((v) => v.id !== variant.id && available(v) >= quantity);
+      const left = Math.max(0, stock - (requested - quantity));
       issues.push({
         code: 'INVENTORY_ISSUE',
         type: 'BUSINESS_RULE',
         variant_id: variant.id,
-        message: `Only ${stock} of ${product.name} (${variant.title}) in stock, ${quantity} requested.`,
+        message: `Only ${stock} of ${product.name} (${variant.title}) in stock, ${requested} requested.`,
         user_message: stock > 0 ? `Only ${stock} left of ${variant.title}.` : `${variant.title} is sold out.`,
-        context: { requested: quantity, available: stock },
+        context: { requested, available: stock },
         resolution_options: [
-          ...(stock > 0
-            ? [{ action: 'REDUCE_QUANTITY', label: `Buy ${stock} instead`, metadata: { auto_applicable: true, quantity: stock, priority: 1 } }]
+          ...(left > 0
+            ? [{ action: 'REDUCE_QUANTITY', label: `Buy ${left} instead`, metadata: { auto_applicable: true, quantity: left, priority: 1 } }]
             : []),
           ...alternatives.map((alt, i) => ({
             action: 'REPLACE_VARIANT',
@@ -166,8 +171,11 @@ export function priceCart(catalog: Catalog, input: PayPalCart, options: PriceCar
       : 'INVALID';
   const status: CartStatus = issues.length > 0 ? 'INCOMPLETE' : options.mode === 'create' ? 'CREATED' : 'READY';
 
+  // Only what the buyer's side may set is carried over; everything else is computed here.
   return {
-    ...input,
+    customer: input.customer,
+    shipping_address: input.shipping_address,
+    billing_address: input.billing_address,
     status,
     validation_status,
     validation_issues: issues,

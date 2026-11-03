@@ -4,18 +4,20 @@
 
 import type { Access } from './access.ts';
 import { draftCatalog, type OnboardingInput } from './ai/onboarding.ts';
-import { LlmError, type ChatModel } from './ai/llm.ts';
+import type { ChatModel } from './ai/llm.ts';
 import { findVariant, type Catalog } from './catalog.ts';
-import { HttpError, type CatalogStore } from './commerce.ts';
+import { fromLlmError, HttpError, notFound } from './errors.ts';
+import type { Links } from './links.ts';
 import type { PayPalClient } from './paypal/client.ts';
-import { createCatalogProduct } from './paypal/orders.ts';
+import { createCatalogProduct } from './paypal/products.ts';
+import type { CatalogStore } from './stores.ts';
 
 export interface ShopsDeps {
   catalogs: CatalogStore;
   access: Access;
   paypal: PayPalClient;
   model?: ChatModel;
-  baseUrl: string;
+  links: Links;
 }
 
 export interface OnboardResult {
@@ -35,9 +37,7 @@ export class Shops {
   async onboard(input: OnboardingInput, agentLabel = 'my agent'): Promise<OnboardResult> {
     if (!this.deps.model) throw new HttpError(503, 'Onboarding needs an AI key (OPENAI_API_KEY or DEEPSEEK_API_KEY) on the server');
     const { catalog, questions } = await draftCatalog(this.deps.model, input).catch((err: unknown) => {
-      if (err instanceof LlmError && err.status === 429) throw new HttpError(429, err.message);
-      if (err instanceof LlmError) throw new HttpError(502, 'The AI service failed; please try again in a minute');
-      throw new HttpError(422, err instanceof Error ? err.message : 'Could not read that catalog');
+      throw fromLlmError(err, 'Could not read that catalog');
     });
     await this.deps.catalogs.save(catalog);
     const ownerSecret = await this.deps.access.createOwner(catalog.shop.id);
@@ -54,7 +54,7 @@ export class Shops {
       try {
         const created = await createCatalogProduct(
           this.deps.paypal,
-          { name: product.name, description: product.description, imageUrl: product.imageUrl, homeUrl: `${this.deps.baseUrl}/shop/${catalog.shop.slug}` },
+          { name: product.name, description: product.description, imageUrl: product.imageUrl, homeUrl: this.deps.links.shopPage(catalog.shop.slug) },
           `${shopId}-${product.id}-catalog`,
         );
         product.paypalProductId = created.id;
@@ -71,7 +71,7 @@ export class Shops {
   async setVariant(shopId: string, variantId: string, patch: { price?: number; inventory?: number }): Promise<Catalog> {
     const catalog = await this.get(shopId);
     const found = findVariant(catalog, variantId);
-    if (!found) throw new HttpError(404, `No variant ${variantId} in this shop`);
+    if (!found) throw notFound(`Variant ${variantId}`);
     if (patch.price !== undefined) {
       if (!Number.isInteger(patch.price) || patch.price <= 0) throw new HttpError(400, 'Price must be a positive amount');
       found.variant.price = patch.price;
@@ -86,7 +86,7 @@ export class Shops {
 
   async get(shopId: string): Promise<Catalog> {
     const catalog = await this.deps.catalogs.byShopId(shopId);
-    if (!catalog) throw new HttpError(404, `Shop ${shopId} not found`);
+    if (!catalog) throw notFound(`Shop ${shopId}`);
     return catalog;
   }
 }

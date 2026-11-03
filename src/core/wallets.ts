@@ -8,13 +8,15 @@
 
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { Commerce } from './commerce.ts';
-import { HttpError } from './commerce.ts';
+import { HttpError, notFound } from './errors.ts';
 import type { Guard } from './guard/engine.ts';
 import type { Policy } from './guard/policy.ts';
 import type { PolicyStore } from './guard/policy-store.ts';
 import type { Actor, Executor, GuardRecord } from './guard/types.ts';
-import { formatMoney, toMinor } from './money.ts';
+import type { Links } from './links.ts';
+import { DEFAULT_CURRENCY, formatMoney, majorUnits, parseAmount, toMinor } from './money.ts';
 import type { PayPalClient } from './paypal/client.ts';
+import { getAuthorization } from './paypal/orders.ts';
 import { approveLink, createPaymentToken, createSetupToken, deletePaymentToken, getSetupToken } from './paypal/vault.ts';
 
 export interface WalletLimits {
@@ -49,8 +51,12 @@ export interface WalletStore {
   addKey(walletId: string, hash: string): Promise<void>;
 }
 
-export const DEFAULT_LIMITS: WalletLimits = { perOrder: 100_00, daily: 250_00, currency: 'USD' };
-const MAX_LIMIT = 2_000_00;
+/** What a new wallet starts with, before the person picks their own limits. */
+export function defaultLimits(currency = DEFAULT_CURRENCY): WalletLimits {
+  return { perOrder: majorUnits(100, currency), daily: majorUnits(250, currency), currency };
+}
+/** The most a person can let an assistant spend alone, per order or per day, in whole currency units. */
+const MAX_LIMIT_UNITS = 2_000;
 
 export interface WalletsDeps {
   store: WalletStore;
@@ -58,7 +64,7 @@ export interface WalletsDeps {
   guard: Guard;
   commerce: Commerce;
   paypal: PayPalClient;
-  baseUrl: string;
+  links: Links;
 }
 
 export interface WalletPayment {
@@ -87,7 +93,7 @@ export class Wallets {
       hint: key.slice(-4),
       label: label.slice(0, 40) || 'assistant',
       status: 'new',
-      limits: DEFAULT_LIMITS,
+      limits: defaultLimits(),
       createdAt: new Date().toISOString(),
     };
     await this.deps.store.put(wallet);
@@ -95,7 +101,7 @@ export class Wallets {
   }
 
   connectUrl(wallet: Wallet): string {
-    return `${this.deps.baseUrl}/wallet/${wallet.id}`;
+    return this.deps.links.wallet(wallet.id);
   }
 
   async fromKey(key: string | undefined): Promise<Wallet | undefined> {
@@ -105,7 +111,7 @@ export class Wallets {
 
   async get(id: string): Promise<Wallet> {
     const wallet = await this.deps.store.get(id);
-    if (!wallet) throw new HttpError(404, 'No such wallet');
+    if (!wallet) throw notFound('Wallet');
     return wallet;
   }
 
@@ -116,24 +122,24 @@ export class Wallets {
   async startConnect(id: string, limits: { perOrder: string; daily: string }): Promise<string> {
     const wallet = await this.get(id);
     if (wallet.status === 'connected') throw new HttpError(409, 'This wallet is already connected. Disconnect it to start over.');
-    const perOrder = parseLimit(limits.perOrder);
-    const daily = parseLimit(limits.daily);
-    if (daily < perOrder) throw new HttpError(400, 'The daily limit must be at least the per-order limit');
+    const currency = wallet.limits.currency;
+    const picked: WalletLimits = { perOrder: parseLimit(limits.perOrder, currency), daily: parseLimit(limits.daily, currency), currency };
+    if (picked.daily < picked.perOrder) throw new HttpError(400, 'The daily limit must be at least the per-order limit');
 
     const token = await createSetupToken(
       this.deps.paypal,
       {
-        description: `${wallet.label} pays small shops on Sayso for you: up to ${formatMoney(perOrder, 'USD')} an order, ${formatMoney(daily, 'USD')} a day`,
+        description: `${wallet.label} pays small shops on Sayso for you: up to ${formatMoney(picked.perOrder, currency)} an order, ${formatMoney(picked.daily, currency)} a day`,
         brandName: 'Sayso',
-        returnUrl: `${this.deps.baseUrl}/wallet/${wallet.id}/return`,
-        cancelUrl: `${this.deps.baseUrl}/wallet/${wallet.id}?cancelled=1`,
+        returnUrl: this.deps.links.walletReturn(wallet.id),
+        cancelUrl: this.deps.links.walletCancelled(wallet.id),
       },
-      `${wallet.id}-setup-${perOrder}-${daily}`,
+      `${wallet.id}-setup-${picked.perOrder}-${picked.daily}`,
     );
     const link = approveLink(token);
     if (!link) throw new HttpError(502, 'PayPal did not return an approval link');
-    await this.deps.store.put({ ...wallet, status: 'awaiting_paypal', limits: { perOrder, daily, currency: 'USD' }, setupTokenId: token.id });
-    await this.deps.policies.put(walletPolicy(wallet.id, { perOrder, daily, currency: 'USD' }));
+    await this.deps.store.put({ ...wallet, status: 'awaiting_paypal', limits: picked, setupTokenId: token.id });
+    await this.deps.policies.put(walletPolicy(wallet.id, picked));
     return link;
   }
 
@@ -164,7 +170,7 @@ export class Wallets {
 
   /** The URL a buyer adds to ChatGPT or any MCP client: every shop, plus their saved PayPal. */
   personalUrl(key: string): string {
-    return `${this.deps.baseUrl}/api/shopping/mcp/${key}`;
+    return this.deps.links.shoppingMcpFor(key);
   }
 
   async disconnect(id: string): Promise<Wallet> {
@@ -191,18 +197,25 @@ export class Wallets {
     }
 
     const actor: Actor = { type: 'agent', id: `buyer-agent:${channel}`, side: 'buyer' };
-    const record = await this.deps.guard.submit({
-      kind: 'checkout.create',
-      actor,
-      ownerId: wallet.id,
-      amount: toMinor(total),
-      currency: total.currency_code,
-      resourceId: cartId,
-      reason: `Pay for ${cart.items.map((i) => `${i.quantity}x ${i.name ?? i.variant_id}`).join(', ')}`.slice(0, 300),
-      params: { cartId, walletId: wallet.id },
-    });
+    const record = await this.deps.guard.submit(
+      {
+        kind: 'checkout.create',
+        actor,
+        ownerId: wallet.id,
+        amount: toMinor(total),
+        currency: total.currency_code,
+        resourceId: cartId,
+        reason: `Pay for ${cart.items.map((i) => `${i.quantity}x ${i.name ?? i.variant_id}`).join(', ')}`.slice(0, 300),
+        params: { cartId, walletId: wallet.id },
+      },
+      // The buyer has no approvals queue: over a limit, their say-so is approving this order in PayPal.
+      { notify: false },
+    );
 
-    if (record.status === 'pending_approval') return { outcome: 'needs_approval', record, approvalUrl: cart.payment_method.approval_url };
+    if (record.status === 'pending_approval') {
+      const handedOff = await this.deps.guard.reject(record.id, 'sayso', 'Over the limits: sent to the buyer to approve this order in PayPal.');
+      return { outcome: 'needs_approval', record: handedOff, approvalUrl: cart.payment_method.approval_url };
+    }
     if (record.status !== 'verified') {
       const why = record.decision?.hits.map((h) => h.message).join(' ') || record.verification?.detail || 'PayPal did not accept the saved account';
       throw new HttpError(422, `Not paid: ${why}`);
@@ -216,6 +229,7 @@ export class Wallets {
 export function walletPolicy(walletId: string, limits: WalletLimits): Policy {
   return {
     ownerId: walletId,
+    currency: limits.currency,
     source: `My assistant can spend up to ${formatMoney(limits.perOrder, limits.currency)} an order and ${formatMoney(limits.daily, limits.currency)} a day; ask me above that.`,
     rules: [
       { id: 'wallet-order', type: 'max_amount', kinds: ['checkout.create'], limit: limits.perOrder, then: 'require_approval' },
@@ -225,19 +239,23 @@ export function walletPolicy(walletId: string, limits: WalletLimits): Policy {
   };
 }
 
-/** Guard executor for a buyer's saved-PayPal purchase: simulate the cart, authorize, verify the hold. */
-export function walletCheckoutExecutor(deps: { commerce: Commerce; store: WalletStore }): Executor {
+/** Guard executor for a buyer's saved-PayPal purchase: simulate the cart, authorize, read the hold back. */
+export function walletCheckoutExecutor(deps: { commerce: Commerce; store: WalletStore; paypal: PayPalClient }): Executor {
   return {
     async simulate(action) {
-      const cartId = String(action.resourceId);
-      const cart = await deps.commerce.getCart(cartId);
+      const cart = await deps.commerce.getCart(String(action.resourceId));
       const wallet = await deps.store.get(action.ownerId);
       const blockers: string[] = [];
       if (cart.status === 'COMPLETED') blockers.push('This cart is already paid.');
       if (!cart.totals || !cart.payment_method?.approval_url) blockers.push('The cart has no payable total.');
       if (wallet?.status !== 'connected') blockers.push('PayPal is not connected for this assistant.');
-      const total = cart.totals ? formatMoney(toMinor(cart.totals.total), cart.totals.total.currency_code) : '-';
-      return { ok: blockers.length === 0, blockers, effects: [`Pay ${total} with the saved PayPal account${wallet?.payerEmail ? ` (${wallet.payerEmail})` : ''}.`] };
+      const total = cart.totals?.total;
+      return {
+        ok: blockers.length === 0,
+        blockers,
+        amount: total ? toMinor(total) : undefined,
+        effects: [`Pay ${total ? formatMoney(toMinor(total), total.currency_code) : '-'} with the saved PayPal account${wallet?.payerEmail ? ` (${wallet.payerEmail})` : ''}.`],
+      };
     },
     async execute(action) {
       const wallet = await deps.store.get(action.ownerId);
@@ -245,21 +263,19 @@ export function walletCheckoutExecutor(deps: { commerce: Commerce; store: Wallet
       const result = await deps.commerce.authorizeSaved(String(action.resourceId), wallet.paymentTokenId);
       return { order_id: result.orderId, authorization_id: result.authorizationId, amount: result.amount };
     },
-    async verify(_action, result) {
-      const ok = typeof result.authorization_id === 'string' && result.authorization_id.length > 0;
-      return { ok, detail: ok ? `PayPal authorized ${(result.amount as { value?: string })?.value ?? ''}.` : 'No authorization from PayPal.' };
+    async verify(action, result) {
+      const auth = await getAuthorization(deps.paypal, String(result.authorization_id));
+      const ok = auth.status === 'CREATED' && toMinor(auth.amount) === action.amount;
+      return { ok, detail: `PayPal holds ${formatMoney(toMinor(auth.amount), auth.amount.currency_code)} (${auth.status.toLowerCase()}).` };
     },
   };
 }
 
-function parseLimit(value: string): number {
-  let minor: number;
-  try {
-    minor = toMinor({ currency_code: 'USD', value: String(value).replace(/[$,\s]/g, '') });
-  } catch {
-    throw new HttpError(400, 'Limits must be amounts like 100 or 49.50');
-  }
-  if (minor <= 0 || minor > MAX_LIMIT) throw new HttpError(400, `Limits must be between $0.01 and ${formatMoney(MAX_LIMIT, 'USD')}`);
+function parseLimit(value: string, currency: string): number {
+  const minor = parseAmount(value, currency);
+  const max = majorUnits(MAX_LIMIT_UNITS, currency);
+  if (minor === undefined) throw new HttpError(400, 'Limits must be amounts like 100 or 49.50');
+  if (minor <= 0 || minor > max) throw new HttpError(400, `Limits must be more than zero and at most ${formatMoney(max, currency)}`);
   return minor;
 }
 

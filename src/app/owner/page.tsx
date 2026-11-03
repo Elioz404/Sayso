@@ -1,25 +1,20 @@
 // Overview: the one job first (what's waiting for the owner), then a single row of figures and the
 // latest orders. Everything else lives in its own view.
 import { Decision, PublishButton } from '@/app/_components/owner-actions.tsx';
-import { ACTION_LABEL, Status, Who } from '@/app/_components/ui.tsx';
-import { formatMoney, toMinor } from '@/core/money.ts';
-import { ago, ownerView } from '@/server/owner.ts';
+import { actionLabel, Status, Who } from '@/app/_components/ui.tsx';
+import { Ago } from '@/app/_components/time.tsx';
+import { formatMoney } from '@/core/money.ts';
+import { ownerView, pendingFor } from '@/server/owner.ts';
 
 export default async function Overview() {
   const view = await ownerView();
   if (!view) return null;
-  const { shop, shopId, seller, catalog, carts, guardStore } = view;
-  const [approvals, orders, cartList, records] = await Promise.all([
-    seller.approvals(shopId),
-    seller.orders(shopId),
-    carts.listByShop(shopId),
-    guardStore.listSince(shopId, new Date(0)),
-  ]);
+  const { shop, shopId, orders: shopOrders, catalog } = view;
+  const [approvals, orders] = await Promise.all([pendingFor(shopId), shopOrders.list(shopId)]);
   const money = (minor: number) => formatMoney(minor, shop.currency);
-  const totals = new Map(cartList.map((c) => [c.id, c.cart.totals?.total]));
   const paid = orders.filter((o) => o.status === 'paid');
-  const charged = paid.reduce((sum, o) => sum + (totals.get(o.id) ? toMinor(totals.get(o.id)!) : 0), 0);
-  const refunded = records.filter((r) => r.action.kind === 'refund.create' && r.status === 'verified').reduce((sum, r) => sum + (r.action.amount ?? 0), 0);
+  const charged = paid.reduce((sum, o) => sum + (o.totalMinor ?? 0), 0);
+  const refunded = orders.reduce((sum, o) => sum + o.refundedMinor, 0);
   const low = catalog.products.flatMap((p) => p.variants).filter((v) => v.madeToOrderDays === undefined && v.inventory <= 1).length;
   const recent = orders.filter((o) => o.number).slice(0, 5);
 
@@ -59,10 +54,12 @@ export default async function Overview() {
                 <div className="ask-main">
                   <div className="ask-top">
                     <Who actor={r.action.actor} />
-                    <span className="small muted">{ago(r.createdAt)}</span>
+                    <span className="small muted">
+                      <Ago iso={r.createdAt} />
+                    </span>
                   </div>
                   <div className="row" style={{ gap: 'var(--s3)', alignItems: 'baseline' }}>
-                    <b>{ACTION_LABEL[r.action.kind] ?? r.action.kind}</b>
+                    <b>{actionLabel(r.action.kind)}</b>
                     {r.action.amount !== undefined && <span className="amount-md">{formatMoney(r.action.amount, r.action.currency ?? shop.currency)}</span>}
                   </div>
                   <p className="small soft">{r.action.reason}</p>

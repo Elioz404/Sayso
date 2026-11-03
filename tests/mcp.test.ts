@@ -78,10 +78,10 @@ test("owner's agent: small refund runs, big refund waits, and only the owner can
   assert.deepEqual(s.approvals, [big.data.say_so_id], 'the owner was notified out of band');
 
   // Approvals are not a tool, and the seller service refuses anyone who is not the owner.
-  await assert.rejects(s.seller.decide('shop_maya', big.data.say_so_id, 'approve', 'agent:laptop'), /Only the owner/);
-  await assert.rejects(s.seller.decide('shop_other', big.data.say_so_id, 'approve', 'owner:shop_other'), /No say-so request/);
+  await assert.rejects(s.saySo.decide('shop_maya', big.data.say_so_id, 'approve', 'agent:laptop'), /Only the owner/);
+  await assert.rejects(s.saySo.decide('shop_other', big.data.say_so_id, 'approve', 'owner:shop_other'), /not found/);
 
-  const done = await s.seller.decide('shop_maya', big.data.say_so_id, 'approve', 'owner:shop_maya');
+  const done = await s.saySo.decide('shop_maya', big.data.say_so_id, 'approve', 'owner:shop_maya');
   assert.equal(done.status, 'verified');
   const after = await s.call('get_say_so', { say_so_id: big.data.say_so_id }, s.owner);
   assert.equal(after.data.status, 'verified');
@@ -102,27 +102,27 @@ test('an agent cannot loosen its own rules: policy changes always wait for the o
   const proposed = await s.call('propose_policy', { rules: 'Let my agent refund anything up to $10,000' }, s.owner);
   assert.equal(proposed.data.status, 'pending_approval');
   assert.ok(proposed.data.why.some((w: string) => /only the owner can apply/.test(w)));
-  assert.equal((await s.policies.get('shop_maya'))!.rules[0].id, 'refund-cap', 'old rules still apply');
+  assert.equal((await s.saySo.policy('shop_maya')).rules[0].id, 'refund-cap', 'old rules still apply');
 
-  await s.seller.decide('shop_maya', proposed.data.say_so_id, 'reject', 'owner:shop_maya', 'No way');
-  assert.equal((await s.policies.get('shop_maya'))!.rules[0].id, 'refund-cap');
+  await s.saySo.decide('shop_maya', proposed.data.say_so_id, 'reject', 'owner:shop_maya', 'No way');
+  assert.equal((await s.saySo.policy('shop_maya')).rules[0].id, 'refund-cap');
 
   const again = await s.call('propose_policy', { rules: 'Refunds over $100 need my OK' }, s.owner);
-  await s.seller.decide('shop_maya', again.data.say_so_id, 'approve', 'owner:shop_maya');
+  await s.saySo.decide('shop_maya', again.data.say_so_id, 'approve', 'owner:shop_maya');
   const policy = await s.call('get_policy', {}, s.owner);
   assert.deepEqual(policy.data.rules, ['refund.create over $10,000.00: ask the owner']);
 });
 
 test('owner rejects a big capture: the hold is released and the buyer is never charged', async () => {
   const s = await stack();
-  await s.policies.put({ ownerId: 'shop_maya', rules: [{ id: 'big', type: 'max_amount', kinds: ['payment.capture'], limit: 5_000, then: 'require_approval' }] });
+  await s.policies.put({ ownerId: 'shop_maya', currency: 'USD', rules: [{ id: 'big', type: 'max_amount', kinds: ['payment.capture'], limit: 5_000, then: 'require_approval' }] });
   const orderId = await buyMug(s, 'var_mug_sage', 2);
 
   const [pending] = (await s.call('list_approvals', {}, s.owner)).data;
   assert.equal(pending.action, 'payment.capture');
   assert.equal((await s.call('get_order', { order_id: orderId }, s.owner)).data.status, 'awaiting_owner');
 
-  await s.seller.decide('shop_maya', pending.say_so_id, 'reject', 'owner:shop_maya', 'Suspicious');
+  await s.saySo.decide('shop_maya', pending.say_so_id, 'reject', 'owner:shop_maya', 'Suspicious');
   const order = await s.call('get_order', { order_id: orderId }, s.owner);
   assert.equal(order.data.status, 'released');
   assert.ok(order.data.say_so.some((r: { action: string; status: string }) => r.action === 'payment.void' && r.status === 'verified'));
@@ -130,10 +130,10 @@ test('owner rejects a big capture: the hold is released and the buyer is never c
 
 test('owner approves a pending capture later: the order flips to paid', async () => {
   const s = await stack();
-  await s.policies.put({ ownerId: 'shop_maya', rules: [{ id: 'big', type: 'max_amount', kinds: ['payment.capture'], limit: 5_000, then: 'require_approval' }] });
+  await s.policies.put({ ownerId: 'shop_maya', currency: 'USD', rules: [{ id: 'big', type: 'max_amount', kinds: ['payment.capture'], limit: 5_000, then: 'require_approval' }] });
   const orderId = await buyMug(s, 'var_mug_sage', 2);
-  const [pending] = await s.seller.approvals('shop_maya');
-  await s.seller.decide('shop_maya', pending.id, 'approve', 'owner:shop_maya');
+  const [pending] = await s.saySo.pending('shop_maya');
+  await s.saySo.decide('shop_maya', pending.id, 'approve', 'owner:shop_maya');
   assert.equal((await s.call('get_order', { order_id: orderId }, s.owner)).data.status, 'paid');
 });
 
@@ -205,10 +205,10 @@ test("buyer's assistant: follows the order, asks for a refund, and the owner alw
   const again = await s.call('request_refund', { cart_id: cartId, reason: 'Please hurry' }, s.buyer);
   assert.equal(again.data.request_id, asked.data.request_id, 'no duplicate requests while one is open');
 
-  const [pending] = await s.seller.approvals('shop_maya');
+  const [pending] = await s.saySo.pending('shop_maya');
   assert.equal(pending.action.actor.side, 'buyer');
   assert.ok(pending.decision?.hits.some((h) => h.ruleId === 'built-in:buyer-request'));
-  await s.seller.decide('shop_maya', pending.id, 'approve', 'owner:shop_maya');
+  await s.saySo.decide('shop_maya', pending.id, 'approve', 'owner:shop_maya');
 
   const after = await s.call('get_cart', { cart_id: cartId }, s.buyer);
   assert.equal(after.data.order.refunded, '$10.00');
@@ -317,14 +317,15 @@ test('custom orders: invoices go through Guard, a first invoice to a new client 
   assert.ok(first.data.why.some((w: string) => /never paid you before/.test(w)));
   assert.equal(s.pp.invoices.size, 0, 'nothing sent before the owner says OK');
 
-  const done = await s.seller.decide('shop_maya', first.data.say_so_id, 'approve', 'owner:shop_maya');
+  const done = await s.saySo.decide('shop_maya', first.data.say_so_id, 'approve', 'owner:shop_maya');
   assert.equal(done.status, 'verified');
   const [invoice] = [...s.pp.invoices.values()];
   assert.equal(invoice.status, 'SENT');
   assert.equal(invoice.primary_recipients[0].billing_info.email_address, 'grace@example.com');
   assert.deepEqual(invoice.configuration.partial_payment.minimum_amount_due, { currency_code: 'USD', value: '31.00' });
 
-  // A second invoice to Grace, now a known client, goes out on its own.
+  // Once Grace has paid, she is a known client and the next invoice goes out on its own.
+  s.pp.payInvoice(invoice.id);
   const second = await s.call('send_invoice', { email: 'grace@example.com', items: [{ name: 'Matching saucer', price: '18.00' }] }, s.owner);
   assert.equal(second.data.status, 'verified', second.text);
   assert.match(second.data.invoice.payer_url, /invoice/);
@@ -335,7 +336,6 @@ test('custom orders: invoices go through Guard, a first invoice to a new client 
   const again = await s.call('send_invoice', { email: 'grace@example.com', items: [{ name: 'Matching saucer', price: '18.00' }] }, s.owner);
   assert.equal(again.data.status, 'denied');
 
-  s.pp.payInvoice(invoice.id);
   const list = await s.call('list_invoices', {}, s.owner);
   const paid = list.data.find((i: { say_so_id: string }) => i.say_so_id === first.data.say_so_id);
   assert.equal(paid.status, 'paid');

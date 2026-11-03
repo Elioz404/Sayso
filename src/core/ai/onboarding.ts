@@ -4,7 +4,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { slugify, type Catalog, type Product, type ShippingRule, type Variant } from '../catalog.ts';
-import { decimalsFor, toMinor } from '../money.ts';
+import { DEFAULT_CURRENCY, parseAmount } from '../money.ts';
 import type { ChatModel } from './llm.ts';
 
 export interface OnboardingInput {
@@ -70,7 +70,7 @@ export function normalizeDraft(raw: unknown, input: OnboardingInput = {}): Onboa
   const shopData = obj(data.shop);
   const questions = arr(data.questions).map(str).filter((q): q is string => Boolean(q)).slice(0, 10);
 
-  const currency = (input.currency ?? str(shopData.currency) ?? 'USD').toUpperCase();
+  const currency = (input.currency ?? str(shopData.currency) ?? DEFAULT_CURRENCY).toUpperCase();
   if (!/^[A-Z]{3}$/.test(currency)) throw new Error(`Unknown currency "${currency}"`);
   const country = (input.country ?? str(shopData.ships_from) ?? 'US').toUpperCase().slice(0, 2);
   const name = (input.shopName ?? str(shopData.name) ?? 'My Shop').slice(0, 80);
@@ -172,16 +172,8 @@ export function normalizeDraft(raw: unknown, input: OnboardingInput = {}): Onboa
 }
 
 function parsePrice(value: unknown, currency: string): number | undefined {
-  let text: string | undefined;
-  if (typeof value === 'number' && Number.isFinite(value)) text = value.toFixed(decimalsFor(currency));
-  else if (typeof value === 'string' && !value.includes('-')) text = value.replace(/[^\d.]/g, '');
-  if (!text) return undefined;
-  try {
-    const minor = toMinor({ currency_code: currency, value: text });
-    return minor > 0 && minor <= MAX_PRICE_MINOR ? minor : undefined;
-  } catch {
-    return undefined;
-  }
+  const minor = typeof value === 'number' || typeof value === 'string' ? parseAmount(value, currency) : undefined;
+  return minor !== undefined && minor > 0 && minor <= MAX_PRICE_MINOR ? minor : undefined;
 }
 
 function obj(value: unknown): Record<string, unknown> {

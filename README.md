@@ -30,7 +30,7 @@ Every money-moving action, from any agent, goes through:
 propose -> simulate against live PayPal state -> decide (owner's rules) -> [owner's OK] -> execute -> verify -> audit
 ```
 
-- **Rules decide, not the model.** Owners write rules in plain English ("refunds over $30 need my OK; never accept disputes"). The LLM drafts declarative rules, code validates them, and `evaluate()` applies them deterministically.
+- **Rules decide, not the model.** Owners write rules in plain English ("refunds over $30 need my OK; invoices to new clients need my OK"). The LLM drafts declarative rules, code validates them, and `evaluate()` applies them deterministically.
 - **Agents can't approve.** Approving needs the owner's signed session. Agent keys are rejected on that route, and no tool or CLI command approves anything.
 - **Custom orders by invoice.** A commission agreed in a DM becomes a PayPal invoice the owner's agent sends. By default an invoice over $200, or the first one to someone who has never paid the shop, waits for the owner.
 - **Buyers ask, owners decide.** A buyer's assistant can follow its order and ask for a refund with `request_refund`, but that request always waits for the owner, however small.
@@ -149,7 +149,7 @@ In this demo every shop is paid into Sayso's sandbox merchant account, so one sa
 
 ## AI
 
-- **DeepSeek** (`deepseek-flash`, OpenAI-compatible API): reads product photos and notes into a draft catalog, and turns the owner's plain-English rules into declarative say-so rules. Both outputs are validated in code; the model never decides whether money moves.
+- **OpenAI** (`gpt-4.1-mini` by default; DeepSeek works too through the same OpenAI-compatible client): reads product photos and notes into a draft catalog, and turns the owner's plain-English rules into declarative say-so rules. Both outputs are validated in code, and a daily budget caps what the server can spend. The model never decides whether money moves.
 - Any agent the owner already uses can run the shop through the CLI, MCP and skill, and any shopping assistant can buy through MCP or PayPal's platform.
 
 ## How it fits together
@@ -159,7 +159,7 @@ In this demo every shop is paid into Sayso's sandbox merchant account, so one sa
                                      v          v
                                tool registry (src/core/tools)
                                      │
-               Commerce (carts, checkout)   Seller (orders, refunds, rules)   Shops (onboarding)
+   Commerce (carts, checkout)   Orders   Invoicing   SaySo (approvals, rules)   Wallets   Shops
                                      │
                          Guard: simulate -> rules -> [owner] -> execute -> verify -> audit
                                      │
@@ -169,18 +169,24 @@ In this demo every shop is paid into Sayso's sandbox merchant account, so one sa
 `src/core` has no framework dependency and is tested end to end against an in-memory PayPal fake. The Next.js app in `src/app` and `src/server` is a thin layer over it.
 
 ```
-src/core/cart/            Pricing + validation for the merchant-cart API
-src/core/commerce.ts      create / update / checkout (authorize -> Guard capture, void on failure)
 src/core/guard/           Rules, the Guard pipeline, hash-chained audit, policy changes as actions
-src/core/paypal/          REST client (idempotency, retries, debug ids), Orders/Payments/Catalog, executors
+src/core/commerce.ts      Carts and checkout: authorize, take stock, capture through Guard, release on failure
+src/core/orders.ts        A shop's orders: list, refund (through Guard), tracking, missed demand
+src/core/invoicing.ts     Invoices for custom orders (through Guard), live status from PayPal
+src/core/say-so.ts        What waits for the owner, the audit trail, the rules
+src/core/wallets.ts       Saved PayPal for a buyer's assistant, inside the buyer's own limits
+src/core/shops.ts         Onboarding and publishing
+src/core/cart/            Pricing + validation for the merchant-cart API
+src/core/paypal/          REST client (idempotency, retries, timeouts, debug ids), API calls, executors
 src/core/ai/              LLM client, catalog drafting, rule drafting (all output validated)
-src/core/tools/           The tool registry shared by MCP, the CLI and the web app
+src/core/tools/           Buyer and seller tools, shared by MCP, the CLI and the web app
 src/core/mcp.ts           Dependency-free MCP (JSON-RPC) server
 src/core/access.ts        Agent keys (hashed) and signed owner sessions
+src/core/stores.ts        Storage contracts (in-memory versions for tests and local runs)
 src/server/               Wiring, Postgres stores, MCP transport, owner notifications
 cli/sayso.ts              The CLI
 skills/sayso/SKILL.md     Agent skill
-tests/                    Unit + end-to-end tests
+tests/                    Unit + end-to-end tests, including tests/money-safety.test.ts
 ```
 
 ## Run it locally

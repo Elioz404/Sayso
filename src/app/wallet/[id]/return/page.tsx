@@ -5,7 +5,7 @@ import { connection } from 'next/server';
 import { redirect } from 'next/navigation';
 import { CopyField } from '@/app/_components/client-ui.tsx';
 import { Status } from '@/app/_components/ui.tsx';
-import { HttpError } from '@/core/commerce.ts';
+import { HttpError } from '@/core/errors.ts';
 import { formatMoney } from '@/core/money.ts';
 import { ready } from '@/server/context.ts';
 

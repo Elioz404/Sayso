@@ -31,7 +31,7 @@ function fakeRefunds(calls: string[]): Executor {
   };
 }
 
-function setup(policy: Policy = defaultMerchantPolicy('shop_maya')) {
+function setup(policy: Policy = defaultMerchantPolicy('shop_maya', 'USD')) {
   const calls: string[] = [];
   const approvals: GuardRecord[] = [];
   const guard = new Guard({
@@ -80,7 +80,7 @@ test('the same refund twice within an hour is denied as a duplicate', async () =
 });
 
 test('simulation blockers deny before PayPal is called', async () => {
-  const { guard, calls } = setup({ ownerId: 'shop_maya', rules: [] });
+  const { guard, calls } = setup({ ownerId: 'shop_maya', currency: 'USD', rules: [] });
   const r = await guard.submit(refund(9_000));
   assert.equal(r.status, 'denied');
   assert.equal(r.decision!.hits[0].ruleId, 'simulation');
@@ -113,7 +113,7 @@ test('the audit chain survives storage that reorders JSON keys (Postgres jsonb)'
 });
 
 test('buyer mandate: daily total escalates even when each order is small', () => {
-  const policy = defaultBuyerPolicy('buyer_1');
+  const policy = defaultBuyerPolicy('buyer_1', 'USD');
   const buyerAgent = { type: 'agent' as const, id: 'buyer-agent', side: 'buyer' as const };
   const now = new Date('2026-11-10T12:00:00Z');
   const past = (amount: number, minutesAgo: number): GuardRecord => ({

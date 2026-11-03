@@ -5,7 +5,10 @@
 //     reject, publish a shop or change its policy.
 // Secrets are stored as sha256 hashes and shown exactly once.
 
-import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+
+/** "Last used" is shown to the owner; writing it on every call would turn each request into a write. */
+const LAST_USED_RESOLUTION_MS = 10 * 60_000;
 
 export interface AgentKey {
   id: string;
@@ -51,6 +54,10 @@ export class Access {
     return secret;
   }
 
+  async hasOwner(shopId: string): Promise<boolean> {
+    return Boolean(await this.store.ownerHash(shopId));
+  }
+
   async checkOwnerSecret(shopId: string, secret: string): Promise<boolean> {
     const stored = await this.store.ownerHash(shopId);
     return Boolean(stored) && safeEqual(stored!, hashSecret(secret));
@@ -59,7 +66,7 @@ export class Access {
   /** Issue an agent key for a shop; returns the key once. */
   async createAgentKey(shopId: string, label: string, secret = generateSecret('sk_agent')): Promise<{ key: AgentKey; secret: string }> {
     const key: AgentKey = {
-      id: `key_${randomUUID().slice(0, 8)}`,
+      id: `key_${randomBytes(6).toString('hex')}`,
       shopId,
       label: label.slice(0, 60) || 'agent',
       hash: hashSecret(secret),
@@ -70,20 +77,34 @@ export class Access {
     return { key, secret };
   }
 
+  /** A key with a known secret (the hosted demo's), active: re-enabled if it was revoked, created if missing. */
+  async ensureAgentKey(shopId: string, label: string, secret: string): Promise<AgentKey> {
+    const existing = await this.store.keyByHash(hashSecret(secret));
+    if (!existing) return (await this.createAgentKey(shopId, label, secret)).key;
+    if (existing.shopId !== shopId) throw new Error('That key belongs to another shop');
+    if (existing.revokedAt) await this.store.putKey({ ...existing, revokedAt: undefined });
+    return existing;
+  }
+
   /** Resolve an `Authorization: Bearer sk_agent_...` header. Owner secrets are not agent keys. */
   async agentFromHeader(header: string | null | undefined): Promise<AgentKey | undefined> {
     const secret = /^Bearer\s+(sk_agent_[A-Za-z0-9_-]+)$/.exec(header ?? '')?.[1];
     if (!secret) return undefined;
     const key = await this.store.keyByHash(hashSecret(secret));
     if (!key || key.revokedAt) return undefined;
-    await this.store.putKey({ ...key, lastUsedAt: new Date().toISOString() });
+    const now = Date.now();
+    if (!key.lastUsedAt || now - Date.parse(key.lastUsedAt) > LAST_USED_RESOLUTION_MS) {
+      await this.store.putKey({ ...key, lastUsedAt: new Date(now).toISOString() });
+    }
     return key;
   }
 
-  async revokeKey(shopId: string, keyId: string): Promise<void> {
+  /** Returns false if the shop has no such key. */
+  async revokeKey(shopId: string, keyId: string): Promise<boolean> {
     const key = (await this.store.listKeys(shopId)).find((k) => k.id === keyId);
-    if (!key) throw new Error(`No key ${keyId}`);
+    if (!key) return false;
     await this.store.putKey({ ...key, revokedAt: new Date().toISOString() });
+    return true;
   }
 
   listKeys(shopId: string): Promise<AgentKey[]> {

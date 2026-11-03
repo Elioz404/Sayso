@@ -8,8 +8,8 @@ export const metadata: Metadata = { title: 'Rules' };
 export default async function Rules() {
   const view = await ownerView();
   if (!view) return null;
-  const { seller, shopId, shop } = view;
-  const policy = await seller.policy(shopId);
+  const { saySo, shopId } = view;
+  const policy = await saySo.policy(shopId);
 
   return (
     <>
@@ -31,7 +31,7 @@ export default async function Rules() {
               return (
                 <li key={r.id}>
                   <span className={`rule-kind ${blocks ? 'rule-block' : 'rule-ask'}`}>{blocks ? 'Block' : 'Ask me'}</span>
-                  <span>{describeRule(r, shop.currency)}</span>
+                  <span>{describeRule(r, policy.currency)}</span>
                 </li>
               );
             })}
@@ -46,7 +46,7 @@ export default async function Rules() {
           Tell your agent in plain words. It drafts the rules and sends them to you; nothing changes until you say OK, so an agent can
           never loosen its own limits.
         </p>
-        <CopyField value={'sayso policy propose "Refunds over $30 need my OK. Never accept a dispute without asking me."'} />
+        <CopyField value={'sayso policy propose "Refunds over $30 need my OK. Invoices to new clients always need my OK."'} />
       </section>
     </>
   );

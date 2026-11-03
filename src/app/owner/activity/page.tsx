@@ -1,24 +1,24 @@
 import type { Metadata } from 'next';
 import { AuditGrid, type AuditRow } from '@/app/_components/grids.tsx';
-import { ACTION_LABEL, actorName } from '@/app/_components/ui.tsx';
+import { actionLabel, actorName } from '@/app/_components/ui.tsx';
 import { formatMoney } from '@/core/money.ts';
-import { ownerView, when } from '@/server/owner.ts';
+import { ownerView } from '@/server/owner.ts';
 
 export const metadata: Metadata = { title: 'Activity' };
 
 export default async function Activity() {
   const view = await ownerView();
   if (!view) return null;
-  const { seller, shopId, shop } = view;
-  const audit = await seller.audit(shopId, 500);
+  const { saySo, shopId, shop } = view;
+  const audit = await saySo.audit(shopId, 500);
   const tampered = audit.filter((r) => !r.chainIntact).length;
 
   const rows: AuditRow[] = audit.map((r) => {
     const agent = r.action.actor.type === 'agent';
     return {
       id: r.id,
-      at: when(r.createdAt),
-      action: ACTION_LABEL[r.action.kind] ?? r.action.kind,
+      at: r.createdAt,
+      action: actionLabel(r.action.kind),
       amount: r.action.amount !== undefined ? formatMoney(r.action.amount, r.action.currency ?? shop.currency) : '',
       by: actorName(r.action.actor),
       byAgent: agent,

@@ -4,14 +4,8 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { callApi } from './api.ts';
 import { Icon } from './ui.tsx';
-
-async function post(url: string, body?: unknown): Promise<any> {
-  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}) });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.message ?? `Something went wrong (${res.status})`);
-  return data;
-}
 
 export function ConnectForm({ walletId, perOrder, daily, label }: { walletId: string; perOrder: string; daily: string; label: string }) {
   const [busy, setBusy] = useState(false);
@@ -26,7 +20,7 @@ export function ConnectForm({ walletId, perOrder, daily, label }: { walletId: st
         setBusy(true);
         setError(undefined);
         try {
-          const { url } = await post(`/api/wallets/${walletId}/connect`, { perOrder: form.get('perOrder'), daily: form.get('daily') });
+          const { url } = await callApi<{ url: string }>(`/api/wallets/${walletId}/connect`, 'POST', { perOrder: form.get('perOrder'), daily: form.get('daily') });
           window.location.href = url;
         } catch (err) {
           setError((err as Error).message);
@@ -77,7 +71,7 @@ export function DisconnectButton({ walletId, label }: { walletId: string; label:
           className="btn btn-danger"
           onClick={async () => {
             try {
-              await post(`/api/wallets/${walletId}/disconnect`);
+              await callApi(`/api/wallets/${walletId}/disconnect`);
               router.refresh();
             } catch (err) {
               setError((err as Error).message);

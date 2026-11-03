@@ -11,7 +11,7 @@ import { homedir } from 'node:os';
 import { basename, extname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 
-const VERSION = '0.2.0';
+const VERSION = '0.3.0'; // kept in step with package.json by tests/about.test.ts
 const CONFIG_DIR = process.env.SAYSO_HOME ?? join(homedir(), '.sayso');
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
 
@@ -140,6 +140,7 @@ const c = {
 
 const STATUS: Record<string, (s: string) => string> = {
   verified: (s) => c.green(`done: ${s}`),
+  unverified: (s) => c.yellow(`sent, not yet confirmed by PayPal: ${s}`),
   executed: (s) => c.green(`sent: ${s}`),
   pending_approval: (s) => c.yellow(`waiting for the owner: ${s}`),
   denied: (s) => c.red(`refused: ${s}`),
@@ -155,7 +156,7 @@ function printSayso(r: any): number {
   for (const w of r.why ?? []) console.log(`  why: ${w}`);
   if (r.not_understood?.length) console.log(c.yellow(`  not understood: ${r.not_understood.join('; ')}`));
   if (r.next) console.log(c.dim(`  ${r.next}`));
-  return r.status === 'pending_approval' ? EXIT.waiting : r.status === 'denied' || r.status === 'rejected' || r.status === 'failed' ? EXIT.refused : EXIT.ok;
+  return exitFor(r);
 }
 
 function table(rows: Record<string, unknown>[], columns: string[]): void {
@@ -402,7 +403,7 @@ const commands: Record<string, { usage: string; summary: string; run: Command }>
     },
   },
   policy: {
-    usage: 'sayso policy [propose "refunds over $30 need my OK; never accept disputes"]',
+    usage: 'sayso policy [propose "refunds over $30 need my OK; invoices to new clients need my OK"]',
     summary: 'Show the say-so rules, or propose new ones (the owner approves them)',
     async run(args, config, json) {
       if (args.positional[0] === 'propose') {

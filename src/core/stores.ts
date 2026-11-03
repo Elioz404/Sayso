@@ -1,0 +1,108 @@
+// Storage contracts for shops and carts, with in-memory implementations for tests and the zero-config
+// local demo. Production uses the Postgres implementations in src/server/pg-stores.ts.
+
+import { returnStock, takeStock, type Catalog, type StockLine } from './catalog.ts';
+import type { PayPalCart } from './cart/spec.ts';
+
+export interface StoredCart {
+  id: string;
+  shopId: string;
+  cart: PayPalCart;
+  orderId?: string;
+  /** Total the PayPal order was created for; a re-priced cart with a new total needs a new order. */
+  orderTotal?: string;
+  /** Where the buyer approves the current PayPal order. */
+  approvalUrl?: string;
+  authorizationId?: string;
+  captureId?: string;
+  guardRecordId?: string;
+  /** The order number the owner and the buyer see, e.g. SAY-7K2M9QXD. */
+  merchantOrderNumber?: string;
+  /** Stock taken for this order, given back if the order is released. */
+  reserved?: StockLine[];
+  /** The order will not go through (capture rejected or failed): when, why, and whether PayPal confirmed the hold is gone. */
+  released?: { at: string; reason: string; holdVoided: boolean };
+  tracking?: { carrier: string; number: string; addedAt: string };
+  /** How the buyer paid: approved in PayPal (default), or with their saved PayPal within their limits. */
+  paidWith?: 'saved-paypal';
+  /** Who was shopping, as far as we know: e.g. "chatgpt", "mcp-client". */
+  channel?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CartStore {
+  get(id: string): Promise<StoredCart | undefined>;
+  put(cart: StoredCart): Promise<void>;
+  /** Carts of a shop, newest first. */
+  listByShop(shopId: string, limit?: number): Promise<StoredCart[]>;
+  /** A placed order by the number people see (case-insensitive). */
+  byNumber(shopId: string, number: string): Promise<StoredCart | undefined>;
+  /** Has this email paid the shop for an order before? */
+  paidBy(shopId: string, email: string): Promise<boolean>;
+}
+
+export interface CatalogStore {
+  byShopId(shopId: string): Promise<Catalog | undefined>;
+  bySlug(slug: string): Promise<Catalog | undefined>;
+  save(catalog: Catalog): Promise<void>;
+  /** Published shops only: what buyers' assistants can browse. */
+  listLive(): Promise<Catalog[]>;
+  /** Atomically take stock for an order; false (nothing taken) if any line is short. */
+  takeStock(shopId: string, lines: readonly StockLine[]): Promise<boolean>;
+  returnStock(shopId: string, lines: readonly StockLine[]): Promise<void>;
+}
+
+export class MemoryCartStore implements CartStore {
+  private readonly carts = new Map<string, StoredCart>();
+  async get(id: string) {
+    const c = this.carts.get(id);
+    return c && structuredClone(c);
+  }
+  async put(cart: StoredCart) {
+    this.carts.set(cart.id, structuredClone(cart));
+  }
+  async listByShop(shopId: string, limit = Infinity) {
+    return this.ofShop(shopId).slice(0, limit).map((c) => structuredClone(c));
+  }
+  async byNumber(shopId: string, number: string) {
+    const c = this.ofShop(shopId).find((x) => x.merchantOrderNumber?.toUpperCase() === number.toUpperCase());
+    return c && structuredClone(c);
+  }
+  async paidBy(shopId: string, email: string) {
+    return this.ofShop(shopId).some((c) => c.captureId && c.cart.customer?.email_address?.toLowerCase() === email.toLowerCase());
+  }
+  private ofShop(shopId: string): StoredCart[] {
+    return [...this.carts.values()].filter((c) => c.shopId === shopId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+}
+
+export class MemoryCatalogStore implements CatalogStore {
+  private readonly catalogs = new Map<string, Catalog>();
+  constructor(catalogs: Catalog[] = []) {
+    for (const c of catalogs) this.catalogs.set(c.shop.id, structuredClone(c));
+  }
+  async byShopId(shopId: string) {
+    const c = this.catalogs.get(shopId);
+    return c && structuredClone(c);
+  }
+  async bySlug(slug: string) {
+    const c = [...this.catalogs.values()].find((x) => x.shop.slug === slug);
+    return c && structuredClone(c);
+  }
+  async save(catalog: Catalog) {
+    this.catalogs.set(catalog.shop.id, structuredClone(catalog));
+  }
+  async listLive() {
+    return [...this.catalogs.values()].filter((c) => (c.shop.status ?? 'live') === 'live').map((c) => structuredClone(c));
+  }
+  // Synchronous between reading and writing, so two checkouts can't both take the last unit.
+  async takeStock(shopId: string, lines: readonly StockLine[]) {
+    const catalog = this.catalogs.get(shopId);
+    return catalog ? takeStock(catalog, lines) : false;
+  }
+  async returnStock(shopId: string, lines: readonly StockLine[]) {
+    const catalog = this.catalogs.get(shopId);
+    if (catalog) returnStock(catalog, lines);
+  }
+}

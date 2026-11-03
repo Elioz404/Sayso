@@ -2,6 +2,8 @@
 // Server-safe (no hooks); interactive pieces live in the client files.
 
 import type { ReactNode } from 'react';
+import { OPS_AGENT } from '@/core/actors.ts';
+import { ACTIONS, type ActionKind } from '@/core/guard/types.ts';
 
 export function Mark({ size = 28 }: { size?: number }) {
   return (
@@ -101,6 +103,7 @@ export function Icon({ name, size = 18, label }: { name: keyof typeof PATHS | st
 const STATUS_LABEL: Record<string, string> = {
   pending_approval: 'Waiting for you',
   verified: 'Done',
+  unverified: 'Unconfirmed',
   executed: 'Sent',
   denied: 'Blocked',
   rejected: 'Rejected',
@@ -122,15 +125,29 @@ const STATUS_TONE: Record<string, 'ok' | 'hold' | 'stop' | 'quiet'> = {
   live: 'ok',
   pending_approval: 'hold',
   awaiting_owner: 'hold',
+  unverified: 'hold',
   draft: 'hold',
   denied: 'stop',
   rejected: 'stop',
   failed: 'stop',
   released: 'stop',
+  // Invoice statuses, as PayPal reports them (lower-cased); "paid" is shared with orders.
+  'marked as paid': 'ok',
+  'partially paid': 'hold',
+  sent: 'hold',
+  unpaid: 'hold',
+  'waiting for the owner': 'hold',
+  cancelled: 'stop',
 };
 
+/** ok, hold, stop or quiet: the colour family of a status anywhere in the app. */
+export function toneOf(value: string): 'ok' | 'hold' | 'stop' | 'quiet' {
+  return STATUS_TONE[value] ?? 'quiet';
+}
+
 export function Status({ value }: { value: string }) {
-  return <span className={`status status-${STATUS_TONE[value] ?? 'quiet'}`}>{STATUS_LABEL[value] ?? value.replace(/_/g, ' ')}</span>;
+  const label = STATUS_LABEL[value] ?? value.replace(/_/g, ' ');
+  return <span className={`status status-${toneOf(value)}`}>{label.charAt(0).toUpperCase() + label.slice(1)}</span>;
 }
 
 /** Who asked: agents and people are told apart everywhere money is involved. */
@@ -148,17 +165,12 @@ export function Who({ actor }: { actor: { type: 'agent' | 'human'; id: string; s
 /** How an actor reads to the owner: their agents by label, buyers' assistants as such, people as "You". */
 export function actorName(actor: { type: 'agent' | 'human'; id: string; side?: 'buyer' | 'merchant' }): string {
   if (actor.type !== 'agent') return actor.id.startsWith('owner:') ? 'You' : actor.id;
-  if (actor.id === 'sayso-ops-agent') return 'Sayso checkout';
+  if (actor.id === OPS_AGENT.id) return 'Sayso checkout';
   const label = actor.id.split(':')[1] ?? actor.id;
   return actor.side === 'buyer' ? `Buyer's assistant (${label})` : label;
 }
 
-export const ACTION_LABEL: Record<string, string> = {
-  'refund.create': 'Refund',
-  'payment.capture': 'Charge an order',
-  'payment.void': 'Release a payment hold',
-  'policy.update': 'Change your rules',
-  'dispute.accept': 'Accept a dispute',
-  'invoice.send': 'Send an invoice',
-  'checkout.create': 'Purchase',
-};
+/** How an action reads to people, from the one list Guard governs. */
+export function actionLabel(kind: string): string {
+  return kind in ACTIONS ? ACTIONS[kind as ActionKind].label : kind;
+}

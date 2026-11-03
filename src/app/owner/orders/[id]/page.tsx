@@ -1,21 +1,24 @@
 // One order: what was bought, where it ships, and every money movement on it, in order.
 import type { Metadata } from 'next';
 import { CopyField } from '@/app/_components/client-ui.tsx';
-import { ACTION_LABEL, Icon, Status } from '@/app/_components/ui.tsx';
+import { When } from '@/app/_components/time.tsx';
+import { actionLabel, Icon, Status, toneOf } from '@/app/_components/ui.tsx';
+import { HttpError } from '@/core/errors.ts';
 import type { GuardRecord } from '@/core/guard/types.ts';
 import { formatMoney, toMinor } from '@/core/money.ts';
-import { ownerView, when } from '@/server/owner.ts';
+import { ownerView } from '@/server/owner.ts';
 
 export const metadata: Metadata = { title: 'Order' };
-
-const TONE: Record<string, string> = { verified: 'ok', executed: 'ok', pending_approval: 'hold', denied: 'stop', rejected: 'stop', failed: 'stop' };
 
 export default async function OrderDetail({ params }: { params: Promise<{ id: string }> }) {
   const view = await ownerView();
   if (!view) return null;
   const { id } = await params;
-  const { shopId, seller, shop } = view;
-  const found = await seller.order(shopId, decodeURIComponent(id)).catch(() => undefined);
+  const { shopId, orders, shop } = view;
+  const found = await orders.get(shopId, id).catch((err: unknown) => {
+    if (err instanceof HttpError && err.status === 404) return undefined;
+    throw err;
+  });
   if (!found) {
     return (
       <div className="stack">
@@ -39,7 +42,9 @@ export default async function OrderDetail({ params }: { params: Promise<{ id: st
         <div className="view-head">
           <div>
             <h1>{order.number ?? order.id}</h1>
-            <p className="sub">Placed {when(order.createdAt)}</p>
+            <p className="sub">
+              Placed <When iso={order.createdAt} />
+            </p>
           </div>
           <Status value={order.status} />
         </div>
@@ -133,22 +138,24 @@ export default async function OrderDetail({ params }: { params: Promise<{ id: st
                 Cart priced at {money(totals?.total)}
                 {order.channel ? ` by ${order.channel}` : ''}
               </b>
-              <span className="small muted">{when(cart.createdAt)}</span>
+              <span className="small muted">
+                <When iso={cart.createdAt} />
+              </span>
             </span>
           </li>
           {history.map((r: GuardRecord) => (
-            <li key={r.id} className={TONE[r.status] ?? ''}>
+            <li key={r.id} className={toneOf(r.status)}>
               <span className="stack" style={{ gap: 2 }}>
                 <span className="row" style={{ gap: 'var(--s3)' }}>
                   <b>
-                    {ACTION_LABEL[r.action.kind] ?? r.action.kind}
+                    {actionLabel(r.action.kind)}
                     {r.action.amount !== undefined ? ` ${formatMoney(r.action.amount, r.action.currency ?? shop.currency)}` : ''}
                   </b>
                   <Status value={r.status} />
                 </span>
                 <span className="small soft">{r.action.reason}</span>
                 <span className="small muted">
-                  {when(r.createdAt)} · <a href={`/approve/${r.id}`}>details</a>
+                  <When iso={r.createdAt} /> · <a href={`/approve/${r.id}`}>details</a>
                 </span>
               </span>
             </li>

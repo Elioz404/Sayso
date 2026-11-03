@@ -2,13 +2,14 @@
 
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { ABOUT } from '@/core/about.ts';
 import { Icon } from './ui.tsx';
 
-export function NavLinks({ signedIn }: { signedIn: boolean }) {
+export function NavLinks() {
   const path = usePathname();
   const links = [
     { href: '/start', label: 'Start selling' },
-    { href: '/shop/maya-ceramics', label: 'Demo shop' },
+    { href: `/shop/${ABOUT.demoShop}`, label: 'Demo shop' },
     { href: '/docs', label: 'Docs' },
   ];
   return (
@@ -19,7 +20,7 @@ export function NavLinks({ signedIn }: { signedIn: boolean }) {
         </a>
       ))}
       <a href="/owner" className="btn btn-small" aria-current={path.startsWith('/owner') ? 'page' : undefined}>
-        {signedIn ? 'Your shop' : 'Owner sign-in'}
+        Your shop
       </a>
     </nav>
   );

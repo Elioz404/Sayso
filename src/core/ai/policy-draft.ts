@@ -2,16 +2,16 @@
 // survives. A drafted policy is never applied directly: it goes through Guard as a `policy.update`
 // action, so an agent can't loosen its own limits without the owner's OK.
 
-import type { Policy, Rule } from '../guard/policy.ts';
-import type { ActionKind } from '../guard/types.ts';
-import { toMinor } from '../money.ts';
+import { RULE_TYPES, type Policy, type Rule } from '../guard/policy.ts';
+import { ACTION_KINDS, type ActionKind } from '../guard/types.ts';
+import { parseAmount } from '../money.ts';
 import type { ChatModel } from './llm.ts';
 
-const KINDS: ActionKind[] = ['checkout.create', 'payment.capture', 'payment.void', 'refund.create', 'invoice.send', 'dispute.accept'];
-const TYPES = ['max_amount', 'daily_total', 'always_approve', 'never', 'known_counterparty', 'categories', 'no_duplicates', 'new_counterparty'] as const;
+/** Rules govern money and documents; changing the rules themselves is always the owner's call. */
+const KINDS: ActionKind[] = ACTION_KINDS.filter((k) => k !== 'policy.update');
 
 const SYSTEM = `You convert a shop owner's rules for their AI agents into JSON. Return:
-{ "rules": [ { "type": one of ${TYPES.join(', ')}, "kinds": [action kinds],
+{ "rules": [ { "type": one of ${RULE_TYPES.join(', ')}, "kinds": [action kinds],
   "limit": "decimal amount" (max_amount, daily_total), "then": "require_approval" | "deny",
   "allowed": [strings] (known_counterparty, categories), "window_minutes": integer (no_duplicates) } ],
   "unclear": [parts of the text you could not express as a rule] }
@@ -35,7 +35,7 @@ export async function draftPolicy(model: ChatModel, ownerId: string, text: strin
   const { rules, rejected } = validateRules(raw.rules, currency);
   const unclear = [...(Array.isArray(raw.unclear) ? raw.unclear.filter((u): u is string => typeof u === 'string') : []), ...rejected];
   if (rules.length === 0) throw new Error(`Could not turn that into rules${unclear.length ? `: ${unclear.join('; ')}` : ''}`);
-  return { policy: { ownerId, rules, source: text.trim() }, unclear };
+  return { policy: { ownerId, rules, currency, source: text.trim() }, unclear };
 }
 
 /** Keep only well-formed rules; describe the rest. Exported for tests. */
@@ -85,12 +85,5 @@ export function validateRules(input: unknown, currency: string): { rules: Rule[]
 }
 
 function amount(value: unknown, currency: string): number | undefined {
-  const text = typeof value === 'number' ? String(value) : typeof value === 'string' && !value.includes('-') ? value.replace(/[^\d.]/g, '') : '';
-  if (!text) return undefined;
-  try {
-    const minor = toMinor({ currency_code: currency, value: text });
-    return minor >= 0 ? minor : undefined;
-  } catch {
-    return undefined;
-  }
+  return typeof value === 'number' || typeof value === 'string' ? parseAmount(value, currency) : undefined;
 }

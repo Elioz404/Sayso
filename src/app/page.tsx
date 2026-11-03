@@ -1,6 +1,8 @@
+import { connection } from 'next/server';
 import { CopyField } from '@/app/_components/client-ui.tsx';
 import { Icon, Who } from '@/app/_components/ui.tsx';
-import { baseUrl } from '@/server/context.ts';
+import { ABOUT } from '@/core/about.ts';
+import { siteLinks } from '@/server/context.ts';
 
 const FLOW = [
   { name: 'Propose', text: 'An agent asks to refund, charge or change a rule.' },
@@ -12,8 +14,9 @@ const FLOW = [
   { name: 'Record', text: 'Logged so any later edit shows.' },
 ];
 
-export default function Home() {
-  const url = baseUrl();
+export default async function Home() {
+  await connection(); // URLs come from PUBLIC_BASE_URL at request time, not at build time
+  const links = siteLinks();
   return (
     <main className="wrap landing" style={{ paddingBottom: 'var(--s8)' }}>
       <section className="hero">
@@ -27,7 +30,7 @@ export default function Home() {
             <a className="btn btn-primary" href="/start">
               Open your shop <Icon name="arrow" size={17} />
             </a>
-            <a className="btn" href="/shop/maya-ceramics">
+            <a className="btn" href={`/shop/${ABOUT.demoShop}`}>
               See the demo shop
             </a>
           </div>
@@ -139,7 +142,7 @@ export default function Home() {
             Watch it as the owner <Icon name="arrow" size={17} />
           </a>
         </div>
-        <CopyField value={`${url}/api/shopping/mcp`} />
+        <CopyField value={links.shoppingMcp} />
       </section>
     </main>
   );

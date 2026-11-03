@@ -2,6 +2,7 @@
 // Transport-agnostic: the Streamable HTTP route answers each POST with plain JSON (no SSE needed for
 // request/response tools), and the CLI's `sayso mcp` bridges stdio to the same endpoint.
 
+import { ABOUT } from './about.ts';
 import { callTool, toolsFor, ToolError, type ToolContext } from './tools/registry.ts';
 
 export const MCP_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26'] as const;
@@ -49,7 +50,7 @@ export async function handleMcp(message: unknown, ctx: ToolContext): Promise<Jso
           serverInfo: {
             name: 'sayso',
             title: ctx.agent ? 'Sayso: run my shop' : ctx.marketplace ? 'Sayso: shop small sellers' : `Sayso shop ${ctx.shopSlug ?? ''}`.trim(),
-            version: '0.3.0',
+            version: ABOUT.version,
           },
           instructions: ctx.agent && ctx.shopSlug ? `${INSTRUCTIONS.seller}\n\nBuyer tools are also available.` : ctx.marketplace ? INSTRUCTIONS.marketplace : INSTRUCTIONS[side],
         },

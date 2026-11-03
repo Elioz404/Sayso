@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Bricolage_Grotesque, Figtree, IBM_Plex_Mono } from 'next/font/google';
 import { NavLinks } from '@/app/_components/client-ui.tsx';
 import { Mark } from '@/app/_components/ui.tsx';
-import { ownerShopId } from '@/server/http.ts';
+import { ABOUT } from '@/core/about.ts';
 import './globals.css';
 
 const display = Bricolage_Grotesque({ subsets: ['latin'], weight: ['600', '700', '800'], variable: '--font-bricolage', display: 'swap' });
@@ -24,8 +24,8 @@ export const viewport: Viewport = {
   ],
 };
 
-export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const signedIn = Boolean(await ownerShopId().catch(() => undefined));
+// No cookies or database here, so pages that don't need them can be rendered ahead of time.
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${display.variable} ${body.variable} ${mono.variable}`}>
       <body>
@@ -35,7 +35,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <Mark />
               <span className="brand-word">sayso</span>
             </a>
-            <NavLinks signedIn={signedIn} />
+            <NavLinks />
           </div>
         </header>
         {children}
@@ -52,14 +52,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <nav aria-label="Product" className="footer-links">
               <b>Product</b>
               <a href="/start">Start selling</a>
-              <a href="/shop/maya-ceramics">Demo shop</a>
+              <a href={`/shop/${ABOUT.demoShop}`}>Demo shop</a>
               <a href="/owner">Owner sign-in</a>
               <a href="/docs">Docs</a>
             </nav>
             <nav aria-label="Project" className="footer-links">
               <b>Project</b>
-              <a href="https://github.com/Elioz404/Sayso">Source on GitHub</a>
-              <a href="https://github.com/Elioz404/Sayso/blob/main/LICENSE">MIT license</a>
+              <a href={ABOUT.repository}>Source on GitHub</a>
+              <a href={`${ABOUT.repository}/blob/main/LICENSE`}>MIT license</a>
               <a href="/api/health">Status</a>
             </nav>
           </div>

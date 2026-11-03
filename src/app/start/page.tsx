@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import { OnboardForm } from '@/app/_components/onboard-form.tsx';
-import { baseUrl } from '@/server/context.ts';
 
 export const metadata: Metadata = { title: 'Open your shop' };
 
@@ -13,7 +12,7 @@ export default function Start() {
             <h1>Open your shop to AI shoppers</h1>
             <p className="lede">Add a few photos and say what things cost. Sayso drafts the catalog for you to check.</p>
           </div>
-          <OnboardForm origin={baseUrl()} />
+          <OnboardForm />
         </div>
 
         <aside className="panel stack" style={{ alignSelf: 'start', gap: 'var(--s5)' }}>

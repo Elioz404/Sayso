@@ -59,7 +59,7 @@ export function invoiceExecutor(client: PayPalClient): Executor {
         ok: blockers.length === 0,
         blockers,
         effects: [
-          `Send ${p?.to?.email ?? 'the buyer'} a PayPal invoice for ${formatMoney(total, p?.currency ?? 'USD')}: ${lines}.`,
+          `Send ${p?.to?.email ?? 'the buyer'} a PayPal invoice for ${formatMoney(total, p.currency)}: ${lines}.`,
           p?.depositMinor ? `They can pay a ${formatMoney(p.depositMinor, p.currency)} deposit first.` : p?.dueDays ? `Due in ${p.dueDays} days.` : 'Due on receipt.',
         ],
       };

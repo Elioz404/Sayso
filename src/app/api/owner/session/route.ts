@@ -1,7 +1,7 @@
 // Owner sign-in: POST { "shop": "<slug>", "secret": "sk_owner_..." } sets a signed, httpOnly session
 // cookie. DELETE signs out. In demo mode the demo shop can be opened without its secret.
 import { cookies } from 'next/headers';
-import { HttpError } from '@/core/commerce.ts';
+import { HttpError } from '@/core/errors.ts';
 import { demoCatalog } from '@/core/demo-shop.ts';
 import { ready } from '@/server/context.ts';
 import { assertSameOrigin, handle, OWNER_COOKIE, readJson } from '@/server/http.ts';

@@ -1,8 +1,11 @@
 // Task-first docs for people on the site: shop from an assistant, let it pay, run a shop with an agent.
 // Every URL is built from this server's public address, so the deployed page shows the real ones.
+import { connection } from 'next/server';
 import type { Metadata } from 'next';
 import { CopyField } from '@/app/_components/client-ui.tsx';
-import { baseUrl } from '@/server/context.ts';
+import { ABOUT } from '@/core/about.ts';
+import { MCP_VERSIONS } from '@/core/mcp.ts';
+import { siteLinks } from '@/server/context.ts';
 
 export const metadata: Metadata = {
   title: 'Docs',
@@ -34,8 +37,9 @@ const CLI = [
   ['sayso mcp', 'Serve the tools to a local MCP client over stdio'],
 ];
 
-export default function Docs() {
-  const url = baseUrl();
+export default async function Docs() {
+  await connection(); // URLs come from PUBLIC_BASE_URL at request time, not at build time
+  const links = siteLinks();
   return (
     <main className="wrap page">
       <div className="docs">
@@ -63,7 +67,7 @@ export default function Docs() {
           <section id="shop" className="doc-section">
             <h2>Shop from your assistant</h2>
             <p>One MCP server covers every shop on Sayso. No account or key needed.</p>
-            <CopyField value={`${url}/api/shopping/mcp`} />
+            <CopyField value={links.shoppingMcp} />
             <ol className="steps">
               <li>
                 <span>
@@ -137,7 +141,7 @@ export default function Docs() {
               </li>
             </ol>
             <div className="copy-field" aria-label="Example personal URL">
-              <code>{`${url}/api/mcp/sk_agent_...`}</code>
+              <code>{links.sellerMcpFor('sk_agent_...')}</code>
             </div>
             <p>
               Your agent can now check orders, refund, add tracking, invoice custom orders, change prices and stock, and propose rules. Anything over your limits waits for you on
@@ -149,9 +153,9 @@ export default function Docs() {
             <h2>The sayso CLI</h2>
             <p>
               The same tools from a terminal, for you or for a coding agent. Node.js 22.18 or later, no install: run it from the{' '}
-              <a href="https://github.com/Elioz404/Sayso">repository</a>.
+              <a href={ABOUT.repository}>repository</a>.
             </p>
-            <CopyField value={`node cli/sayso.ts login --url ${url} --key sk_agent_...`} />
+            <CopyField value={links.cliLogin('sk_agent_...')} />
             <div className="table-wrap">
               <table>
                 <thead>
@@ -200,7 +204,7 @@ export default function Docs() {
             </ul>
             </div>
             <p>
-              Write your rules in plain words, for example &ldquo;refunds over $30 need my OK; never accept a dispute without asking me&rdquo;. They become
+              Write your rules in plain words, for example &ldquo;refunds over $30 need my OK; invoices to new clients always need my OK&rdquo;. They become
               exact rules you can read in <b>Rules</b>, and the rules decide, not the AI.
             </p>
           </section>
@@ -211,7 +215,7 @@ export default function Docs() {
               Every shop also implements PayPal&apos;s Agentic Commerce merchant-cart API, so assistants on PayPal&apos;s platform can buy without any
               setup by the shopper:
             </p>
-            <CopyField value={`${url}/api/shops/<shop>/merchant-cart`} />
+            <CopyField value={links.merchantCart('<shop>')} />
             <p className="small soft">
               <code>POST</code> creates a priced cart, <code>PUT /{'{id}'}</code> replaces it, <code>POST /{'{id}'}/checkout</code> completes it after the
               buyer approves. Problems come back as validation issues with resolution options an agent can apply.
@@ -254,9 +258,9 @@ export default function Docs() {
               </table>
             </div>
             <p className="small soft">
-              MCP over Streamable HTTP, protocol 2025-11-25 (also 2025-06-18 and 2025-03-26). Clients that send headers can use <code>/api/mcp</code> and{' '}
+              MCP over Streamable HTTP, protocol {MCP_VERSIONS[0]} (also {MCP_VERSIONS.slice(1).join(' and ')}). Clients that send headers can use <code>/api/mcp</code> and{' '}
               <code>/api/shopping/mcp</code> with <code>Authorization: Bearer &lt;key&gt;</code>. Full details in the{' '}
-              <a href="https://github.com/Elioz404/Sayso#readme">README</a>.
+              <a href={`${ABOUT.repository}#readme`}>README</a>.
             </p>
           </section>
         </article>

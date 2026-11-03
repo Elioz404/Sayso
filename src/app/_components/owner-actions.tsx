@@ -5,15 +5,10 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { callApi } from './api.ts';
 import { CopyField } from './client-ui.tsx';
 import { Icon } from './ui.tsx';
 
-async function send(url: string, method: string, body?: unknown): Promise<any> {
-  const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.message ?? `Something went wrong (${res.status})`);
-  return data;
-}
 
 export function LoginForm({ demo }: { demo: boolean }) {
   const router = useRouter();
@@ -24,7 +19,7 @@ export function LoginForm({ demo }: { demo: boolean }) {
     setBusy(true);
     setError(undefined);
     try {
-      await send('/api/owner/session', 'POST', body);
+      await callApi('/api/owner/session', 'POST', body);
       router.refresh();
     } catch (err) {
       setError((err as Error).message);
@@ -78,7 +73,7 @@ export function SignOut() {
     <button
       className="btn btn-quiet btn-small"
       onClick={async () => {
-        await send('/api/owner/session', 'DELETE').catch(() => {});
+        await callApi('/api/owner/session', 'DELETE').catch(() => {});
         router.refresh();
       }}
     >
@@ -97,7 +92,7 @@ export function Decision({ id, big = false }: { id: string; big?: boolean }) {
     setBusy(decision);
     setError(undefined);
     try {
-      await send(`/api/guard/${id}`, 'POST', { decision, note: note || undefined });
+      await callApi(`/api/guard/${id}`, 'POST', { decision, note: note || undefined });
       router.refresh();
     } catch (err) {
       setError((err as Error).message);
@@ -139,7 +134,7 @@ export function PublishButton() {
         onClick={async () => {
           setBusy(true);
           try {
-            const res = await send('/api/owner/publish', 'POST');
+            const res = await callApi<{ warnings: string[] }>('/api/owner/publish', 'POST');
             setMessage(res.warnings.length ? res.warnings.join(' ') : undefined);
             router.refresh();
           } catch (err) {
@@ -156,10 +151,11 @@ export function PublishButton() {
 }
 
 /** Issues an agent key and shows it as a personal MCP URL (what assistant connector screens take). */
-export function NewKey({ baseUrl }: { baseUrl: string }) {
+export function NewKey() {
   const router = useRouter();
-  const [key, setKey] = useState<string>();
+  const [issued, setIssued] = useState<{ mcp_url: string; cli_login: string }>();
   const [label, setLabel] = useState('');
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   return (
     <div className="stack">
@@ -167,30 +163,33 @@ export function NewKey({ baseUrl }: { baseUrl: string }) {
         className="row"
         onSubmit={async (e) => {
           e.preventDefault();
+          setBusy(true);
           setError(undefined);
           try {
-            const res = await send('/api/owner/keys', 'POST', { label: label || 'my agent' });
-            setKey(res.key);
+            setIssued(await callApi<{ mcp_url: string; cli_login: string }>('/api/owner/keys', 'POST', { label: label || 'my agent' }));
             setLabel('');
             router.refresh();
           } catch (err) {
             setError((err as Error).message);
           }
+          setBusy(false);
         }}
       >
         <label htmlFor="key-label" className="sr-only">Key label</label>
         <input id="key-label" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Which agent? e.g. ChatGPT, my laptop" maxLength={60} style={{ flex: 1, minWidth: 180 }} />
-        <button className="btn btn-primary">Connect an agent</button>
+        <button className="btn btn-primary" disabled={busy}>
+          {busy ? 'Connecting...' : 'Connect an agent'}
+        </button>
       </form>
-      {key && (
+      {issued && (
         <div className="stack" style={{ gap: 'var(--s3)' }}>
           <div className="field">
             <span className="field-label">Personal MCP URL: paste it as a connector in ChatGPT or any MCP client</span>
-            <CopyField value={`${baseUrl}/api/mcp/${key}`} secret />
+            <CopyField value={issued.mcp_url} secret />
           </div>
           <div className="field">
             <span className="field-label">Or from a terminal</span>
-            <CopyField value={`node cli/sayso.ts login --url ${baseUrl} --key ${key}`} secret />
+            <CopyField value={issued.cli_login} secret />
           </div>
           <span className="small soft">Shown only now. Treat it like a password; revoke it here if it leaks.</span>
         </div>
@@ -218,7 +217,7 @@ export function RevokeKey({ id, label }: { id: string; label: string }) {
         className="btn btn-danger btn-small"
         onClick={async () => {
           try {
-            await send('/api/owner/keys', 'DELETE', { id });
+            await callApi('/api/owner/keys', 'DELETE', { id });
             router.refresh();
           } catch (err) {
             setError((err as Error).message);

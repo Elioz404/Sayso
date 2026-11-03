@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { Commerce, HttpError, MemoryCartStore, MemoryCatalogStore } from '../src/core/commerce.ts';
+import { Commerce } from '../src/core/commerce.ts';
+import { HttpError } from '../src/core/errors.ts';
+import { links } from '../src/core/links.ts';
+import { MemoryCartStore, MemoryCatalogStore } from '../src/core/stores.ts';
 import { demoCatalog } from '../src/core/demo-shop.ts';
 import { Guard, MemoryGuardStore } from '../src/core/guard/engine.ts';
 import { defaultMerchantPolicy, type Policy } from '../src/core/guard/policy.ts';
@@ -8,7 +11,7 @@ import { PayPalClient } from '../src/core/paypal/client.ts';
 import { captureExecutor, refundExecutor, voidExecutor } from '../src/core/paypal/executors.ts';
 import { fakePayPal } from './fake-paypal.ts';
 
-function setup(policy: Policy = defaultMerchantPolicy('shop_maya')) {
+function setup(policy: Policy = defaultMerchantPolicy('shop_maya', 'USD')) {
   const pp = fakePayPal();
   const paypal = new PayPalClient({ clientId: 'id', clientSecret: 'secret', fetch: pp.fetch });
   const catalogs = new MemoryCatalogStore([demoCatalog]);
@@ -18,7 +21,7 @@ function setup(policy: Policy = defaultMerchantPolicy('shop_maya')) {
     executors: { 'payment.capture': captureExecutor(paypal), 'payment.void': voidExecutor(paypal), 'refund.create': refundExecutor(paypal) },
     policyFor: async () => policy,
   });
-  const commerce = new Commerce({ paypal, carts: new MemoryCartStore(), catalogs, guard, baseUrl: 'https://sayso.test' });
+  const commerce = new Commerce({ paypal, carts: new MemoryCartStore(), catalogs, guard, links: links('https://sayso.test') });
   return { pp, commerce, catalogs, guardStore };
 }
 
@@ -72,7 +75,7 @@ test('invalid carts get no PayPal order until the agent fixes them', async () =>
 test('if the item sells out while the buyer approves, nothing is authorized or charged', async () => {
   const { pp, commerce, catalogs } = setup();
   const cart = await commerce.createCart('maya-ceramics', { items: [{ variant_id: 'var_mug_speckled', quantity: 1 }], shipping_address: address });
-  await catalogs.decrementInventory('shop_maya', 'var_mug_speckled', 1); // sold elsewhere meanwhile
+  await catalogs.takeStock('shop_maya', [{ variantId: 'var_mug_speckled', quantity: 1 }]); // sold elsewhere meanwhile
   pp.approve(cart.payment_method!.token!);
   await assert.rejects(
     commerce.checkout(cart.id!, { items: [], payment_method: { type: 'paypal', token: cart.payment_method!.token } }),
@@ -82,7 +85,7 @@ test('if the item sells out while the buyer approves, nothing is authorized or c
 });
 
 test('big orders wait for the owner: authorized now, captured after say-so', async () => {
-  const policy: Policy = { ownerId: 'shop_maya', rules: [{ id: 'big', type: 'max_amount', kinds: ['payment.capture'], limit: 10_000, then: 'require_approval' }] };
+  const policy: Policy = { ownerId: 'shop_maya', currency: 'USD', rules: [{ id: 'big', type: 'max_amount', kinds: ['payment.capture'], limit: 10_000, then: 'require_approval' }] };
   const { pp, commerce, guardStore } = setup(policy);
   const cart = await commerce.createCart('maya-ceramics', { items: [{ variant_id: 'var_vase_custom', quantity: 2 }], shipping_address: address });
   pp.approve(cart.payment_method!.token!);

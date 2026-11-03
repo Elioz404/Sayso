@@ -1,6 +1,6 @@
 {
   "name": "sayso",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Sell to AI agents, safely. Any small seller becomes buyable by AI shopping agents through PayPal, and no agent moves money without the owner's say-so.",
