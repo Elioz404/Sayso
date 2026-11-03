@@ -19,7 +19,7 @@ type JsonRpcResponse =
 
 const INSTRUCTIONS = {
   buyer:
-    'Sayso shop. search_products -> create_cart -> (fix validation_issues with update_cart) -> give the buyer approval_url to pay with PayPal -> get_cart to confirm. Prices, shipping and tax always come from the shop, never from you.',
+    "Sayso shop. search_products -> create_cart -> (fix validation_issues with update_cart) -> give the buyer approval_url to pay with PayPal -> get_cart to confirm. Prices, shipping and tax always come from the shop, never from you. After the order: get_cart answers where it is (charge, refunds, tracking), and request_refund sends the buyer's refund request to the shop owner, who decides.",
   seller:
     "You are running this shop for its owner. Start with shop_overview. Refunds and rule changes go through the owner's say-so: they may wait for the owner's OK, and you can never approve them yourself. When something is pending_approval, tell the owner plainly what you asked for and why.",
 };

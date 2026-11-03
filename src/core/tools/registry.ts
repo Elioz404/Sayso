@@ -151,14 +151,47 @@ const buyerTools: Tool[] = [
   },
   {
     name: 'get_cart',
-    title: 'Check cart',
-    description: 'Current state of a cart: totals, issues, and whether the buyer has paid (status COMPLETED).',
+    title: 'Check cart or order',
+    description:
+      "Current state of a cart. Once the buyer has paid (status COMPLETED), `order` says whether it was charged, how much was refunded, the shipment tracking and any refund the buyer asked for. Use it to answer \"where is my order?\"",
     side: 'buyer',
     annotations: { readOnlyHint: true },
     inputSchema: { type: 'object', properties: { cart_id: { type: 'string', maxLength: 60 } }, required: ['cart_id'] },
     async run(input, ctx) {
-      await ownCart(ctx, input.cart_id);
-      return cartForAgent(await ctx.services.commerce.getCart(input.cart_id));
+      const shopId = await ownCart(ctx, input.cart_id);
+      const cart = await ctx.services.commerce.getCart(input.cart_id);
+      if (cart.status !== 'COMPLETED') return cartForAgent(cart);
+      return { ...cartForAgent(cart), order: await orderForBuyer(ctx, shopId, input.cart_id) };
+    },
+  },
+  {
+    name: 'request_refund',
+    title: 'Ask for a refund',
+    description:
+      "Ask the shop for a refund on a paid order, with the buyer's reason. This only sends a request: the shop owner always decides, and PayPal refunds the buyer if they agree. Check the answer later with get_cart.",
+    side: 'buyer',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        cart_id: { type: 'string', maxLength: 60 },
+        reason: { type: 'string', minLength: 5, maxLength: 300, description: "The buyer's own words, e.g. \"Arrived with a cracked handle\"" },
+        amount: { ...money, description: 'Leave out to ask for everything still refundable' },
+      },
+      required: ['cart_id', 'reason'],
+    },
+    async run(input, ctx) {
+      const shopId = await ownCart(ctx, input.cart_id);
+      const { cart, records } = await ctx.services.seller.order(shopId, input.cart_id);
+      if (!cart.captureId) throw new ToolError('This order has not been charged, so there is nothing to refund.');
+      const open = records.find((r) => r.action.kind === 'refund.create' && r.action.actor.side === 'buyer' && r.status === 'pending_approval');
+      if (open) return { ...refundRequestForBuyer(open), note: 'A request for this order is already with the shop owner.' };
+      const record = await ctx.services.seller.refund(
+        shopId,
+        input.cart_id,
+        { amount: input.amount, reason: input.reason },
+        { type: 'agent', id: `buyer-agent:${ctx.channel}`, side: 'buyer' },
+      );
+      return refundRequestForBuyer(record);
     },
   },
 ];
@@ -392,18 +425,56 @@ async function liveCatalog(ctx: ToolContext) {
   return catalog;
 }
 
-/** A buyer endpoint may only see carts of its own shop. */
-async function ownCart(ctx: ToolContext, cartId: string): Promise<void> {
+/** A buyer endpoint may only see carts of its own shop. Returns that shop's id. */
+async function ownCart(ctx: ToolContext, cartId: string): Promise<string> {
   const catalog = await liveCatalog(ctx);
   const cart = await ctx.services.commerce.getCart(cartId).catch(() => undefined);
   const stored = cart && (await ctx.services.seller.orders(catalog.shop.id)).some((o) => o.id === cartId);
   if (!stored) throw new ToolError(`No cart ${cartId} at this shop`);
+  return catalog.shop.id;
+}
+
+const PAYMENT_FOR_BUYER: Record<string, string> = {
+  paid: 'Charged. The shop is preparing the order.',
+  awaiting_owner: 'Authorized in PayPal. The shop confirms it before charging.',
+  released: 'Cancelled by the shop. The buyer was not charged and the PayPal hold was released.',
+};
+
+/** What a buyer's assistant may know about a paid order: no internal ids, no other buyers. */
+async function orderForBuyer(ctx: ToolContext, shopId: string, cartId: string) {
+  const { order, records } = await ctx.services.seller.order(shopId, cartId);
+  return {
+    number: order.number,
+    payment: PAYMENT_FOR_BUYER[order.status] ?? order.status,
+    refunded: order.refunded ?? 'nothing',
+    tracking: order.tracking ? { carrier: order.tracking.carrier, number: order.tracking.number } : 'not shipped yet',
+    refund_requests: records.filter((r) => r.action.kind === 'refund.create' && r.action.actor.side === 'buyer').map(refundRequestForBuyer),
+  };
+}
+
+function refundRequestForBuyer(record: GuardRecord) {
+  const status: Record<string, string> = {
+    pending_approval: 'waiting for the shop owner',
+    verified: 'refunded through PayPal',
+    executed: 'refund sent to PayPal',
+    rejected: 'declined by the shop owner',
+    denied: 'not possible',
+    failed: 'PayPal could not complete it',
+  };
+  return {
+    request_id: record.id,
+    amount: record.action.amount !== undefined ? formatMoney(record.action.amount, record.action.currency ?? 'USD') : 'everything still refundable',
+    reason: record.action.reason,
+    status: status[record.status] ?? record.status,
+    ...(record.status === 'denied' ? { why: record.decision?.hits.filter((h) => h.ruleId === 'simulation').map((h) => h.message) } : {}),
+    asked_at: record.createdAt,
+  };
 }
 
 function cartForAgent(cart: Awaited<ReturnType<Commerce['getCart']>>) {
   const next =
     cart.status === 'COMPLETED'
-      ? 'Order placed. Nothing else to do.'
+      ? "Order placed. For a problem with it, use request_refund with the buyer's reason."
       : cart.payment_method?.approval_url
         ? 'Send the buyer to approval_url to pay with PayPal. The order completes when they approve.'
         : 'Fix the validation_issues (apply a resolution option with update_cart), then the cart gets an approval_url.';

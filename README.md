@@ -32,6 +32,7 @@ propose -> simulate against live PayPal state -> decide (owner's rules) -> [owne
 
 - **Rules decide, not the model.** Owners write rules in plain English ("refunds over $30 need my OK; never accept disputes"). The LLM drafts declarative rules, code validates them, and `evaluate()` applies them deterministically.
 - **Agents can't approve.** Approving needs the owner's signed session. Agent keys are rejected on that route, and no tool or CLI command approves anything.
+- **Buyers ask, owners decide.** A buyer's assistant can follow its order and ask for a refund with `request_refund`, but that request always waits for the owner, however small.
 - **Agents can't loosen their own leash.** Changing the rules is itself a Guard action (`policy.update`) that always waits for the owner when an agent proposes it. This is built in and no policy can turn it off.
 - **Simulated first.** A refund larger than what's still refundable, or a capture on an expired authorization, is refused before PayPal is called.
 - **Authorize, then capture.** The buyer approves in PayPal; Sayso re-checks stock, places an authorization and captures it through Guard. If the item sold out meanwhile, or the owner rejects a big order, the hold is voided and the buyer is never charged.
@@ -99,7 +100,7 @@ The agent skill in [`skills/sayso/SKILL.md`](skills/sayso/SKILL.md) (open Agent 
 
 | Endpoint | Auth | Tools |
 |---|---|---|
-| `POST /api/shops/<slug>/mcp` | none | `search_products`, `create_cart`, `update_cart`, `get_cart` |
+| `POST /api/shops/<slug>/mcp` | none | `search_products`, `create_cart`, `update_cart`, `get_cart` (order status, refunds, tracking), `request_refund` (goes to the owner) |
 | `POST /api/mcp` | `Authorization: Bearer sk_agent_...` | `shop_overview`, `list_products`, `update_variant`, `list_orders`, `get_order`, `refund_order`, `add_tracking`, `list_approvals`, `get_say_so`, `get_policy`, `propose_policy`, `audit_log` |
 
 Streamable HTTP, stateless JSON responses, protocol versions `2025-11-25`, `2025-06-18` and `2025-03-26`. A remote client config:

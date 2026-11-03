@@ -4,7 +4,7 @@
 
 import { createHash, randomUUID } from 'node:crypto';
 import { evaluate, type Policy } from './policy.ts';
-import type { ActionKind, AuditEvent, Executor, GuardRecord, GuardStore, ProposedAction } from './types.ts';
+import type { ActionKind, AuditEvent, Executor, GuardRecord, GuardStore, ProposedAction, RuleHit } from './types.ts';
 
 const HUMAN_ONLY = new Set<ActionKind>(['policy.update']);
 
@@ -55,12 +55,10 @@ export class Guard {
           verdict: 'deny',
           hits: record.simulation.blockers.map((message) => ({ ruleId: 'simulation', verdict: 'deny' as const, message })),
         };
-    // Built in, not part of any policy: an agent can never change its own rules without the owner.
-    if (HUMAN_ONLY.has(action.kind) && action.actor.type === 'agent' && record.decision.verdict === 'allow') {
-      record.decision = {
-        verdict: 'require_approval',
-        hits: [...record.decision.hits, { ruleId: 'built-in:human-only', verdict: 'require_approval', message: 'Agents can propose policy changes, but only the owner can apply them.' }],
-      };
+    // Built in, not part of any policy, so no policy can switch them off.
+    const builtIn = builtInEscalation(action);
+    if (builtIn && record.decision.verdict === 'allow') {
+      record.decision = { verdict: 'require_approval', hits: [...record.decision.hits, builtIn] };
     }
     append(record, 'decided', 'sayso', { ...record.decision }, this.now());
 
@@ -137,6 +135,20 @@ export class Guard {
   private now(): Date {
     return this.deps.now?.() ?? new Date();
   }
+}
+
+/**
+ * An agent can never change its own rules, and the other side of a sale can never move the shop's
+ * money: a refund asked for by the buyer's assistant is a request the owner decides.
+ */
+function builtInEscalation(action: ProposedAction): RuleHit | undefined {
+  if (HUMAN_ONLY.has(action.kind) && action.actor.type === 'agent') {
+    return { ruleId: 'built-in:human-only', verdict: 'require_approval', message: 'Agents can propose policy changes, but only the owner can apply them.' };
+  }
+  if (action.actor.side === 'buyer' && action.kind === 'refund.create') {
+    return { ruleId: 'built-in:buyer-request', verdict: 'require_approval', message: "The buyer's assistant asked for this refund. Only you decide." };
+  }
+  return undefined;
 }
 
 function append(record: GuardRecord, type: AuditEvent['type'], by: string, data: Record<string, unknown> | undefined, at: Date): void {

@@ -134,15 +134,23 @@ export function Status({ value }: { value: string }) {
 }
 
 /** Who asked: agents and people are told apart everywhere money is involved. */
-export function Who({ actor }: { actor: { type: 'agent' | 'human'; id: string } }) {
+export function Who({ actor }: { actor: { type: 'agent' | 'human'; id: string; side?: 'buyer' | 'merchant' } }) {
   const agent = actor.type === 'agent';
-  const name = agent ? (actor.id === 'sayso-ops-agent' ? 'Sayso checkout' : (actor.id.split(':')[1] ?? actor.id)) : actor.id.startsWith('owner:') ? 'Owner' : actor.id;
+  const name = actorName(actor);
   return (
     <span className={`who ${agent ? 'who-agent' : 'who-person'}`}>
       <Icon name={agent ? 'agent' : 'person'} size={14} />
       {name}
     </span>
   );
+}
+
+/** How an actor reads to the owner: their agents by label, buyers' assistants as such, people as "You". */
+export function actorName(actor: { type: 'agent' | 'human'; id: string; side?: 'buyer' | 'merchant' }): string {
+  if (actor.type !== 'agent') return actor.id.startsWith('owner:') ? 'You' : actor.id;
+  if (actor.id === 'sayso-ops-agent') return 'Sayso checkout';
+  const label = actor.id.split(':')[1] ?? actor.id;
+  return actor.side === 'buyer' ? `Buyer's assistant (${label})` : label;
 }
 
 export const ACTION_LABEL: Record<string, string> = {

@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { AuditGrid, type AuditRow } from '@/app/_components/grids.tsx';
-import { ACTION_LABEL } from '@/app/_components/ui.tsx';
+import { ACTION_LABEL, actorName } from '@/app/_components/ui.tsx';
 import { formatMoney } from '@/core/money.ts';
 import { ownerView, when } from '@/server/owner.ts';
 
@@ -20,7 +20,7 @@ export default async function Activity() {
       at: when(r.createdAt),
       action: ACTION_LABEL[r.action.kind] ?? r.action.kind,
       amount: r.action.amount !== undefined ? formatMoney(r.action.amount, r.action.currency ?? shop.currency) : '',
-      by: agent ? (r.action.actor.id === 'sayso-ops-agent' ? 'Sayso checkout' : (r.action.actor.id.split(':')[1] ?? 'agent')) : 'You',
+      by: actorName(r.action.actor),
       byAgent: agent,
       status: r.status,
       why: r.decision?.hits.map((h) => h.message).join(' ') || r.action.reason,

@@ -23,7 +23,7 @@ test('MCP handshake: buyer endpoint lists buyer tools, an agent key adds seller 
   const list = async (ctx: object) =>
     ((await handleMcp({ jsonrpc: '2.0', id: 2, method: 'tools/list' }, { services: s.services, channel: 't', ...ctx })) as any).result.tools.map((t: { name: string }) => t.name);
   const buyerTools = await list(s.buyer);
-  assert.deepEqual(buyerTools, ['search_products', 'create_cart', 'update_cart', 'get_cart']);
+  assert.deepEqual(buyerTools, ['search_products', 'create_cart', 'update_cart', 'get_cart', 'request_refund']);
   const sellerTools = await list(s.owner);
   assert.ok(sellerTools.includes('refund_order') && sellerTools.includes('propose_policy'));
   assert.ok(!sellerTools.some((n: string) => /approve|decide/.test(n)), 'no tool can approve a say-so request');
@@ -186,4 +186,37 @@ test('onboarding: a new shop starts as a draft, and publishing registers it with
   const theirs = await s.access.agentFromHeader(`Bearer ${agentKey}`);
   const orders = await s.call('list_orders', {}, { agent: { shopId: theirs!.shopId, keyId: theirs!.id, label: theirs!.label } });
   assert.deepEqual(orders.data, []);
+});
+
+test("buyer's assistant: follows the order, asks for a refund, and the owner always decides", async () => {
+  const s = await stack();
+  const cartId = await buyMug(s); // $44.99, well under the $50 refund limit the owner's own agent has
+  await s.call('add_tracking', { order_id: cartId, carrier: 'USPS', tracking_number: '9400111899223' }, s.owner);
+
+  const paid = await s.call('get_cart', { cart_id: cartId }, s.buyer);
+  assert.equal(paid.data.order.payment, 'Charged. The shop is preparing the order.');
+  assert.deepEqual(paid.data.order.tracking, { carrier: 'USPS', number: '9400111899223' });
+  assert.equal(paid.data.order.refunded, 'nothing');
+
+  const asked = await s.call('request_refund', { cart_id: cartId, amount: '10.00', reason: 'Arrived with a chipped rim' }, s.buyer);
+  assert.equal(asked.data.status, 'waiting for the shop owner', 'even a small buyer request waits for the owner');
+  assert.equal(s.approvals.length, 1, 'the owner was notified');
+
+  const again = await s.call('request_refund', { cart_id: cartId, reason: 'Please hurry' }, s.buyer);
+  assert.equal(again.data.request_id, asked.data.request_id, 'no duplicate requests while one is open');
+
+  const [pending] = await s.seller.approvals('shop_maya');
+  assert.equal(pending.action.actor.side, 'buyer');
+  assert.ok(pending.decision?.hits.some((h) => h.ruleId === 'built-in:buyer-request'));
+  await s.seller.decide('shop_maya', pending.id, 'approve', 'owner:shop_maya');
+
+  const after = await s.call('get_cart', { cart_id: cartId }, s.buyer);
+  assert.equal(after.data.order.refunded, '$10.00');
+  assert.equal(after.data.order.refund_requests[0].status, 'refunded through PayPal');
+  assert.ok(!JSON.stringify(after.data).includes('CAP'), "PayPal capture ids stay with the shop");
+
+  const unpaid = await s.call('create_cart', { items: [{ variant_id: 'var_bowl_sand', quantity: 1 }], shipping_address: address }, s.buyer);
+  const nope = await s.call('request_refund', { cart_id: unpaid.data.cart_id, reason: 'Changed my mind' }, s.buyer);
+  assert.equal(nope.isError, true);
+  assert.match(nope.text, /not been charged/);
 });
