@@ -141,7 +141,7 @@ export class Guard {
 
 function append(record: GuardRecord, type: AuditEvent['type'], by: string, data: Record<string, unknown> | undefined, at: Date): void {
   const prev = record.events.at(-1)?.hash ?? record.id;
-  const body = JSON.stringify({ at: at.toISOString(), type, by, data });
+  const body = canonicalJson({ at: at.toISOString(), type, by, data });
   const hash = createHash('sha256').update(prev).update(body).digest('hex');
   record.events.push({ at: at.toISOString(), type, by, data, hash });
 }
@@ -150,12 +150,24 @@ function append(record: GuardRecord, type: AuditEvent['type'], by: string, data:
 export function verifyAuditChain(record: GuardRecord): boolean {
   let prev = record.id;
   for (const e of record.events) {
-    const body = JSON.stringify({ at: e.at, type: e.type, by: e.by, data: e.data });
+    const body = canonicalJson({ at: e.at, type: e.type, by: e.by, data: e.data });
     const hash = createHash('sha256').update(prev).update(body).digest('hex');
     if (hash !== e.hash) return false;
     prev = hash;
   }
   return true;
+}
+
+/**
+ * JSON with object keys sorted at every level, so a record hashes the same after a round-trip through
+ * storage that reorders keys (Postgres jsonb does).
+ */
+export function canonicalJson(value: unknown): string {
+  return JSON.stringify(value, (_key, v: unknown) =>
+    v && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(Object.entries(v as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : v,
+  );
 }
 
 function errorMessage(err: unknown): string {

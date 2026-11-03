@@ -102,6 +102,16 @@ test('tampering with an audit event breaks the chain', async () => {
   assert.equal(verifyAuditChain(r), false);
 });
 
+test('the audit chain survives storage that reorders JSON keys (Postgres jsonb)', async () => {
+  const { guard } = setup();
+  const r = await guard.submit(refund(2_000));
+  const reorder = (v: unknown): unknown =>
+    Array.isArray(v) ? v.map(reorder) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).reverse().map(([k, x]) => [k, reorder(x)])) : v;
+  const roundTripped = reorder(JSON.parse(JSON.stringify(r))) as GuardRecord;
+  assert.notEqual(JSON.stringify(roundTripped.events[1]), JSON.stringify(r.events[1]), 'keys really were reordered');
+  assert.equal(verifyAuditChain(roundTripped), true);
+});
+
 test('buyer mandate: daily total escalates even when each order is small', () => {
   const policy = defaultBuyerPolicy('buyer_1');
   const buyerAgent = { type: 'agent' as const, id: 'buyer-agent', side: 'buyer' as const };
