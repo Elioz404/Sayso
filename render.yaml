@@ -1,0 +1,37 @@
+# Render Blueprint: one Node web service + Postgres. Secrets are set in the Render dashboard (sync: false).
+# Use a paid Postgres plan: free databases expire after 30 days, and judging runs until Dec 15.
+services:
+  - type: web
+    name: sayso
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: PAYPAL_ENV
+        value: sandbox
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: DEEPSEEK_MODEL
+        value: deepseek-flash
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: AG_STUDIO_LICENSE
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sayso-db
+          property: connectionString
+
+databases:
+  - name: sayso-db
+    plan: basic-256mb
