@@ -17,6 +17,7 @@ const PATHS: Record<string, ReactNode> = {
   check: <path d="M5 12.5l4.5 4.5L19 7.5" />,
   x: <path d="M6 6l12 12M18 6L6 18" />,
   arrow: <path d="M5 12h14M13 6l6 6-6 6" />,
+  back: <path d="M19 12H5M11 6l-6 6 6 6" />,
   copy: (
     <>
       <rect x="8" y="8" width="12" height="12" rx="2" />
@@ -55,6 +56,17 @@ const PATHS: Record<string, ReactNode> = {
     </>
   ),
   link: <path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1" />,
+  home: <path d="M4 11l8-6 8 6v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1v-8z" />,
+  list: <path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" />,
+  box: (
+    <>
+      <path d="M4 8l8-4 8 4v8l-8 4-8-4V8z" />
+      <path d="M4 8l8 4 8-4M12 12v8" />
+    </>
+  ),
+  activity: <path d="M3 12h4l3-7 4 14 3-7h4" />,
+  external: <path d="M14 5h5v5M19 5l-8 8M18 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h4" />,
+  out: <path d="M10 5H6a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h4M15 16l4-4-4-4M19 12H9" />,
   chain: (
     <>
       <rect x="3" y="9" width="8" height="6" rx="3" />
@@ -117,7 +129,7 @@ const STATUS_TONE: Record<string, 'ok' | 'hold' | 'stop' | 'quiet'> = {
 };
 
 export function Status({ value }: { value: string }) {
-  return <span className={`pill pill-${STATUS_TONE[value] ?? 'quiet'}`}>{STATUS_LABEL[value] ?? value.replace(/_/g, ' ')}</span>;
+  return <span className={`status status-${STATUS_TONE[value] ?? 'quiet'}`}>{STATUS_LABEL[value] ?? value.replace(/_/g, ' ')}</span>;
 }
 
 /** Who asked: agents and people are told apart everywhere money is involved. */

@@ -153,7 +153,7 @@ export class Commerce {
       currency: authorization.amount.currency_code,
       counterparty: order.payer?.email_address,
       resourceId: authorization.id,
-      reason: `Order ${stored.id}: buyer approved, items in stock.`,
+      reason: 'The buyer approved in PayPal and the items are in stock.',
       params: { cartId: stored.id, orderId: order.id, channel: stored.channel },
     });
     stored.guardRecordId = record.id;

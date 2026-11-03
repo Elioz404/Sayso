@@ -24,6 +24,36 @@ export function NavLinks({ signedIn }: { signedIn: boolean }) {
   );
 }
 
+export interface RailItem {
+  href: string;
+  label: string;
+  icon: string;
+  count?: number;
+}
+
+/** The owner area's navigation; marks the current view. */
+export function RailNav({ items }: { items: RailItem[] }) {
+  const path = usePathname();
+  return (
+    <nav className="rail-nav" aria-label="Shop">
+      {items.map((item) => {
+        const current = item.href === '/owner' ? path === '/owner' : path.startsWith(item.href);
+        return (
+          <a key={item.href} href={item.href} aria-current={current ? 'page' : undefined}>
+            <Icon name={item.icon} size={18} />
+            {item.label}
+            {item.count ? (
+              <span className="count-badge" aria-label={`${item.count} waiting`}>
+                {item.count}
+              </span>
+            ) : null}
+          </a>
+        );
+      })}
+    </nav>
+  );
+}
+
 /** Copies text; falls back to selecting it when the clipboard is unavailable. */
 export function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) {
   const [state, setState] = useState<'idle' | 'copied' | 'select'>('idle');

@@ -33,7 +33,7 @@ export function LoginForm({ demo }: { demo: boolean }) {
   }
 
   return (
-    <div className="stack-lg">
+    <div className="stack" style={{ gap: 'var(--s4)' }}>
       <form
         className="panel panel-raised stack"
         style={{ gap: 16 }}
@@ -82,7 +82,7 @@ export function SignOut() {
         router.refresh();
       }}
     >
-      Sign out
+      <Icon name="out" size={16} /> Sign out
     </button>
   );
 }
@@ -113,7 +113,7 @@ export function Decision({ id, big = false }: { id: string; big?: boolean }) {
           <input id={`note-${id}`} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Saved in the audit log" maxLength={300} />
         </div>
       )}
-      <div className="decide">
+      <div className={`decide${big ? ' decide-big' : ''}`}>
         <button className={`btn btn-primary${big ? ' btn-big' : ''}`} disabled={Boolean(busy)} onClick={() => void decide('approve')}>
           <Icon name="check" size={18} />
           {busy === 'approve' ? 'Approving...' : 'Say OK'}
