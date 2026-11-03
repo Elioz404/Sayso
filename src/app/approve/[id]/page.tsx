@@ -16,9 +16,8 @@ export default async function Approve({ params }: { params: Promise<{ id: string
   const shopId = await ownerShopId();
   if (!shopId) {
     return (
-      <main className="wrap wrap-narrow stack-lg">
-        <div className="stack" style={{ gap: 10 }}>
-          <span className="eyebrow">Something needs your OK</span>
+      <main className="wrap wrap-narrow page stack" style={{ gap: 'var(--s6)' }}>
+        <div className="stack" style={{ gap: 'var(--s2)' }}>
           <h1>Sign in to decide</h1>
           <p className="soft">Only the shop owner can see and approve this request.</p>
         </div>
@@ -31,7 +30,7 @@ export default async function Approve({ params }: { params: Promise<{ id: string
   const record = await guardStore.get(id);
   if (!record || record.action.ownerId !== shopId) {
     return (
-      <main className="wrap wrap-narrow stack">
+      <main className="wrap wrap-narrow page stack">
         <h1>Request not found</h1>
         <p className="soft">It doesn&apos;t belong to the shop you&apos;re signed in to.</p>
         <a href="/owner">Back to your shop</a>
@@ -46,7 +45,7 @@ export default async function Approve({ params }: { params: Promise<{ id: string
   const effects = (record.simulation?.effects ?? []).map((e) => e.replace(/^- /, ''));
 
   return (
-    <main className="wrap wrap-narrow" style={{ paddingTop: 28, paddingBottom: 80 }}>
+    <main className="wrap wrap-narrow page" style={{ paddingTop: 'var(--s6)' }}>
       <article className="sayso-card" style={{ maxWidth: 'none' }}>
         <div className="spread">
           <Who actor={action.actor} />
@@ -59,7 +58,7 @@ export default async function Approve({ params }: { params: Promise<{ id: string
           {action.counterparty && <span className="small soft">to {action.counterparty}</span>}
         </div>
 
-        <p className="quote">&ldquo;{action.reason}&rdquo;</p>
+        <p className="reason">&ldquo;{action.reason}&rdquo;</p>
 
         <ul className="facts">
           <li>
@@ -72,7 +71,7 @@ export default async function Approve({ params }: { params: Promise<{ id: string
           </li>
           <li>
             <span>Needs you</span>
-            <span className="stack" style={{ gap: 4 }}>
+            <span className="stack needs" style={{ gap: 4 }}>
               {record.decision?.hits.map((h) => (
                 <span key={h.ruleId + h.message}>{h.message}</span>
               ))}

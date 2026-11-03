@@ -6,19 +6,18 @@ export const metadata: Metadata = { title: 'Open your shop' };
 
 export default function Start() {
   return (
-    <main className="wrap">
+    <main className="wrap page">
       <div className="split split-start">
-        <div className="stack-lg">
-          <div className="stack" style={{ gap: 10 }}>
-            <span className="eyebrow">New shop</span>
+        <div className="stack" style={{ gap: 'var(--s5)' }}>
+          <div className="stack" style={{ gap: 'var(--s2)' }}>
             <h1>Open your shop to AI shoppers</h1>
             <p className="lede">Add a few photos and say what things cost. Sayso drafts the catalog for you to check.</p>
           </div>
           <OnboardForm origin={baseUrl()} />
         </div>
 
-        <aside className="panel stack-lg" style={{ alignSelf: 'start' }}>
-          <h3>What happens next</h3>
+        <aside className="panel stack" style={{ alignSelf: 'start', gap: 'var(--s5)' }}>
+          <h2>What happens next</h2>
           <ol className="steps">
             <li>
               <span className="stack" style={{ gap: 2 }}>

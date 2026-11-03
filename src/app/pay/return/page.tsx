@@ -14,7 +14,7 @@ export default async function PayReturn({ searchParams }: { searchParams: Promis
   const { cart, token, PayerID } = await searchParams;
   if (!cart || !token) {
     return (
-      <main className="wrap wrap-narrow stack">
+      <main className="wrap wrap-narrow page stack">
         <h1>This link is incomplete</h1>
         <p className="soft">It is missing the cart or the PayPal token. Go back to your assistant and open the payment link again.</p>
       </main>
@@ -29,7 +29,7 @@ export default async function PayReturn({ searchParams }: { searchParams: Promis
     const pending = result.payment_confirmation?.payment_status !== 'CAPTURED';
     const total = result.totals?.total;
     return (
-      <main className="wrap wrap-narrow">
+      <main className="wrap wrap-narrow page">
         <article className="sayso-card" style={{ maxWidth: 'none' }}>
           <span className="row ok-text" style={{ gap: 8, fontWeight: 650 }}>
             <Icon name="check" size={20} /> Order placed
@@ -54,7 +54,7 @@ export default async function PayReturn({ searchParams }: { searchParams: Promis
   } catch (err) {
     const message = err instanceof HttpError ? err.message : 'Something went wrong';
     return (
-      <main className="wrap wrap-narrow">
+      <main className="wrap wrap-narrow page">
         <article className="sayso-card" style={{ maxWidth: 'none' }}>
           <h1>We couldn&apos;t complete this order</h1>
           <p className="soft">{message}.</p>

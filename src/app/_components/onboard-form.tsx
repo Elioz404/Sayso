@@ -43,7 +43,7 @@ export function OnboardForm({ origin }: { origin: string }) {
   return (
     <form
       className="panel stack"
-      style={{ gap: 18 }}
+      style={{ gap: 'var(--s5)' }}
       onSubmit={async (e) => {
         e.preventDefault();
         const form = new FormData(e.currentTarget);
@@ -142,9 +142,9 @@ export function OnboardForm({ origin }: { origin: string }) {
 
 function CreatedShop({ created, origin }: { created: Created; origin: string }) {
   return (
-    <div className="stack-lg">
-      <div className="panel stack" style={{ gap: 10 }}>
-        <span className="eyebrow ok-text">Draft ready</span>
+    <div className="stack" style={{ gap: 'var(--s5)' }}>
+      <div className="panel stack" style={{ gap: 'var(--s3)' }}>
+        <span className="status status-ok">Draft ready</span>
         <h2>
           {created.shop.name}, {created.products} product{created.products === 1 ? '' : 's'}
         </h2>
@@ -162,7 +162,7 @@ function CreatedShop({ created, origin }: { created: Created; origin: string }) 
 
       <div className="panel panel-hold stack" style={{ gap: 14 }}>
         <div className="stack" style={{ gap: 4 }}>
-          <h3>Save these two keys now</h3>
+          <h2>Save these two keys now</h2>
           <p className="small soft">They are shown only once. Store them in a password manager.</p>
         </div>
         <div className="stack" style={{ gap: 6 }}>
@@ -180,7 +180,7 @@ function CreatedShop({ created, origin }: { created: Created; origin: string }) 
       </div>
 
       <div className="panel stack" style={{ gap: 16 }}>
-        <h3>Next</h3>
+        <h2>Next</h2>
         <ol className="steps">
           <li>
             <span className="stack" style={{ gap: 6 }}>

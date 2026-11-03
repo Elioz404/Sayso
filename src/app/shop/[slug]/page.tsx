@@ -19,7 +19,7 @@ export default async function ShopPage({ params }: { params: Promise<{ slug: str
   const catalog = await catalogs.bySlug(slug);
   if (!catalog || !isLive(catalog)) {
     return (
-      <main className="wrap wrap-narrow stack">
+      <main className="wrap wrap-narrow page stack">
         <h1>Shop not found</h1>
         <p className="soft">It may not be published yet.</p>
       </main>
@@ -29,13 +29,12 @@ export default async function ShopPage({ params }: { params: Promise<{ slug: str
   const money = (minor: number) => formatMoney(minor, shop.currency);
 
   return (
-    <main className="wrap stack-lg" style={{ gap: 36 }}>
+    <main className="wrap page stack" style={{ gap: 'var(--s6)' }}>
       <div className="split" style={{ alignItems: 'end' }}>
         <div className="stack" style={{ gap: 10 }}>
-          <span className="eyebrow">Ships from {shop.country}</span>
-          <h1 style={{ fontSize: 'var(--step-4)' }}>{shop.name}</h1>
+          <h1 className="display" style={{ fontSize: 'var(--t-display)', lineHeight: 1.05 }}>{shop.name}</h1>
           <p className="soft">
-            {shop.returnPolicy.days}-day returns{shop.returnPolicy.buyerPaysReturn ? '' : ', free'} · Pay with PayPal
+            Ships from {shop.country} · {shop.returnPolicy.days}-day returns{shop.returnPolicy.buyerPaysReturn ? '' : ', free'} · Pay with PayPal
           </p>
         </div>
         <div className="panel panel-raised stack" style={{ gap: 10 }}>
@@ -52,8 +51,7 @@ export default async function ShopPage({ params }: { params: Promise<{ slug: str
         {catalog.products.map((p) => (
           <article className="product" key={p.id}>
             <div className="stack" style={{ gap: 4 }}>
-              <span className="eyebrow">{p.category.replace('/', ' · ')}</span>
-              <h3>{p.name}</h3>
+              <h2 style={{ fontSize: 'var(--t-md)' }}>{p.name}</h2>
               <p className="small soft">{p.description}</p>
             </div>
             <ul className="variants">
