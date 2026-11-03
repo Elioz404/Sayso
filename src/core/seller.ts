@@ -13,6 +13,7 @@ import type { Catalog } from './catalog.ts';
 import { formatMoney, toMinor } from './money.ts';
 import type { PayPalClient } from './paypal/client.ts';
 import { addTracking } from './paypal/orders.ts';
+import { getInvoice, invoiceTotal, type InvoiceParams } from './paypal/invoices.ts';
 import type { Shops } from './shops.ts';
 
 export interface SellerDeps {
@@ -160,6 +161,78 @@ export class Seller {
       if (err instanceof HttpError) throw err;
       throw new HttpError(409, err instanceof Error ? err.message : 'Could not decide');
     }
+  }
+
+  /**
+   * Invoice a custom order (a commission, a made-to-order piece). Goes through Guard: by default a
+   * large invoice, or a first invoice to someone who has never paid this shop, waits for the owner.
+   */
+  async sendInvoice(
+    shopId: string,
+    input: { to: { email: string; name?: string }; items: { name: string; price: string; quantity?: number }[]; note?: string; dueDays?: number; deposit?: string },
+    actor: Actor,
+  ): Promise<GuardRecord> {
+    const catalog = await this.deps.shops.get(shopId);
+    const currency = catalog.shop.currency;
+    const minor = (value: string, what: string) => {
+      try {
+        return toMinor({ currency_code: currency, value: value.replace(/[$,\s]/g, '') });
+      } catch {
+        throw new HttpError(400, `${what} must look like 62.00 (${currency})`);
+      }
+    };
+    const email = input.to.email.trim().toLowerCase();
+    const params: InvoiceParams = {
+      to: { email, name: input.to.name?.trim() || undefined },
+      items: input.items.map((i) => ({ name: i.name.trim(), quantity: i.quantity ?? 1, unitAmount: minor(i.price, 'Each price') })),
+      currency,
+      note: input.note?.trim() || undefined,
+      dueDays: input.dueDays ?? 0,
+      depositMinor: input.deposit ? minor(input.deposit, 'The deposit') : undefined,
+      shopName: catalog.shop.name,
+      newCounterparty: !(await this.hasPaid(shopId, email)),
+    };
+    return this.deps.guard.submit({
+      kind: 'invoice.send',
+      actor,
+      ownerId: shopId,
+      amount: invoiceTotal(params),
+      currency,
+      counterparty: email,
+      resourceId: email,
+      reason: `Invoice ${email} for ${params.items.map((i) => `${i.quantity}x ${i.name}`).join(', ')}`.slice(0, 300),
+      params,
+    });
+  }
+
+  /** Invoices this shop sent or wants to send, with their live status read from PayPal. */
+  async invoices(shopId: string, limit = 20) {
+    const records = (await this.deps.guardStore.listSince(shopId, new Date(0))).filter((r) => r.action.kind === 'invoice.send').slice(0, limit);
+    return Promise.all(
+      records.map(async (r) => {
+        const p = r.action.params as unknown as InvoiceParams;
+        const invoiceId = typeof r.result?.invoice_id === 'string' ? r.result.invoice_id : undefined;
+        const live = invoiceId ? await getInvoice(this.deps.paypal, invoiceId).catch(() => undefined) : undefined;
+        return {
+          say_so_id: r.id,
+          to: p.to.email,
+          total: formatMoney(r.action.amount ?? 0, r.action.currency ?? p.currency),
+          items: p.items.map((i) => `${i.quantity}x ${i.name}`).join(', '),
+          number: live?.detail.invoice_number ?? (r.result?.number as string | undefined),
+          status: live ? live.status.toLowerCase().replace(/_/g, ' ') : r.status === 'pending_approval' ? 'waiting for the owner' : r.status,
+          payer_url: live?.detail.metadata?.recipient_view_url ?? (r.result?.payer_url as string | undefined),
+          at: r.createdAt,
+        };
+      }),
+    );
+  }
+
+  /** Has this person paid the shop before: a paid order, or an invoice that went out to them? */
+  private async hasPaid(shopId: string, email: string): Promise<boolean> {
+    const carts = await this.deps.carts.listByShop(shopId);
+    if (carts.some((c) => c.captureId && c.cart.customer?.email_address?.toLowerCase() === email)) return true;
+    const records = await this.deps.guardStore.listSince(shopId, new Date(0));
+    return records.some((r) => r.action.kind === 'invoice.send' && r.status === 'verified' && r.action.counterparty === email);
   }
 
   /** What agents tried to buy and couldn't: the demand a seller is missing. */

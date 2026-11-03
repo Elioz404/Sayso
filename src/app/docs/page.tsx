@@ -24,6 +24,8 @@ const CLI = [
   ['sayso orders', 'Recent orders; sayso order SAY-... for one'],
   ['sayso refund SAY-... 10.00 --reason "..."', 'Refund through your rules'],
   ['sayso track SAY-... USPS 9400...', 'Add shipment tracking in PayPal'],
+  ['sayso invoice <email> "Custom vase" 62.00 --deposit 31.00', 'Invoice a custom order through PayPal'],
+  ['sayso invoices', 'Invoices with their live status'],
   ['sayso price <variant> 38.00', 'Change a price'],
   ['sayso stock <variant> 4', 'Set stock'],
   ['sayso approvals', "What is waiting for you (read-only)"],
@@ -138,7 +140,7 @@ export default function Docs() {
               <code>{`${url}/api/mcp/sk_agent_...`}</code>
             </div>
             <p>
-              Your agent can now check orders, refund, add tracking, change prices and stock, and propose rules. Anything over your limits waits for you on
+              Your agent can now check orders, refund, add tracking, invoice custom orders, change prices and stock, and propose rules. Anything over your limits waits for you on
               your phone, and the agent is told so. Revoke the key in Agents and the URL stops working at once.
             </p>
           </section>
@@ -189,7 +191,7 @@ export default function Docs() {
               </li>
               <li>
                 <span className="rule-kind rule-ask">Asks you</span>
-                <span>Anything over your limits, every refund a buyer asks for, and every change to your rules.</span>
+                <span>Anything over your limits, the first invoice to someone who has never paid you, every refund a buyer asks for, and every change to your rules.</span>
               </li>
               <li>
                 <span className="rule-kind rule-block">Never</span>
@@ -246,7 +248,7 @@ export default function Docs() {
                   <tr>
                     <td className="mono">/api/mcp/&lt;agent key&gt;</td>
                     <td>The owner&apos;s agent</td>
-                    <td className="small">shop_overview, list_products, update_variant, list_orders, get_order, refund_order, add_tracking, list_approvals, get_say_so, get_policy, propose_policy, audit_log</td>
+                    <td className="small">shop_overview, list_products, update_variant, list_orders, get_order, refund_order, add_tracking, send_invoice, list_invoices, list_approvals, get_say_so, get_policy, propose_policy, audit_log</td>
                   </tr>
                 </tbody>
               </table>

@@ -60,7 +60,7 @@ function parseArgs(argv: string[]): Args {
   return { positional, flags };
 }
 
-const VALUE_FLAGS = new Set(['url', 'key', 'reason', 'status', 'limit', 'name', 'text', 'file', 'currency', 'country', 'label', 'query', 'max-price']);
+const VALUE_FLAGS = new Set(['url', 'key', 'reason', 'status', 'limit', 'name', 'text', 'file', 'currency', 'country', 'label', 'query', 'max-price', 'note', 'deposit', 'due']);
 
 function flag(args: Args, name: string): string | undefined {
   const v = args.flags[name];
@@ -346,6 +346,42 @@ const commands: Record<string, { usage: string; summary: string; run: Command }>
       if (!order || !carrier || !number) throw new CliError(this.usage, EXIT.usage);
       const o = await tool(config, 'add_tracking', { order_id: order, carrier, tracking_number: number });
       out(json, o, () => console.log(`Tracking ${o.tracking.carrier} ${o.tracking.number} added to ${o.number ?? o.id}.`));
+    },
+  },
+  invoice: {
+    usage: 'sayso invoice <email> "<item>" <price> ["<item>" <price> ...] [--note "..."] [--deposit 31.00] [--due 0|10|15|30] [--name "Grace"]',
+    summary: 'Invoice a custom order through PayPal (goes through the owner\'s say-so rules)',
+    async run(args, config, json) {
+      const [email, ...rest] = args.positional;
+      if (!email || rest.length < 2 || rest.length % 2) throw new CliError(this.usage, EXIT.usage);
+      const items = [];
+      for (let i = 0; i < rest.length; i += 2) items.push({ name: rest[i], price: rest[i + 1] });
+      const due = flag(args, 'due');
+      const r = await tool(config, 'send_invoice', {
+        email,
+        name: flag(args, 'name'),
+        items,
+        note: flag(args, 'note'),
+        deposit: flag(args, 'deposit'),
+        due_in_days: due !== undefined ? Number(due) : undefined,
+      });
+      if (json) return printJson(r);
+      const code = printSayso(r);
+      if (r.invoice?.payer_url) console.log(`  invoice ${r.invoice.number}: ${r.invoice.payer_url}`);
+      return code;
+    },
+  },
+  invoices: {
+    usage: 'sayso invoices',
+    summary: 'Invoices for custom orders, with their live status in PayPal',
+    async run(_args, config, json) {
+      const list = await tool(config, 'list_invoices');
+      out(json, list, () =>
+        table(
+          list.map((i: any) => ({ number: i.number ?? '-', to: i.to, total: i.total, status: i.status, items: i.items })),
+          ['number', 'to', 'total', 'status', 'items'],
+        ),
+      );
     },
   },
   approvals: {

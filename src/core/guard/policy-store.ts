@@ -81,5 +81,7 @@ export function describeRule(rule: Rule, currency: string): string {
       return `${kinds} outside ${rule.allowed.join(', ')}: ${then}`;
     case 'no_duplicates':
       return `${kinds} repeated within ${rule.windowMinutes} min: block`;
+    case 'new_counterparty':
+      return `${kinds} to someone who has never paid you: ${then}`;
   }
 }

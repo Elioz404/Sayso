@@ -1,6 +1,6 @@
 ---
 name: sayso
-description: Run a small online shop on Sayso for its owner from the terminal - check orders, refund, add tracking, update prices and stock, and propose say-so rules. Use when the user asks about their shop, orders, refunds, stock, buyers, PayPal payments on Sayso, or "what's waiting for me". Money only moves within the owner's rules or with their approval.
+description: Run a small online shop on Sayso for its owner from the terminal - check orders, refund, add tracking, invoice custom orders, update prices and stock, and propose say-so rules. Use when the user asks about their shop, orders, refunds, stock, buyers, PayPal payments on Sayso, or "what's waiting for me". Money only moves within the owner's rules or with their approval.
 ---
 
 # Running a Sayso shop
@@ -41,6 +41,8 @@ If `sayso` is not installed, run it from the repo with `node cli/sayso.ts` inste
 | "Raise the bowl to $52" | `sayso price <variant_id> 52.00 --json` |
 | "Refunds over $30 should need my OK" | `sayso policy propose "refunds over $30 need my OK" --json` |
 | "Did I approve that refund?" | `sayso check <say_so_id> --json` |
+| "Grace wants a cobalt vase for $62, half up front" | `sayso invoice grace@example.com "Custom bud vase, cobalt" 62.00 --deposit 31.00 --json` |
+| "Did Grace pay?" | `sayso invoices --json` |
 
 ## When something waits for the owner (exit code 3, `status: pending_approval`)
 

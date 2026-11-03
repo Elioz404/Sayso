@@ -408,6 +408,55 @@ const sellerTools: Tool[] = [
     },
   },
   {
+    name: 'send_invoice',
+    title: 'Invoice a custom order',
+    description:
+      "Send a PayPal invoice for a custom order agreed with a buyer (a commission, a made-to-order piece), optionally with a deposit. Goes through the owner's rules: a large invoice, or the first one to someone who has never paid the shop, waits for the owner. Prices are what the owner agreed, in the shop's currency.",
+    side: 'seller',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        email: { type: 'string', maxLength: 254, description: "The buyer's email (their PayPal email works best)" },
+        name: { type: 'string', maxLength: 120 },
+        items: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 20,
+          items: {
+            type: 'object',
+            properties: { name: { type: 'string', minLength: 2, maxLength: 200 }, price: money, quantity: { type: 'integer', minimum: 1, maximum: 999 } },
+            required: ['name', 'price'],
+          },
+        },
+        note: { type: 'string', maxLength: 1000, description: 'Shown to the buyer, e.g. "Cobalt glaze, ships in about 10 days"' },
+        due_in_days: { type: 'integer', minimum: 0, maximum: 30, description: '0 (default) means due on receipt; 10, 15 or 30' },
+        deposit: { ...money, description: 'Let the buyer pay this much first, e.g. half up front' },
+      },
+      required: ['email', 'items'],
+    },
+    async run(input, ctx) {
+      const due = input.due_in_days ?? 0;
+      if (![0, 10, 15, 30].includes(due)) throw new ToolError('due_in_days must be 0, 10, 15 or 30');
+      const record = await ctx.services.seller.sendInvoice(
+        shop(ctx),
+        { to: { email: input.email, name: input.name }, items: input.items, note: input.note, dueDays: due, deposit: input.deposit },
+        actor(ctx),
+      );
+      return { ...sayso(record, ctx), invoice: record.result ? { number: record.result.number, status: record.result.status, payer_url: record.result.payer_url } : undefined };
+    },
+  },
+  {
+    name: 'list_invoices',
+    title: 'Invoices',
+    description: 'Invoices sent for custom orders, newest first, with their live status in PayPal (sent, paid, partially paid...) and the payment link.',
+    side: 'seller',
+    annotations: { readOnlyHint: true },
+    inputSchema: { type: 'object', properties: { limit: { type: 'integer', minimum: 1, maximum: 50 } } },
+    async run(input, ctx) {
+      return ctx.services.seller.invoices(shop(ctx), input.limit ?? 20);
+    },
+  },
+  {
     name: 'list_approvals',
     title: 'Waiting for the owner',
     description: 'Say-so requests waiting for the owner, with what would happen and why it needs them. Read-only: only the owner can approve, from their own device.',

@@ -14,6 +14,7 @@ import { MemoryPolicyStore, policyUpdateExecutor, type PolicyStore } from '@/cor
 import type { GuardStore } from '@/core/guard/types.ts';
 import { PayPalClient } from '@/core/paypal/client.ts';
 import { captureExecutor, refundExecutor, voidExecutor } from '@/core/paypal/executors.ts';
+import { invoiceExecutor } from '@/core/paypal/invoices.ts';
 import { Seller } from '@/core/seller.ts';
 import { Shops } from '@/core/shops.ts';
 import type { ToolServices } from '@/core/tools/registry.ts';
@@ -76,6 +77,7 @@ async function create(): Promise<Context> {
     'payment.void': voidExecutor(paypal),
     'refund.create': refundExecutor(paypal),
     'policy.update': policyUpdateExecutor(policies, fallbackPolicy),
+    'invoice.send': invoiceExecutor(paypal),
   };
   const guard = new Guard({
     store: guardStore,

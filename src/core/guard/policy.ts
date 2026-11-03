@@ -21,7 +21,9 @@ export type Rule =
   /** Buyer mandates: only these categories. */
   | { id: string; type: 'categories'; kinds: ActionKind[]; allowed: string[]; then: Escalation }
   /** Same kind + resource + amount again within the window -> deny as a likely duplicate. */
-  | { id: string; type: 'no_duplicates'; kinds: ActionKind[]; windowMinutes: number };
+  | { id: string; type: 'no_duplicates'; kinds: ActionKind[]; windowMinutes: number }
+  /** Someone who has never paid this owner (the caller sets `params.newCounterparty`) -> escalate. */
+  | { id: string; type: 'new_counterparty'; kinds: ActionKind[]; then: Escalation };
 
 export interface Policy {
   ownerId: string;
@@ -84,6 +86,12 @@ export function evaluate(policy: Policy, action: ProposedAction, history: GuardR
         }
         break;
 
+      case 'new_counterparty':
+        if (action.params?.newCounterparty === true) {
+          hits.push({ ruleId: rule.id, verdict: rule.then, message: `${action.counterparty ?? 'This person'} has never paid you before.` });
+        }
+        break;
+
       case 'no_duplicates': {
         const since = now.getTime() - rule.windowMinutes * 60_000;
         const dup = history.find(
@@ -135,12 +143,15 @@ function minutesAgo(iso: string, now: Date): number {
 export function defaultMerchantPolicy(ownerId: string): Policy {
   return {
     ownerId,
-    source: 'Default: refunds over $50 and any dispute acceptance need my OK; never repeat a refund.',
+    source:
+      'Default: refunds over $50 and any dispute acceptance need my OK; invoices over $200 or to someone who has never paid me need my OK; never repeat a refund or an invoice.',
     rules: [
       { id: 'refund-cap', type: 'max_amount', kinds: ['refund.create'], limit: 5_000, then: 'require_approval' },
       { id: 'refund-daily', type: 'daily_total', kinds: ['refund.create'], limit: 20_000, then: 'require_approval' },
-      { id: 'refund-dup', type: 'no_duplicates', kinds: ['refund.create', 'payment.capture'], windowMinutes: 60 },
+      { id: 'refund-dup', type: 'no_duplicates', kinds: ['refund.create', 'payment.capture', 'invoice.send'], windowMinutes: 60 },
       { id: 'disputes-human', type: 'always_approve', kinds: ['dispute.accept'] },
+      { id: 'invoice-cap', type: 'max_amount', kinds: ['invoice.send'], limit: 20_000, then: 'require_approval' },
+      { id: 'invoice-new-client', type: 'new_counterparty', kinds: ['invoice.send'], then: 'require_approval' },
     ],
   };
 }

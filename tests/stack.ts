@@ -10,6 +10,7 @@ import { MemoryPolicyStore, policyUpdateExecutor } from '../src/core/guard/polic
 import { handleMcp } from '../src/core/mcp.ts';
 import { PayPalClient } from '../src/core/paypal/client.ts';
 import { captureExecutor, refundExecutor, voidExecutor } from '../src/core/paypal/executors.ts';
+import { invoiceExecutor } from '../src/core/paypal/invoices.ts';
 import { Seller } from '../src/core/seller.ts';
 import { Shops } from '../src/core/shops.ts';
 import type { ToolContext, ToolServices } from '../src/core/tools/registry.ts';
@@ -30,6 +31,7 @@ export async function stack(model?: ChatModel) {
     'payment.void': voidExecutor(paypal),
     'refund.create': refundExecutor(paypal),
     'policy.update': policyUpdateExecutor(policies, defaultMerchantPolicy),
+    'invoice.send': invoiceExecutor(paypal),
   };
   const guard = new Guard({
     store: guardStore,

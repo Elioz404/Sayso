@@ -32,6 +32,7 @@ propose -> simulate against live PayPal state -> decide (owner's rules) -> [owne
 
 - **Rules decide, not the model.** Owners write rules in plain English ("refunds over $30 need my OK; never accept disputes"). The LLM drafts declarative rules, code validates them, and `evaluate()` applies them deterministically.
 - **Agents can't approve.** Approving needs the owner's signed session. Agent keys are rejected on that route, and no tool or CLI command approves anything.
+- **Custom orders by invoice.** A commission agreed in a DM becomes a PayPal invoice the owner's agent sends. By default an invoice over $200, or the first one to someone who has never paid the shop, waits for the owner.
 - **Buyers ask, owners decide.** A buyer's assistant can follow its order and ask for a refund with `request_refund`, but that request always waits for the owner, however small.
 - **Agents can't loosen their own leash.** Changing the rules is itself a Guard action (`policy.update`) that always waits for the owner when an agent proposes it. This is built in and no policy can turn it off.
 - **Simulated first.** A refund larger than what's still refundable, or a capture on an expired authorization, is refused before PayPal is called.
@@ -86,6 +87,7 @@ No dependencies; Node 22.18+ runs the TypeScript file directly (`node cli/sayso.
 | `sayso orders` / `order <id>` | Orders and their payment history |
 | `sayso refund <order> [amount] --reason "..."` | Refund through the owner's rules |
 | `sayso track <order> <carrier> <number>` | Add shipment tracking in PayPal |
+| `sayso invoice <email> "<item>" <price> --deposit 31.00` / `invoices` | Invoice a custom order through PayPal; list invoices with live status |
 | `sayso approvals` / `check <say_so_id>` | What's waiting for the owner (read-only) |
 | `sayso policy` / `policy propose "..."` | Show or propose say-so rules |
 | `sayso audit` | Audit log with hash-chain checks |
@@ -102,7 +104,7 @@ The agent skill in [`skills/sayso/SKILL.md`](skills/sayso/SKILL.md) (open Agent 
 |---|---|---|
 | `POST /api/shopping/mcp` | none (optional `Bearer sk_wallet_...`) | Every published shop: `list_shops`, `search_products` (grouped by shop), `create_cart` (with `shop`), `update_cart`, `get_cart`, `request_refund`, `connect_paypal`, `wallet_status`, `pay_with_paypal` |
 | `POST /api/shops/<slug>/mcp` | none | `search_products`, `create_cart`, `update_cart`, `get_cart` (order status, refunds, tracking), `request_refund` (goes to the owner) |
-| `POST /api/mcp` | `Authorization: Bearer sk_agent_...` | `shop_overview`, `list_products`, `update_variant`, `list_orders`, `get_order`, `refund_order`, `add_tracking`, `list_approvals`, `get_say_so`, `get_policy`, `propose_policy`, `audit_log` |
+| `POST /api/mcp` | `Authorization: Bearer sk_agent_...` | `shop_overview`, `list_products`, `update_variant`, `list_orders`, `get_order`, `refund_order`, `add_tracking`, `send_invoice`, `list_invoices`, `list_approvals`, `get_say_so`, `get_policy`, `propose_policy`, `audit_log` |
 
 Streamable HTTP, stateless JSON responses, protocol versions `2025-11-25`, `2025-06-18` and `2025-03-26`.
 
@@ -140,6 +142,7 @@ In this demo every shop is paid into Sayso's sandbox merchant account, so one sa
 | **Orders v2** | `intent: AUTHORIZE` orders from priced carts, buyer approval, authorize, shipment tracking |
 | **Payments v2** | Capture and void authorizations, refunds, reading captures and refunds back to verify |
 | **Catalog Products API** | Products registered when a shop is published |
+| **Invoicing v2** | Invoices for custom orders (with an optional deposit), sent through Guard and read back from PayPal; live status in the dashboard |
 | **Payment Method Tokens (Vault v3)** | Setup token -> buyer approval -> payment token; orders paid with `payment_source.paypal.vault_id`; tokens deleted on disconnect |
 | **Idempotency** | `PayPal-Request-Id` on every write, tied to the Guard record |
 | **Webhooks** | Signature verification helper (`verify-webhook-signature`) |

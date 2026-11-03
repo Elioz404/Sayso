@@ -13,6 +13,9 @@ export interface FakePayPal {
   /** Simulate the buyer approving a vault setup token in PayPal. */
   approveSetup(setupTokenId: string): void;
   paymentTokens: Map<string, Json>;
+  invoices: Map<string, Json>;
+  /** Simulate the buyer paying an invoice. */
+  payInvoice(invoiceId: string): void;
   /** Simulate the buyer clicking "Pay" on the PayPal approval page. */
   approve(orderId: string): void;
 }
@@ -28,6 +31,8 @@ export function fakePayPal(): FakePayPal {
   const tracking: Json[] = [];
   const setupTokens = new Map<string, Json>();
   const paymentTokens = new Map<string, Json>();
+  const invoices = new Map<string, Json>();
+  let invoiceNumber = 0;
   const replays = new Map<string, Json>();
   const requestIds: string[] = [];
   let seq = 0;
@@ -75,6 +80,25 @@ export function fakePayPal(): FakePayPal {
       authOrder.set(auth.id, order);
       return remember(order);
     }
+    if (method === 'POST' && path === '/v2/invoicing/invoices') {
+      const invoice = {
+        id: id('INV2-'),
+        status: 'DRAFT',
+        detail: { ...body.detail, invoice_number: String(++invoiceNumber).padStart(4, '0'), metadata: {} },
+        primary_recipients: body.primary_recipients,
+        items: body.items,
+        configuration: body.configuration,
+      };
+      invoices.set(invoice.id, invoice);
+      return remember(invoice);
+    }
+    if (method === 'POST' && (m = /^\/v2\/invoicing\/invoices\/([^/]+)\/send$/.exec(path))) {
+      const invoice = invoices.get(m[1])!;
+      invoice.status = 'SENT';
+      invoice.detail.metadata.recipient_view_url = `https://www.sandbox.paypal.com/invoice/p/#${invoice.id}`;
+      return remember({ href: invoice.detail.metadata.recipient_view_url }, 200);
+    }
+    if (method === 'GET' && (m = /^\/v2\/invoicing\/invoices\/([^/]+)$/.exec(path))) return json(invoices.get(m[1]));
     if (method === 'POST' && path === '/v3/vault/setup-tokens') {
       const token = { id: id('SETUP'), status: 'PAYER_ACTION_REQUIRED', customer: { id: 'customer_1' }, links: [{ rel: 'approve', href: 'https://www.sandbox.paypal.com/agreements/approve?approval_session_id=x' }] };
       setupTokens.set(token.id, token);
@@ -165,6 +189,10 @@ export function fakePayPal(): FakePayPal {
     catalogProducts,
     tracking,
     paymentTokens,
+    invoices,
+    payInvoice(invoiceId) {
+      invoices.get(invoiceId)!.status = 'PAID';
+    },
     approveSetup(setupTokenId) {
       setupTokens.get(setupTokenId)!.status = 'APPROVED';
     },

@@ -307,3 +307,41 @@ test("saved PayPal: the buyer approves once and sets limits; the assistant pays 
   const gone = await s.call('pay_with_paypal', { cart_id: second.data.cart_id, wallet_key: connect.data.wallet_key }, s.buyer);
   assert.equal(gone.isError, true);
 });
+
+test('custom orders: invoices go through Guard, a first invoice to a new client waits for the owner', async () => {
+  const s = await stack();
+  const vase = { email: 'Grace@Example.com', name: 'Grace', items: [{ name: 'Custom bud vase, cobalt glaze', price: '62.00' }], note: 'Ships in about 10 days', deposit: '31.00' };
+
+  const first = await s.call('send_invoice', vase, s.owner);
+  assert.equal(first.data.status, 'pending_approval', 'Grace has never paid this shop');
+  assert.ok(first.data.why.some((w: string) => /never paid you before/.test(w)));
+  assert.equal(s.pp.invoices.size, 0, 'nothing sent before the owner says OK');
+
+  const done = await s.seller.decide('shop_maya', first.data.say_so_id, 'approve', 'owner:shop_maya');
+  assert.equal(done.status, 'verified');
+  const [invoice] = [...s.pp.invoices.values()];
+  assert.equal(invoice.status, 'SENT');
+  assert.equal(invoice.primary_recipients[0].billing_info.email_address, 'grace@example.com');
+  assert.deepEqual(invoice.configuration.partial_payment.minimum_amount_due, { currency_code: 'USD', value: '31.00' });
+
+  // A second invoice to Grace, now a known client, goes out on its own.
+  const second = await s.call('send_invoice', { email: 'grace@example.com', items: [{ name: 'Matching saucer', price: '18.00' }] }, s.owner);
+  assert.equal(second.data.status, 'verified', second.text);
+  assert.match(second.data.invoice.payer_url, /invoice/);
+
+  // Over $200 still asks; the same invoice twice within the hour is blocked.
+  const big = await s.call('send_invoice', { email: 'grace@example.com', items: [{ name: 'Dinner set', price: '240.00' }] }, s.owner);
+  assert.equal(big.data.status, 'pending_approval');
+  const again = await s.call('send_invoice', { email: 'grace@example.com', items: [{ name: 'Matching saucer', price: '18.00' }] }, s.owner);
+  assert.equal(again.data.status, 'denied');
+
+  s.pp.payInvoice(invoice.id);
+  const list = await s.call('list_invoices', {}, s.owner);
+  const paid = list.data.find((i: { say_so_id: string }) => i.say_so_id === first.data.say_so_id);
+  assert.equal(paid.status, 'paid');
+  assert.equal(paid.total, '$62.00');
+  assert.equal(list.data.find((i: { say_so_id: string }) => i.say_so_id === big.data.say_so_id).status, 'waiting for the owner');
+
+  const bad = await s.call('send_invoice', { email: 'not-an-email', items: [{ name: 'Vase', price: '10.00' }] }, s.owner);
+  assert.equal(bad.data.status, 'denied', 'the simulation catches a bad address before PayPal');
+});
