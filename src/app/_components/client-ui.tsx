@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Icon } from './ui.tsx';
 
 export function NavLinks({ signedIn }: { signedIn: boolean }) {
@@ -51,6 +51,99 @@ export function RailNav({ items }: { items: RailItem[] }) {
         );
       })}
     </nav>
+  );
+}
+
+/**
+ * The owner rail. On wide screens it is a fixed side column; on phones it collapses to a top bar
+ * with a menu button that slides the same rail in from the left.
+ */
+export function RailDrawer({ brand, waiting, children }: { brand: ReactNode; waiting: number; children: ReactNode }) {
+  const path = usePathname();
+  const [open, setOpen] = useState(false);
+  const [phone, setPhone] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
+  const drawer = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 960px)');
+    const update = () => {
+      setPhone(query.matches);
+      if (!query.matches) setOpen(false);
+    };
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+
+  // Close on navigation.
+  useEffect(() => setOpen(false), [path]);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpen(false);
+        button.current?.focus();
+      }
+    };
+    // Behind the open menu, the page can't be scrolled or tabbed into.
+    const page = document.querySelector<HTMLElement>('.owner-main');
+    document.addEventListener('keydown', close);
+    document.documentElement.style.overflow = 'hidden';
+    if (page) page.inert = true;
+    drawer.current?.querySelector<HTMLElement>('[aria-current="page"], .rail-nav a')?.focus();
+    return () => {
+      document.removeEventListener('keydown', close);
+      document.documentElement.style.overflow = '';
+      if (page) page.inert = false;
+    };
+  }, [open]);
+
+  return (
+    <div className={`rail-inner${open ? ' is-open' : ''}`}>
+      <div className="rail-top">
+        {brand}
+        <button
+          ref={button}
+          type="button"
+          className="menu-button"
+          aria-expanded={open}
+          aria-controls="rail-drawer"
+          aria-label={waiting ? `Menu, ${waiting} waiting for your OK` : 'Menu'}
+          onClick={() => setOpen(true)}
+        >
+          <Icon name="menu" size={22} />
+          {waiting > 0 && <span className="menu-dot" aria-hidden="true" />}
+        </button>
+      </div>
+      <div
+        id="rail-drawer"
+        ref={drawer}
+        className="rail-drawer"
+        role={phone ? 'dialog' : undefined}
+        aria-modal={phone && open ? true : undefined}
+        aria-label={phone ? 'Menu' : undefined}
+        inert={phone && !open ? true : undefined}
+      >
+        <div className="rail-drawer-head">
+          {brand}
+          <button
+            type="button"
+            className="menu-button"
+            aria-label="Close menu"
+            onClick={() => {
+              setOpen(false);
+              button.current?.focus();
+            }}
+          >
+            <Icon name="x" size={22} />
+          </button>
+        </div>
+        {children}
+      </div>
+      <div className="rail-backdrop" aria-hidden="true" onClick={() => setOpen(false)} />
+    </div>
   );
 }
 

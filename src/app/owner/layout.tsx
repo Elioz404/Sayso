@@ -1,7 +1,7 @@
 // The owner area: a side rail with one view per job. Signed-out visitors get the sign-in screen.
 import type { Metadata } from 'next';
 import { connection } from 'next/server';
-import { RailNav } from '@/app/_components/client-ui.tsx';
+import { RailDrawer, RailNav } from '@/app/_components/client-ui.tsx';
 import { LoginForm, SignOut } from '@/app/_components/owner-actions.tsx';
 import { Icon, Mark, Status } from '@/app/_components/ui.tsx';
 import { ownerView } from '@/server/owner.ts';
@@ -33,16 +33,15 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
   return (
     <div className="owner">
       <aside className="rail">
-        <div className="rail-inner">
-          <div className="rail-top">
+        <RailDrawer
+          brand={
             <a href="/" className="brand" aria-label="Sayso home">
               <Mark />
               <span className="brand-word">sayso</span>
             </a>
-            <span className="rail-top-mobile">
-              <SignOut />
-            </span>
-          </div>
+          }
+          waiting={pending}
+        >
           <div className="rail-shop">
             <b>{shop.name}</b>
             <Status value={status} />
@@ -65,7 +64,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
             )}
             <SignOut />
           </div>
-        </div>
+        </RailDrawer>
       </aside>
       <main className="owner-main">
         <div className="owner-body">{children}</div>

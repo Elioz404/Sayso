@@ -18,6 +18,7 @@ const PATHS: Record<string, ReactNode> = {
   x: <path d="M6 6l12 12M18 6L6 18" />,
   arrow: <path d="M5 12h14M13 6l6 6-6 6" />,
   back: <path d="M19 12H5M11 6l-6 6 6 6" />,
+  menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   copy: (
     <>
       <rect x="8" y="8" width="12" height="12" rx="2" />
