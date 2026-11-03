@@ -1,0 +1,33 @@
+/* Placeholder styles for the skeleton; the real UI lands on day 6 (AG Studio dashboard + onboarding). */
+:root {
+  --bg: #fbfaf7;
+  --fg: #1c1b19;
+  --muted: #6b6760;
+  --line: #e6e2da;
+  --accent: #0b6e4f;
+  --warn: #b25e09;
+  --bad: #b3261e;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #141412; --fg: #f2efe9; --muted: #a39e94; --line: #2c2a26; --accent: #4fc79c; --warn: #f0a050; --bad: #f2867f; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 64px; }
+.top { display: flex; gap: 16px; align-items: baseline; padding: 14px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.brand { font-weight: 700; font-size: 20px; color: var(--fg); text-decoration: none; letter-spacing: -0.02em; }
+.tag { color: var(--muted); }
+h1, h2 { letter-spacing: -0.01em; }
+table { width: 100%; border-collapse: collapse; margin: 8px 0 24px; }
+th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 500; }
+code { font-size: 13px; }
+.status { font-weight: 600; }
+.status.verified, .status.executed { color: var(--accent); }
+.status.pending_approval { color: var(--warn); }
+.status.denied, .status.failed, .status.rejected { color: var(--bad); }
+button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--fg); cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.card { border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin: 16px 0; }
+.muted { color: var(--muted); }
