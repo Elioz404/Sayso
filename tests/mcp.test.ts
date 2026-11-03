@@ -67,7 +67,9 @@ test("owner's agent: small refund runs, big refund waits, and only the owner can
   const orders = await s.call('list_orders', { status: 'paid' }, s.owner);
   assert.equal(orders.data.length, 1);
 
-  const small = await s.call('refund_order', { order_id: orderId, amount: '10.00', reason: 'Small chip on the rim' }, s.owner);
+  const number = (await s.call('get_order', { order_id: orderId }, s.owner)).data.number;
+  assert.match(number, /^SAY-/);
+  const small = await s.call('refund_order', { order_id: number.toLowerCase(), amount: '10.00', reason: 'Small chip on the rim' }, s.owner); // order numbers work too
   assert.equal(small.data.status, 'verified');
 
   const big = await s.call('refund_order', { order_id: orderId, amount: '60.00', reason: 'Both arrived broken' }, s.owner);

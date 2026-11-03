@@ -54,7 +54,7 @@ export class Seller {
 
   async order(shopId: string, cartId: string): Promise<{ order: OrderSummary; cart: StoredCart; records: GuardRecord[] }> {
     const cart = await this.cart(shopId, cartId);
-    const records = (await this.deps.guardStore.listSince(shopId, new Date(0))).filter((r) => r.action.params?.cartId === cartId);
+    const records = (await this.deps.guardStore.listSince(shopId, new Date(0))).filter((r) => r.action.params?.cartId === cart.id);
     return { order: summarize(cart, records), cart, records };
   }
 
@@ -80,7 +80,7 @@ export class Seller {
       counterparty: cart.cart.customer?.email_address,
       resourceId: cart.captureId,
       reason: input.reason.slice(0, 300) || 'Refund',
-      params: { orderId: cart.orderId, cartId },
+      params: { orderId: cart.orderId, cartId: cart.id },
     });
   }
 
@@ -172,8 +172,11 @@ export class Seller {
     );
   }
 
+  /** Accepts the cart id or the order number the owner and buyer see (SAY-...). */
   private async cart(shopId: string, cartId: string): Promise<StoredCart> {
-    const cart = await this.deps.carts.get(cartId);
+    const cart = /^SAY-/i.test(cartId)
+      ? (await this.deps.carts.listByShop(shopId)).find((c) => c.merchantOrderNumber?.toUpperCase() === cartId.toUpperCase())
+      : await this.deps.carts.get(cartId);
     if (!cart || cart.shopId !== shopId) throw new HttpError(404, `No order ${cartId} in this shop`);
     return cart;
   }
