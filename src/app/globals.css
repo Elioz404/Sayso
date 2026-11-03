@@ -350,6 +350,9 @@ body:has(.owner) .site-header, body:has(.owner) .site-footer { display: none; }
 /* Editable cells say so: a dotted underline at rest, a tinted field on hover. */
 .cell-editable { cursor: text; text-decoration: underline dotted var(--ink-3); text-underline-offset: 5px; }
 .ag-row-hover .cell-editable { background: color-mix(in oklab, var(--say) 7%, transparent); }
+/* Where the owner's price sits against the market: fine, or worth a look. */
+.dot-ok { color: var(--say); }
+.dot-hold { color: var(--hold); }
 .ag-grid-scrolling-rows.ag-layout-auto-height { min-height: 58px !important; }
 .grid-skeleton { border: 1px solid var(--rule); border-radius: var(--radius); background: linear-gradient(var(--paper-2) 0 42px, var(--sheet) 42px); }
 

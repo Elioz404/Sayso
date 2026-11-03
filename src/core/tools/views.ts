@@ -5,6 +5,7 @@ import type { Catalog } from '../catalog.ts';
 import type { PayPalCart } from '../cart/spec.ts';
 import type { GuardRecord, RecordStatus } from '../guard/types.ts';
 import { DEFAULT_CURRENCY, formatMoney } from '../money.ts';
+import type { PriceReference } from '../market.ts';
 import { searchCatalog, type ProductQuery } from '../search.ts';
 import type { ToolContext } from './context.ts';
 
@@ -26,6 +27,20 @@ export function catalogView(catalog: Catalog) {
       })),
     })),
     shipping: shop.shipping.map((s) => ({ name: s.name, to: s.countries.join(', '), price: formatMoney(s.price, shop.currency), days: `${s.minDays}-${s.maxDays}` })),
+  };
+}
+
+/** A market price reference with amounts written out, for agents and the owner's grid. */
+export function priceReferenceView(ref: PriceReference) {
+  const money = (minor?: number) => (minor === undefined ? undefined : formatMoney(minor, ref.currency));
+  return {
+    searched_for: ref.query,
+    listings: ref.listings,
+    usual_range: ref.low === undefined ? undefined : `${money(ref.low)} - ${money(ref.high)}`,
+    median: money(ref.median),
+    your_price_is: ref.position,
+    summary: ref.summary,
+    examples: ref.examples,
   };
 }
 

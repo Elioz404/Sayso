@@ -151,6 +151,7 @@ In this demo every shop is paid into Sayso's sandbox merchant account, so one sa
 
 - **OpenAI** (`gpt-4.1-mini` by default; DeepSeek works too through the same OpenAI-compatible client): reads product photos and notes into a draft catalog, and turns the owner's plain-English rules into declarative say-so rules. Both outputs are validated in code, and a daily budget caps what the server can spend. The model never decides whether money moves.
 - Any agent the owner already uses can run the shop through the CLI, MCP and skill, and any shopping assistant can buy through MCP or PayPal's platform.
+- **Channel3** product search: what similar items sell for at other stores, so a small seller can price with confidence. The owner's agent asks with `price_check` (or `sayso market`), and the catalog grid shows the usual range next to each price. It only informs; prices change only when someone changes them.
 
 ## How it fits together
 

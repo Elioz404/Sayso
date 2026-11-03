@@ -13,7 +13,9 @@ import { defaultMerchantPolicy } from '@/core/guard/policy.ts';
 import { MemoryPolicyStore, policyUpdateExecutor, type PolicyStore } from '@/core/guard/policy-store.ts';
 import type { GuardStore } from '@/core/guard/types.ts';
 import { Invoicing } from '@/core/invoicing.ts';
+import { Channel3 } from '@/core/channel3.ts';
 import { links, type Links } from '@/core/links.ts';
+import { MarketPrices } from '@/core/market.ts';
 import { Orders } from '@/core/orders.ts';
 import { PayPalClient } from '@/core/paypal/client.ts';
 import { captureExecutor, refundExecutor, voidExecutor } from '@/core/paypal/executors.ts';
@@ -40,6 +42,7 @@ export interface Context {
   saySo: SaySo;
   invoicing: Invoicing;
   wallets: Wallets;
+  market?: MarketPrices;
   tools: ToolServices;
   links: Links;
 }
@@ -98,10 +101,12 @@ async function create(): Promise<Context> {
   const saySo = new SaySo({ guard, policyFor, shops, model });
   const invoicing = new Invoicing({ guard, carts, shops, paypal });
   const wallets = new Wallets({ store: walletStore, policies, guard, commerce, paypal, links: site });
-  const tools: ToolServices = { commerce, orders, saySo, invoicing, shops, catalogs, wallets, links: site };
+  const channel3 = Channel3.fromEnv();
+  const market = channel3 && new MarketPrices(channel3);
+  const tools: ToolServices = { commerce, orders, saySo, invoicing, shops, catalogs, wallets, links: site, market };
 
   await seedDemo(catalogs, policies, access);
-  return { carts, catalogs, access, model, aiBudget: ai?.budget, guard, commerce, shops, orders, saySo, invoicing, wallets, tools, links: site };
+  return { carts, catalogs, access, model, aiBudget: ai?.budget, guard, commerce, shops, orders, saySo, invoicing, wallets, market, tools, links: site };
 }
 
 function sessionSecret(): string {

@@ -15,6 +15,8 @@ import {
   TooltipModule,
   themeQuartz,
   NumberEditorModule,
+  RenderApiModule,
+  RowApiModule,
   UndoRedoEditModule,
   type CellValueChangedEvent,
   type ColDef,
@@ -40,6 +42,8 @@ ModuleRegistry.registerModules([
   TooltipModule,
   NumberEditorModule,
   UndoRedoEditModule,
+  RowApiModule,
+  RenderApiModule,
 ]);
 
 // Follows the site's light/dark tokens instead of a fixed palette.
@@ -287,12 +291,72 @@ function StockStateCell({ data }: ICellRendererParams<VariantRow>) {
 const LOW_STOCK = 2;
 type Feedback = { tone: 'ok' | 'error'; text: string };
 
-export function CatalogGrid({ rows }: { rows: VariantRow[] }) {
+/** A market reference as the owner route returns it. */
+interface MarketView {
+  usual_range?: string;
+  median?: string;
+  your_price_is?: 'below' | 'within' | 'above';
+  summary: string;
+}
+type MarketState = MarketView | 'loading' | { error: string };
+interface CatalogContext {
+  market: Map<string, MarketState>;
+  check: (id: string) => void;
+}
+
+const POSITION_TONE = { below: 'hold', within: 'ok', above: 'hold' } as const;
+
+function MarketCell({ data, context }: ICellRendererParams<VariantRow, unknown, CatalogContext>) {
+  if (!data) return null;
+  const state = context.market.get(data.id);
+  if (!state)
+    return (
+      <button className="btn btn-quiet btn-small" onClick={() => context.check(data.id)}>
+        Compare
+      </button>
+    );
+  if (state === 'loading') return <span className="small muted">Checking...</span>;
+  if ('error' in state) return <span className="small error" title={state.error}>Unavailable</span>;
+  if (!state.usual_range) return <span className="small muted" title={state.summary}>Too few listings</span>;
+  return (
+    <span className="cell-two" title={state.summary}>
+      <span>{state.usual_range}</span>
+      <small>
+        median {state.median}
+        {state.your_price_is ? <span className={`dot dot-${POSITION_TONE[state.your_price_is]}`}> · yours is {state.your_price_is}</span> : null}
+      </small>
+    </span>
+  );
+}
+
+export function CatalogGrid({ rows, market: marketEnabled }: { rows: VariantRow[]; market: boolean }) {
   const { ref, width } = useGridSize();
   const narrow = width < NARROW;
   const [feedback, setFeedback] = useState<Feedback>();
   // Rows we are putting back after a refused edit: their change events are not new edits.
   const reverting = useRef(new Set<string>());
+  const grid = useRef<AgGridReact<VariantRow>>(null);
+  // Market references, fetched one row at a time on request: each one is a search with a cost.
+  const market = useRef(new Map<string, MarketState>());
+  const context = useMemo<CatalogContext>(() => {
+    const show = (id: string, state: MarketState) => {
+      market.current.set(id, state);
+      const node = grid.current?.api.getRowNode(id);
+      if (node) grid.current?.api.refreshCells({ rowNodes: [node], columns: ['market'], force: true });
+    };
+    return {
+      market: market.current,
+      check: (id) => {
+        show(id, 'loading');
+        fetch(`/api/owner/market?variant=${encodeURIComponent(id)}`)
+          .then(async (res) => {
+            const body = await res.json();
+            show(id, res.ok ? (body as MarketView) : { error: body.message ?? 'Unavailable' });
+          })
+          .catch(() => show(id, { error: 'Network error' }));
+      },
+    };
+  }, []);
 
   const columns = useMemo<ColDef<VariantRow>[]>(
     () => [
@@ -329,8 +393,9 @@ export function CatalogGrid({ rows }: { rows: VariantRow[] }) {
         valueFormatter: (p) => (p.value === null ? '-' : String(p.value)),
       },
       { colId: 'state', headerName: 'Status', cellRenderer: StockStateCell, minWidth: 150, flex: 1, sortable: false, hide: narrow },
+      { colId: 'market', headerName: 'Market price', cellRenderer: MarketCell, minWidth: 170, flex: 1.2, sortable: false, hide: narrow || !marketEnabled },
     ],
-    [narrow],
+    [narrow, marketEnabled],
   );
 
   async function save(e: CellValueChangedEvent<VariantRow>) {
@@ -358,9 +423,11 @@ export function CatalogGrid({ rows }: { rows: VariantRow[] }) {
       <div ref={ref}>
         {width ? (
           <AgGridReact<VariantRow>
+            ref={grid}
             theme={theme}
             rowData={rows}
             columnDefs={columns}
+            context={context}
             getRowId={(p) => p.data.id}
             defaultColDef={{ sortable: true, resizable: false, suppressMovable: true }}
             autoSizeStrategy={FIT}

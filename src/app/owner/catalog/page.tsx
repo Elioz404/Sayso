@@ -28,7 +28,7 @@ export default async function Catalog() {
         <h2 id="products" className="sr-only">
           Products
         </h2>
-        <CatalogGrid rows={variantRows(catalog)} />
+        <CatalogGrid rows={variantRows(catalog)} market={Boolean(view.market)} />
       </section>
 
       <section className="block" aria-labelledby="shipping">

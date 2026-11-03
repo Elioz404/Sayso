@@ -7,6 +7,7 @@ import { variantRows } from '../src/core/catalog-view.ts';
 import { Guard, MemoryGuardStore } from '../src/core/guard/engine.ts';
 import type { Policy } from '../src/core/guard/policy.ts';
 import type { Executor, ProposedAction } from '../src/core/guard/types.ts';
+import { MarketPrices, priceReference } from '../src/core/market.ts';
 import { parseAmount } from '../src/core/money.ts';
 import { address, stack } from './stack.ts';
 
@@ -201,4 +202,28 @@ test('editing a price keeps stock a checkout just took, and bad edits change not
   assert.deepEqual([row?.price, row?.stock], [3_600, 4]);
   const vase = variantRows((await s.catalogs.byShopId('shop_maya'))!).find((r) => r.id === 'var_vase_custom');
   assert.equal(vase?.stock, null, 'made-to-order has no stock to edit');
+});
+
+test('market prices: the middle half sets the range, odd listings and other currencies are left out', () => {
+  const at = (price: number, store = `s${price}.com`, currency = 'USD') => ({ title: `Mug ${price}`, store, price, currency, url: `https://${store}` });
+  const listings = [at(2_200), at(2_800), at(3_200), at(3_600), at(4_200), at(17_100), at(3_200, 'eu.com', 'EUR'), at(2_800)];
+  const ref = priceReference('stoneware mug', listings, 'USD', 3_400);
+  assert.equal(ref.listings, 6, 'duplicate and EUR listings dropped');
+  assert.equal(ref.median, 3_400);
+  assert.equal(ref.position, 'within');
+  assert.ok(ref.high! < 10_000, 'the $171 set does not stretch the range');
+  assert.match(ref.summary, /\$34\.00 is within the usual range/);
+  assert.equal(priceReference('rare thing', [at(1_000)], 'USD', 900).median, undefined, 'too few listings, no range');
+});
+
+test('the owner\'s agent can check a price against the market, read-only', async () => {
+  const s = await stack();
+  const source = { search: async () => [2_400, 2_600, 2_900, 3_100, 3_300].map((p) => ({ title: `Mug ${p}`, store: `s${p}.com`, price: p, currency: 'USD', url: 'https://x' })) };
+  s.services.market = new MarketPrices(source);
+  const check = await s.call('price_check', { variant_id: 'var_mug_sage' }, s.owner);
+  assert.equal(check.data.your_price_is, 'above');
+  assert.equal(check.data.median, '$29.00');
+  assert.equal(await stock(s, 'var_mug_sage'), 6, 'nothing in the shop changed');
+  const notForBuyers = await s.call('price_check', { variant_id: 'var_mug_sage' }, s.buyer);
+  assert.equal(notForBuyers.isError, true);
 });

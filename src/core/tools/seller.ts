@@ -4,7 +4,7 @@
 import { parseAmount } from '../money.ts';
 import { money } from './args.ts';
 import { actor, shop, ToolError, type Tool } from './context.ts';
-import { catalogView, sayso } from './views.ts';
+import { catalogView, priceReferenceView, sayso } from './views.ts';
 
 export const sellerTools: Tool[] = [
   {
@@ -60,6 +60,20 @@ export const sellerTools: Tool[] = [
       if (price === undefined && input.stock === undefined) throw new ToolError('Pass price, stock or both');
       const updated = await ctx.services.shops.setVariant(shopId, input.variant_id, { price, inventory: input.stock });
       return catalogView(updated).products.flatMap((p) => p.variants).find((v) => v.variant_id === input.variant_id);
+    },
+  },
+  {
+    name: 'price_check',
+    title: 'Compare a price with the market',
+    description:
+      'What similar items sell for at other stores right now (the usual range, the median and a few examples), and whether this variant\'s price is below, within or above it. Read-only: use update_variant to change a price, after the owner agrees.',
+    side: 'seller',
+    annotations: { readOnlyHint: true, openWorldHint: true },
+    inputSchema: { type: 'object', properties: { variant_id: { type: 'string', maxLength: 80 } }, required: ['variant_id'] },
+    async run(input, ctx) {
+      if (!ctx.services.market) throw new ToolError('Market prices are not set up on this server (CHANNEL3_API_KEY).');
+      const catalog = await ctx.services.shops.get(shop(ctx));
+      return priceReferenceView(await ctx.services.market.forVariant(catalog, input.variant_id));
     },
   },
   {

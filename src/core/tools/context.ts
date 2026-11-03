@@ -6,6 +6,7 @@ import type { Commerce } from '../commerce.ts';
 import type { Actor } from '../guard/types.ts';
 import type { Invoicing } from '../invoicing.ts';
 import type { Links } from '../links.ts';
+import type { MarketPrices } from '../market.ts';
 import type { Orders } from '../orders.ts';
 import type { SaySo } from '../say-so.ts';
 import type { Shops } from '../shops.ts';
@@ -22,6 +23,8 @@ export interface ToolServices {
   catalogs: CatalogStore;
   wallets: Wallets;
   links: Links;
+  /** Market prices from a product-search source; absent when none is configured. */
+  market?: MarketPrices;
 }
 
 export interface ToolContext {

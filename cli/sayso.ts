@@ -296,6 +296,19 @@ const commands: Record<string, { usage: string; summary: string; run: Command }>
       out(json, v, () => console.log(`${v.title}: ${v.price}`));
     },
   },
+  market: {
+    usage: 'sayso market <variant_id>',
+    summary: 'What similar items sell for at other stores, against your price',
+    async run(args, config, json) {
+      const [variant] = args.positional;
+      if (!variant) throw new CliError(this.usage, EXIT.usage);
+      const ref = await tool(config, 'price_check', { variant_id: variant });
+      out(json, ref, () => {
+        console.log(ref.summary);
+        for (const e of ref.examples ?? []) console.log(c.dim(`  ${e.price}  ${e.title} (${e.store})`));
+      });
+    },
+  },
   stock: {
     usage: 'sayso stock <variant_id> <quantity>',
     summary: 'Set stock',

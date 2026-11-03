@@ -39,6 +39,7 @@ If `sayso` is not installed, run it from the repo with `node cli/sayso.ts` inste
 | "I shipped it, USPS 9400..." | `sayso track <order_id> USPS 9400... --json` |
 | "I made 4 more blue mugs" | `sayso stock <variant_id> 4 --json` (find ids with `sayso products --json`) |
 | "Raise the bowl to $52" | `sayso price <variant_id> 52.00 --json` |
+| "Am I charging too little for the mugs?" | `sayso market <variant_id> --json`: the usual range at other stores and where your price sits (read-only) |
 | "Refunds over $30 should need my OK" | `sayso policy propose "refunds over $30 need my OK" --json` |
 | "Did I approve that refund?" | `sayso check <say_so_id> --json` |
 | "Grace wants a cobalt vase for $62, half up front" | `sayso invoice grace@example.com "Custom bud vase, cobalt" 62.00 --deposit 31.00 --json` |
