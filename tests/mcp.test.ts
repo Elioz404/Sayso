@@ -23,7 +23,7 @@ test('MCP handshake: buyer endpoint lists buyer tools, an agent key adds seller 
   const list = async (ctx: object) =>
     ((await handleMcp({ jsonrpc: '2.0', id: 2, method: 'tools/list' }, { services: s.services, channel: 't', ...ctx })) as any).result.tools.map((t: { name: string }) => t.name);
   const buyerTools = await list(s.buyer);
-  assert.deepEqual(buyerTools, ['search_products', 'create_cart', 'update_cart', 'get_cart', 'request_refund']);
+  assert.deepEqual(buyerTools, ['search_products', 'create_cart', 'update_cart', 'get_cart', 'request_refund', 'connect_paypal', 'wallet_status', 'pay_with_paypal']);
   const sellerTools = await list(s.owner);
   assert.ok(sellerTools.includes('refund_order') && sellerTools.includes('propose_policy'));
   assert.ok(!sellerTools.some((n: string) => /approve|decide/.test(n)), 'no tool can approve a say-so request');
@@ -254,4 +254,53 @@ test('all-shops endpoint: one MCP URL searches every shop, carts are per shop', 
   const elsewhere = await s.call('get_cart', { cart_id: cart.data.cart_id }, { shopSlug: catalog.shop.slug });
   assert.equal(elsewhere.isError, true);
   assert.equal((await s.call('list_shops', {}, s.buyer)).isError, true);
+});
+
+test("saved PayPal: the buyer approves once and sets limits; the assistant pays alone inside them", async () => {
+  const s = await stack();
+  const connect = await s.call('connect_paypal', { assistant_name: 'ChatGPT' }, s.buyer);
+  assert.match(connect.data.wallet_key, /^sk_wallet_/);
+  const walletId = connect.data.connect_url.split('/').pop();
+
+  // Not connected yet: paying needs the buyer to finish first.
+  const early = await s.call('create_cart', { items: [{ variant_id: 'var_mug_sage', quantity: 1 }], shipping_address: address }, s.buyer);
+  const notYet = await s.call('pay_with_paypal', { cart_id: early.data.cart_id, wallet_key: connect.data.wallet_key }, s.buyer);
+  assert.equal(notYet.isError, true);
+  assert.match(notYet.text, /isn't connected yet/);
+
+  // The person picks limits on Sayso's page, then approves in PayPal.
+  await s.wallets.startConnect(walletId, { perOrder: '50', daily: '80' });
+  const pending = await s.wallets.get(walletId);
+  s.pp.approveSetup(pending.setupTokenId!);
+  const wallet = await s.wallets.finishConnect(walletId);
+  assert.equal(wallet.status, 'connected');
+  assert.equal(wallet.payerEmail, 'buyer@example.com');
+  await assert.rejects(s.wallets.startConnect(walletId, { perOrder: '2000', daily: '2000' }), /already connected/, 'limits are fixed once connected');
+
+  // $44.99 is inside the $50 limit: paid with no link, and the shop's Guard still captured it.
+  const paid = await s.call('pay_with_paypal', { cart_id: early.data.cart_id }, { ...s.buyer, walletKey: connect.data.wallet_key });
+  assert.equal(paid.data.status, 'paid', paid.text);
+  assert.equal(paid.data.order.payment, 'Charged. The shop is preparing the order.');
+  const order = (await s.call('list_orders', {}, s.owner)).data.find((o: { id: string }) => o.id === early.data.cart_id);
+  assert.equal(order.status, 'paid');
+
+  // Two mugs ($68 + shipping) is over $50 a order: nothing charged, the buyer approves this one.
+  const big = await s.call('create_cart', { items: [{ variant_id: 'var_mug_sage', quantity: 2 }], shipping_address: address }, s.buyer);
+  const over = await s.call('pay_with_paypal', { cart_id: big.data.cart_id, wallet_key: connect.data.wallet_key }, s.buyer);
+  assert.equal(over.data.status, 'needs_buyer_approval');
+  assert.match(over.data.approval_url, /checkoutnow/);
+  assert.ok(over.data.why.some((w: string) => /over the \$50\.00 limit/.test(w)));
+  assert.notEqual((await s.call('get_cart', { cart_id: big.data.cart_id }, s.buyer)).data.status, 'COMPLETED', 'not paid');
+
+  // Daily limit: another $44.99 today would make $89.98, over $80.
+  const second = await s.call('create_cart', { items: [{ variant_id: 'var_mug_sage', quantity: 1 }], shipping_address: address }, s.buyer);
+  const daily = await s.call('pay_with_paypal', { cart_id: second.data.cart_id, wallet_key: connect.data.wallet_key }, s.buyer);
+  assert.equal(daily.data.status, 'needs_buyer_approval');
+  assert.ok(daily.data.why.some((w: string) => /daily limit/.test(w)));
+
+  // Disconnecting forgets the PayPal token; the key stops paying.
+  await s.wallets.disconnect(walletId);
+  assert.equal(s.pp.paymentTokens.size, 0);
+  const gone = await s.call('pay_with_paypal', { cart_id: second.data.cart_id, wallet_key: connect.data.wallet_key }, s.buyer);
+  assert.equal(gone.isError, true);
 });

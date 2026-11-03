@@ -68,6 +68,10 @@ export class PayPalClient {
     return this.request<T>('PATCH', path, body);
   }
 
+  delete<T = void>(path: string): Promise<T> {
+    return this.request<T>('DELETE', path);
+  }
+
   async accessToken(): Promise<string> {
     if (this.token && Date.now() < this.token.expiresAt) return this.token.value;
     const doFetch = this.config.fetch ?? fetch;
@@ -106,7 +110,7 @@ export class PayPalClient {
       }
       // Retrying a write is only safe with an idempotency key; PayPal then replays the first result.
       const retryable = res.status === 429 || res.status >= 500;
-      const safe = method === 'GET' || 'PayPal-Request-Id' in headers;
+      const safe = method === 'GET' || method === 'DELETE' || 'PayPal-Request-Id' in headers;
       if (retryable && safe && attempt < MAX_ATTEMPTS) {
         await new Promise((r) => setTimeout(r, 2 ** attempt * 250));
         continue;

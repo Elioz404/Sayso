@@ -8,7 +8,7 @@ import { Access, MemoryAccessStore, type AccessStore } from '@/core/access.ts';
 import { modelFromEnv, type Budget, type ChatModel } from '@/core/ai/llm.ts';
 import { Commerce, MemoryCartStore, MemoryCatalogStore, type CartStore, type CatalogStore } from '@/core/commerce.ts';
 import { demoCatalog } from '@/core/demo-shop.ts';
-import { Guard, MemoryGuardStore } from '@/core/guard/engine.ts';
+import { Guard, MemoryGuardStore, type GuardDeps } from '@/core/guard/engine.ts';
 import { defaultBuyerPolicy, defaultMerchantPolicy } from '@/core/guard/policy.ts';
 import { MemoryPolicyStore, policyUpdateExecutor, type PolicyStore } from '@/core/guard/policy-store.ts';
 import type { GuardStore } from '@/core/guard/types.ts';
@@ -17,8 +17,9 @@ import { captureExecutor, refundExecutor, voidExecutor } from '@/core/paypal/exe
 import { Seller } from '@/core/seller.ts';
 import { Shops } from '@/core/shops.ts';
 import type { ToolServices } from '@/core/tools/registry.ts';
+import { MemoryWalletStore, walletCheckoutExecutor, Wallets, type WalletStore } from '@/core/wallets.ts';
 import { notifyOwner } from './notify.ts';
-import { Db, PgAccessStore, PgCartStore, PgCatalogStore, PgGuardStore, PgPolicyStore } from './pg-stores.ts';
+import { Db, PgAccessStore, PgCartStore, PgCatalogStore, PgGuardStore, PgPolicyStore, PgWalletStore } from './pg-stores.ts';
 
 interface Context {
   paypal: PayPalClient;
@@ -33,6 +34,7 @@ interface Context {
   commerce: Commerce;
   shops: Shops;
   seller: Seller;
+  wallets: Wallets;
   tools: ToolServices;
   baseUrl: string;
 }
@@ -62,31 +64,36 @@ async function create(): Promise<Context> {
   const guardStore = db ? new PgGuardStore(db) : new MemoryGuardStore();
   const policies = db ? new PgPolicyStore(db) : new MemoryPolicyStore();
   const accessStore: AccessStore = db ? new PgAccessStore(db) : new MemoryAccessStore();
+  const walletStore: WalletStore = db ? new PgWalletStore(db) : new MemoryWalletStore();
   const access = new Access(accessStore, sessionSecret());
   const ai = modelFromEnv();
   const model = ai?.model;
   const url = baseUrl();
   const fallbackPolicy = (ownerId: string) => (ownerId.startsWith('shop_') ? defaultMerchantPolicy(ownerId) : defaultBuyerPolicy(ownerId));
 
+  const executors: GuardDeps['executors'] = {
+    'payment.capture': captureExecutor(paypal),
+    'payment.void': voidExecutor(paypal),
+    'refund.create': refundExecutor(paypal),
+    'policy.update': policyUpdateExecutor(policies, fallbackPolicy),
+  };
   const guard = new Guard({
     store: guardStore,
-    executors: {
-      'payment.capture': captureExecutor(paypal),
-      'payment.void': voidExecutor(paypal),
-      'refund.create': refundExecutor(paypal),
-      'policy.update': policyUpdateExecutor(policies, fallbackPolicy),
-    },
+    executors,
     policyFor: async (ownerId) => (await policies.get(ownerId)) ?? fallbackPolicy(ownerId),
     onApprovalNeeded: (record) => notifyOwner(record, `${url}/approve/${record.id}`),
   });
 
   const commerce = new Commerce({ paypal, carts, catalogs, guard, baseUrl: url });
+  // A buyer's saved-PayPal purchase goes through the buyer's own Guard (their limits).
+  executors['checkout.create'] = walletCheckoutExecutor({ commerce, store: walletStore });
+  const wallets = new Wallets({ store: walletStore, policies, guard, commerce, paypal, baseUrl: url });
   const shops = new Shops({ catalogs, access, paypal, model, baseUrl: url });
   const seller = new Seller({ carts, guard, guardStore, policies, commerce, shops, paypal, model });
-  const tools: ToolServices = { commerce, seller, shops, catalogs, approvalsUrl: `${url}/approve` };
+  const tools: ToolServices = { commerce, seller, shops, catalogs, wallets, approvalsUrl: `${url}/approve` };
 
   await seedDemo(catalogs, policies, access);
-  return { paypal, carts, catalogs, guardStore, policies, access, model, aiBudget: ai?.budget, guard, commerce, shops, seller, tools, baseUrl: url };
+  return { paypal, carts, catalogs, guardStore, policies, access, model, aiBudget: ai?.budget, guard, commerce, shops, seller, wallets, tools, baseUrl: url };
 }
 
 function sessionSecret(): string {

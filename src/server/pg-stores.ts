@@ -9,6 +9,7 @@ import type { CartStore, CatalogStore, StoredCart } from '@/core/commerce.ts';
 import type { Policy } from '@/core/guard/policy.ts';
 import type { PolicyStore } from '@/core/guard/policy-store.ts';
 import type { GuardRecord, GuardStore } from '@/core/guard/types.ts';
+import type { Wallet, WalletStore } from '@/core/wallets.ts';
 
 const SCHEMA = `
 create table if not exists sayso_docs (
@@ -26,7 +27,7 @@ create unique index if not exists sayso_docs_slug on sayso_docs (kind, slug) whe
 create index if not exists sayso_docs_hash on sayso_docs (kind, hash) where hash is not null;
 `;
 
-type Kind = 'catalog' | 'cart' | 'guard' | 'owner' | 'key' | 'policy';
+type Kind = 'catalog' | 'cart' | 'guard' | 'owner' | 'key' | 'policy' | 'wallet';
 
 interface Doc {
   kind: Kind;
@@ -189,5 +190,21 @@ export class PgPolicyStore implements PolicyStore {
   }
   async put(policy: Policy) {
     await this.db.put({ kind: 'policy', id: policy.ownerId, owner: policy.ownerId, data: policy });
+  }
+}
+
+export class PgWalletStore implements WalletStore {
+  private readonly db: Db;
+  constructor(db: Db) {
+    this.db = db;
+  }
+  async put(wallet: Wallet) {
+    await this.db.put({ kind: 'wallet', id: wallet.id, hash: wallet.hash, createdAt: wallet.createdAt, data: wallet });
+  }
+  get(id: string) {
+    return this.db.get<Wallet>('wallet', id);
+  }
+  byHash(hash: string) {
+    return this.db.one<Wallet>('wallet', 'hash', hash);
   }
 }

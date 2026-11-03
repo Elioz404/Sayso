@@ -54,6 +54,8 @@ export interface CreateOrderInput {
   cartId: string;
   returnUrl: string;
   cancelUrl: string;
+  /** The buyer's saved PayPal (vault payment token): PayPal authorizes without sending them anywhere. */
+  vaultId?: string;
 }
 
 /** Turn a priced, valid cart into a PayPal order the buyer can approve. */
@@ -87,17 +89,19 @@ export function createOrderFromCart(client: PayPalClient, input: CreateOrderInpu
           shipping: cart.shipping_address ? { address: cart.shipping_address } : undefined,
         },
       ],
-      payment_source: {
-        paypal: {
-          experience_context: {
-            brand_name: input.shopName.slice(0, 127),
-            user_action: 'PAY_NOW',
-            shipping_preference: cart.shipping_address ? 'SET_PROVIDED_ADDRESS' : 'GET_FROM_FILE',
-            return_url: input.returnUrl,
-            cancel_url: input.cancelUrl,
+      payment_source: input.vaultId
+        ? { paypal: { vault_id: input.vaultId } }
+        : {
+            paypal: {
+              experience_context: {
+                brand_name: input.shopName.slice(0, 127),
+                user_action: 'PAY_NOW',
+                shipping_preference: cart.shipping_address ? 'SET_PROVIDED_ADDRESS' : 'GET_FROM_FILE',
+                return_url: input.returnUrl,
+                cancel_url: input.cancelUrl,
+              },
+            },
           },
-        },
-      },
     },
     idempotencyKey,
   );

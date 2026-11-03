@@ -13,9 +13,9 @@ import { isPayable, priceCart } from './cart/engine.ts';
 import type { CheckoutResult, PayPalCart, ValidationIssue } from './cart/spec.ts';
 import type { Guard } from './guard/engine.ts';
 import type { Actor, GuardRecord } from './guard/types.ts';
-import { toMinor } from './money.ts';
+import { toMinor, type Money } from './money.ts';
 import type { PayPalClient } from './paypal/client.ts';
-import { approvalUrl, authorizeOrder, createOrderFromCart, getOrder } from './paypal/orders.ts';
+import { approvalUrl, authorizeOrder, createOrderFromCart, getAuthorization, getOrder, type OrderAuthorization } from './paypal/orders.ts';
 
 export interface StoredCart {
   id: string;
@@ -31,6 +31,8 @@ export interface StoredCart {
   /** The authorization was released (owner rejected the capture, or it could not ship). */
   voided?: boolean;
   tracking?: { carrier: string; number: string; addedAt: string };
+  /** How the buyer paid: approved in PayPal (default), or with their saved PayPal within their limits. */
+  paidWith?: 'saved-paypal';
   /** Who was shopping, as far as we know: e.g. "chatgpt", "mcp-client", "sayso-buyer". */
   channel?: string;
   createdAt: string;
@@ -133,7 +135,53 @@ export class Commerce {
       throw new HttpError(422, `PayPal order is ${order.status}`, issueBody(stored, paymentIssue('The buyer has not approved the payment in PayPal yet.')));
     }
 
-    // Stock may have changed while the buyer was approving. Re-check before placing any hold.
+    await this.recheck(stored);
+    const authorized = await authorizeOrder(this.deps.paypal, token, `${stored.id}-authorize`);
+    const authorization = authorized.purchase_units[0]?.payments?.authorizations?.[0];
+    if (!authorization) throw new HttpError(500, 'PayPal returned no authorization');
+    return this.settle(stored, authorization, order.payer?.email_address, input.payment_method?.payer_id);
+  }
+
+  /**
+   * Pay with the buyer's saved PayPal (a vault payment token): no redirect, PayPal authorizes at once.
+   * Call it only after the buyer's own Guard allowed the purchase. Returns the authorization; the
+   * shop's side settles it with settleSaved().
+   */
+  async authorizeSaved(cartId: string, vaultId: string): Promise<{ orderId: string; authorizationId: string; amount: Money }> {
+    const stored = await this.stored(cartId);
+    if (stored.cart.status === 'COMPLETED') throw new HttpError(422, 'This cart is already paid');
+    const catalog = await this.recheck(stored);
+    const total = stored.cart.totals!.total.value;
+    const order = await createOrderFromCart(
+      this.deps.paypal,
+      { cart: stored.cart, cartId: stored.id, shopName: catalog.shop.name, returnUrl: '', cancelUrl: '', vaultId },
+      `${stored.id}-saved-${total}`,
+    );
+    let authorization = order.purchase_units[0]?.payments?.authorizations?.[0];
+    if (!authorization) {
+      const authorized = await authorizeOrder(this.deps.paypal, order.id, `${stored.id}-saved-authorize`);
+      authorization = authorized.purchase_units[0]?.payments?.authorizations?.[0];
+    }
+    if (!authorization) throw new HttpError(502, 'PayPal did not authorize the saved PayPal account');
+    stored.orderId = order.id;
+    stored.orderTotal = total;
+    stored.authorizationId = authorization.id;
+    stored.paidWith = 'saved-paypal';
+    await this.deps.carts.put(stored);
+    return { orderId: order.id, authorizationId: authorization.id, amount: authorization.amount };
+  }
+
+  /** The shop's half of a saved-PayPal purchase: capture through the shop's Guard, or release the hold. */
+  async settleSaved(cartId: string, payerEmail?: string): Promise<CheckoutResult> {
+    const stored = await this.stored(cartId);
+    if (stored.cart.status === 'COMPLETED') return this.completed(stored);
+    if (!stored.authorizationId || !stored.orderId) throw new HttpError(422, 'Nothing was authorized for this cart');
+    const authorization = await getAuthorization(this.deps.paypal, stored.authorizationId);
+    return this.settle(stored, authorization, payerEmail);
+  }
+
+  /** Stock may have changed since the cart was priced. Re-check before placing any hold. */
+  private async recheck(stored: StoredCart): Promise<Catalog> {
     const catalog = await this.catalogById(stored.shopId);
     const repriced = priceCart(catalog, stored.cart, { mode: 'update' });
     if (!isPayable(repriced) || repriced.totals?.total.value !== stored.orderTotal) {
@@ -141,25 +189,26 @@ export class Commerce {
       await this.deps.carts.put(stored);
       throw new HttpError(422, 'Cart changed before checkout', this.view(stored));
     }
+    return catalog;
+  }
 
-    const authorized = await authorizeOrder(this.deps.paypal, token, `${stored.id}-authorize`);
-    const authorization = authorized.purchase_units[0]?.payments?.authorizations?.[0];
-    if (!authorization) throw new HttpError(500, 'PayPal returned no authorization');
+  /**
+   * Capture goes through the shop's Guard like any other money movement: simulated against the live
+   * authorization, checked against the shop's policy (big orders can require the owner's OK),
+   * executed idempotently and verified. If it can't go through, the hold is released.
+   */
+  private async settle(stored: StoredCart, authorization: OrderAuthorization, payerEmail?: string, payerId?: string): Promise<CheckoutResult> {
     stored.authorizationId = authorization.id;
-
-    // Capture goes through Guard like any other money movement: simulated against the live
-    // authorization, checked against the shop's policy (big orders can require the owner's OK),
-    // executed idempotently and verified.
     const record = await this.deps.guard.submit({
       kind: 'payment.capture',
       actor: OPS_AGENT,
       ownerId: stored.shopId,
       amount: toMinor(authorization.amount),
       currency: authorization.amount.currency_code,
-      counterparty: order.payer?.email_address,
+      counterparty: payerEmail,
       resourceId: authorization.id,
-      reason: 'The buyer approved in PayPal and the items are in stock.',
-      params: { cartId: stored.id, orderId: order.id, channel: stored.channel },
+      reason: stored.paidWith === 'saved-paypal' ? "Paid with the buyer's saved PayPal, within their limits; the items are in stock." : 'The buyer approved in PayPal and the items are in stock.',
+      params: { cartId: stored.id, orderId: stored.orderId, channel: stored.channel },
     });
     stored.guardRecordId = record.id;
 
@@ -185,8 +234,8 @@ export class Commerce {
     stored.cart = {
       ...stored.cart,
       status: 'COMPLETED',
-      customer: stored.cart.customer ?? (order.payer?.email_address ? { email_address: order.payer.email_address } : undefined),
-      payment_method: { type: 'paypal', token, payer_id: input.payment_method?.payer_id },
+      customer: stored.cart.customer ?? (payerEmail ? { email_address: payerEmail } : undefined),
+      payment_method: { type: 'paypal', token: stored.orderId, payer_id: payerId },
     };
     stored.merchantOrderNumber = `SAY-${Date.now().toString(36).toUpperCase()}`;
     stored.updatedAt = new Date().toISOString();

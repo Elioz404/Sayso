@@ -41,6 +41,7 @@ export async function mcpPost(request: Request, shopSlug?: string, marketplace =
       shopSlug,
       marketplace,
       agent,
+      walletKey: /^Bearer\s+(sk_wallet_[A-Za-z0-9_-]+)$/.exec(request.headers.get('authorization') ?? '')?.[1],
       channel: request.headers.get('x-sayso-channel')?.slice(0, 40) || (agent ? 'owner-agent' : 'mcp'),
     };
 

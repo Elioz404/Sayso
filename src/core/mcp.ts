@@ -19,7 +19,7 @@ type JsonRpcResponse =
 
 const INSTRUCTIONS = {
   marketplace:
-    "Small independent shops that sell through Sayso and get paid with PayPal. list_shops or search_products (across all shops) -> create_cart with the result's shop and variant_id (one cart per shop) -> fix validation_issues with update_cart -> give the buyer approval_url to pay with PayPal -> get_cart to confirm. Prices, shipping and tax always come from the shop. After the order, get_cart answers where it is and request_refund sends the buyer's request to the shop owner.",
+    "Small independent shops that sell through Sayso and get paid with PayPal. list_shops or search_products (across all shops) -> create_cart with the result's shop and variant_id (one cart per shop) -> fix validation_issues with update_cart -> give the buyer approval_url to pay with PayPal -> get_cart to confirm. Prices, shipping and tax always come from the shop. After the order, get_cart answers where it is and request_refund sends the buyer's request to the shop owner. To pay without a link each time, connect_paypal once (the buyer sets limits and approves in PayPal), then pay_with_paypal.",
   buyer:
     "Sayso shop. search_products -> create_cart -> (fix validation_issues with update_cart) -> give the buyer approval_url to pay with PayPal -> get_cart to confirm. Prices, shipping and tax always come from the shop, never from you. After the order: get_cart answers where it is (charge, refunds, tracking), and request_refund sends the buyer's refund request to the shop owner, who decides.",
   seller:

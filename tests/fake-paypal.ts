@@ -10,6 +10,9 @@ export interface FakePayPal {
   requestIds: string[];
   catalogProducts: Json[];
   tracking: Json[];
+  /** Simulate the buyer approving a vault setup token in PayPal. */
+  approveSetup(setupTokenId: string): void;
+  paymentTokens: Map<string, Json>;
   /** Simulate the buyer clicking "Pay" on the PayPal approval page. */
   approve(orderId: string): void;
 }
@@ -23,6 +26,8 @@ export function fakePayPal(): FakePayPal {
   const authOrder = new Map<string, Json>();
   const catalogProducts: Json[] = [];
   const tracking: Json[] = [];
+  const setupTokens = new Map<string, Json>();
+  const paymentTokens = new Map<string, Json>();
   const replays = new Map<string, Json>();
   const requestIds: string[] = [];
   let seq = 0;
@@ -50,6 +55,43 @@ export function fakePayPal(): FakePayPal {
     };
 
     let m: RegExpExecArray | null;
+    if (method === 'POST' && path === '/v2/checkout/orders' && body.payment_source?.paypal?.vault_id) {
+      // A saved PayPal account: no buyer redirect, PayPal authorizes at once.
+      const token = paymentTokens.get(body.payment_source.paypal.vault_id);
+      if (!token) return json({ name: 'UNPROCESSABLE_ENTITY', details: [{ issue: 'INVALID_VAULT_ID' }] }, 422);
+      const orderId = id('ORDER');
+      const amount = { currency_code: body.purchase_units[0].amount.currency_code, value: body.purchase_units[0].amount.value };
+      const auth = { id: id('AUTH'), status: 'CREATED', amount, expiration_time: new Date(Date.now() + 29 * 86_400_000).toISOString() };
+      const order = {
+        id: orderId,
+        intent: body.intent,
+        status: 'COMPLETED',
+        payer: { payer_id: 'BUYER123', email_address: token.payment_source.paypal.email_address },
+        purchase_units: [{ reference_id: body.purchase_units[0].reference_id, amount, payments: { authorizations: [auth] } }],
+        links: [],
+      };
+      orders.set(orderId, order);
+      authorizations.set(auth.id, auth);
+      authOrder.set(auth.id, order);
+      return remember(order);
+    }
+    if (method === 'POST' && path === '/v3/vault/setup-tokens') {
+      const token = { id: id('SETUP'), status: 'PAYER_ACTION_REQUIRED', customer: { id: 'customer_1' }, links: [{ rel: 'approve', href: 'https://www.sandbox.paypal.com/agreements/approve?approval_session_id=x' }] };
+      setupTokens.set(token.id, token);
+      return remember(token);
+    }
+    if (method === 'GET' && (m = /^\/v3\/vault\/setup-tokens\/([^/]+)$/.exec(path))) return json(setupTokens.get(m[1]));
+    if (method === 'POST' && path === '/v3/vault/payment-tokens') {
+      const setup = setupTokens.get(body.payment_source.token.id);
+      if (setup?.status !== 'APPROVED') return json({ name: 'UNPROCESSABLE_ENTITY', details: [{ issue: 'SETUP_TOKEN_NOT_APPROVED' }] }, 422);
+      const token = { id: id('PTOK'), customer: { id: 'customer_1' }, payment_source: { paypal: { email_address: 'buyer@example.com', payer_id: 'BUYER123' } } };
+      paymentTokens.set(token.id, token);
+      return remember(token);
+    }
+    if (method === 'DELETE' && (m = /^\/v3\/vault\/payment-tokens\/([^/]+)$/.exec(path))) {
+      paymentTokens.delete(m[1]);
+      return new Response(null, { status: 204 });
+    }
     if (method === 'POST' && path === '/v2/checkout/orders') {
       const orderId = id('ORDER');
       const order = {
@@ -122,6 +164,10 @@ export function fakePayPal(): FakePayPal {
     requestIds,
     catalogProducts,
     tracking,
+    paymentTokens,
+    approveSetup(setupTokenId) {
+      setupTokens.get(setupTokenId)!.status = 'APPROVED';
+    },
     approve(orderId) {
       orders.get(orderId)!.status = 'APPROVED';
       orders.get(orderId)!.payer = { payer_id: 'BUYER123', email_address: 'buyer@example.com' };
