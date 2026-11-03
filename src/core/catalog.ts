@@ -51,6 +51,9 @@ export interface Shop {
   /** Tax in basis points by destination country (or "US-CA" style region). Missing means 0. */
   taxBps: Record<string, number>;
   returnPolicy: { days: number; buyerPaysReturn: boolean };
+  /** Drafts come out of onboarding; agents can only shop once the owner publishes. Missing = live. */
+  status?: 'draft' | 'live';
+  createdAt?: string;
 }
 
 export interface Catalog {
@@ -64,6 +67,24 @@ export function findVariant(catalog: Catalog, variantId: string): { product: Pro
     if (variant) return { product, variant };
   }
   return undefined;
+}
+
+export function isLive(catalog: Catalog): boolean {
+  return (catalog.shop.status ?? 'live') === 'live';
+}
+
+/** URL-safe slug from a shop or product name: "Maya's Ceramics!" -> "mayas-ceramics". */
+export function slugify(name: string): string {
+  return (
+    name
+      .normalize('NFKD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/['’]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 48) || 'shop'
+  );
 }
 
 /** Units that can be promised right now: stock, or unlimited for made-to-order variants. */
