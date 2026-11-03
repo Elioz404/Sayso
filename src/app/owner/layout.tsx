@@ -28,6 +28,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
 
   const { shop, shopId } = view;
   const pending = (await pendingFor(shopId)).length;
+  const onTour = Boolean(await view.tours?.forShop(shopId));
   const status = shop.status ?? 'live';
 
   return (
@@ -68,7 +69,19 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
         </RailDrawer>
       </aside>
       <main className="owner-main">
-        <div className="owner-body">{children}</div>
+        <div className="owner-body">
+          {onTour && (
+            <div className="callout">
+              <span className="small">
+                <b>This is your private tour copy of the shop.</b> Everything here is real and yours alone.
+              </span>
+              <a className="btn btn-small" href="/tour">
+                Back to the tour
+              </a>
+            </div>
+          )}
+          {children}
+        </div>
       </main>
     </div>
   );

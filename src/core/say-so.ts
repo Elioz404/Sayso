@@ -64,8 +64,12 @@ export class SaySo {
     const { policy, unclear } = await draftPolicy(this.deps.model, shopId, text, shop.currency).catch((err: unknown) => {
       throw fromLlmError(err, 'Could not draft that policy');
     });
-    const record = await this.deps.guard.submit({ kind: 'policy.update', actor, ownerId: shopId, reason: `New rules: "${text.slice(0, 200)}"`, params: { policy } });
-    return { record, unclear };
+    return { record: await this.submitPolicy(policy, `New rules: "${text.slice(0, 200)}"`, actor), unclear };
+  }
+
+  /** Ask to replace a shop's rules. Goes through Guard; from an agent it always waits for the owner. */
+  submitPolicy(policy: Policy, reason: string, actor: Actor): Promise<GuardRecord> {
+    return this.deps.guard.submit({ kind: 'policy.update', actor, ownerId: policy.ownerId, reason, params: { policy } });
   }
 
   /**

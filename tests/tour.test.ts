@@ -1,0 +1,86 @@
+// The judges' tour: each visit gets a private copy of the demo shop, the scripted agents go through the
+// same tools and Guard as everyone else, and nothing they do is approved for the judge.
+
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { demoCatalog } from '../src/core/demo-shop.ts';
+import { MemoryTourStore, Tours } from '../src/core/tour.ts';
+import { stack } from './stack.ts';
+
+type Stack = Awaited<ReturnType<typeof stack>>;
+
+/** A buyer approved saved PayPal once; tours lend that approval. */
+async function lender(s: Stack): Promise<string> {
+  const connect = await s.call('connect_paypal', { assistant_name: 'Tour' }, { shopSlug: 'maya-ceramics' });
+  const walletId = new URL(connect.data.connect_url).pathname.split('/').pop()!;
+  await s.wallets.startConnect(walletId, { perOrder: '100', daily: '250' });
+  s.pp.approveSetup((await s.wallets.get(walletId)).setupTokenId!);
+  await s.wallets.finishConnect(walletId);
+  return walletId;
+}
+
+function tours(s: Stack, lendFrom?: string) {
+  const store = new MemoryTourStore();
+  return { store, tours: new Tours({ store, catalogs: s.catalogs, access: s.access, wallets: s.wallets, saySo: s.saySo, tools: s.services, template: demoCatalog, lendFrom }) };
+}
+
+test('the tour walks the whole flow, and every money step waits for the judge', async () => {
+  const s = await stack();
+  const { tours: t } = tours(s, await lender(s));
+  const tour = await t.start();
+
+  assert.match(tour.slug, /^maya-ceramics-/);
+  assert.deepEqual(await s.call('list_shops', {}, { marketplace: true }).then((r) => r.data.map((x: { shop: string }) => x.shop)), ['maya-ceramics'], 'tour copies are not listed');
+
+  const buy = await t.run(tour.shopId, 'buy');
+  assert.match(buy.transcript[1].said, /Only 1 left/);
+  assert.match(buy.transcript.at(-1)!.said, /Paid with the buyer's saved PayPal/);
+  const { order } = await s.orders.get(tour.shopId, buy.cartId!);
+  assert.equal(order.status, 'paid');
+
+  const refund = await t.run(tour.shopId, 'refund');
+  assert.equal((await s.guard.get(refund.recordId!))?.status, 'pending_approval', 'over the $50 rule: the judge decides');
+
+  const rules = await t.run(tour.shopId, 'rules');
+  const rulesRecord = await s.guard.get(rules.recordId!);
+  assert.equal(rulesRecord?.status, 'pending_approval');
+  assert.ok(rulesRecord?.decision?.hits.some((h) => h.ruleId === 'built-in:human-only'), 'an agent can never apply its own rules');
+
+  const commission = await t.run(tour.shopId, 'commission');
+  assert.equal((await s.guard.get(commission.recordId!))?.status, 'pending_approval', 'a first invoice to a new client');
+
+  assert.deepEqual(await t.run(tour.shopId, 'buy'), buy, 'a step runs once; asking again shows what happened');
+});
+
+test('two judges never share stock or orders', async () => {
+  const s = await stack();
+  const { tours: t } = tours(s, await lender(s));
+  const [a, b] = [await t.start(), await t.start()];
+  await t.run(a.shopId, 'buy');
+  const second = await t.run(b.shopId, 'buy');
+  assert.match(second.transcript.at(-1)!.said, /Paid/, 'the second judge still finds the last speckled mug');
+  assert.equal((await s.orders.list(a.shopId)).length, 1);
+});
+
+test('without saved PayPal to lend, the buyer gets a PayPal link instead', async () => {
+  const s = await stack();
+  const { tours: t } = tours(s);
+  const tour = await t.start();
+  const buy = await t.run(tour.shopId, 'buy');
+  assert.match(buy.approvalUrl!, /checkoutnow/);
+  await assert.rejects(t.run(tour.shopId, 'refund'), /not been charged/, 'until the judge pays in PayPal; the step can be run again after');
+  await assert.rejects(t.run('shop_nope', 'buy'), /not found/);
+});
+
+test('a refund needs the purchase first, and expired tours are swept away', async () => {
+  const s = await stack();
+  const { tours: t, store } = tours(s, await lender(s));
+  const tour = await t.start(new Date(Date.now() - 2 * 86_400_000));
+  await assert.rejects(t.run(tour.shopId, 'refund'), /purchase first/);
+
+  assert.equal(await t.sweep(), 1);
+  assert.equal(await s.catalogs.byShopId(tour.shopId), undefined);
+  assert.equal(await store.byShop(tour.shopId), undefined);
+  assert.equal((await s.access.listKeys(tour.shopId)).every((k) => k.revokedAt), true);
+  assert.equal(s.pp.paymentTokens.size, 1, "the lender's PayPal approval is never deleted");
+});

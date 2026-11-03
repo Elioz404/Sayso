@@ -1,7 +1,6 @@
 import { connection } from 'next/server';
 import { CopyField } from '@/app/_components/client-ui.tsx';
 import { Icon, Who } from '@/app/_components/ui.tsx';
-import { ABOUT } from '@/core/about.ts';
 import { siteLinks } from '@/server/context.ts';
 
 const FLOW = [
@@ -30,8 +29,8 @@ export default async function Home() {
             <a className="btn btn-primary" href="/start">
               Open your shop <Icon name="arrow" size={17} />
             </a>
-            <a className="btn" href={`/shop/${ABOUT.demoShop}`}>
-              See the demo shop
+            <a className="btn" href="/tour">
+              For Judges: the 2-minute tour
             </a>
           </div>
         </div>

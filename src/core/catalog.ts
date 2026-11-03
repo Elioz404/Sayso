@@ -53,6 +53,10 @@ export interface Shop {
   returnPolicy: { days: number; buyerPaysReturn: boolean };
   /** Drafts come out of onboarding; agents can only shop once the owner publishes. Missing = live. */
   status?: 'draft' | 'live';
+  /** private: reachable by its own link and its owner, never in shop lists (a judge's tour copy). Missing = public. */
+  visibility?: 'public' | 'private';
+  /** When a temporary shop (a tour copy) is cleaned up. */
+  expiresAt?: string;
   createdAt?: string;
 }
 
@@ -71,6 +75,11 @@ export function findVariant(catalog: Catalog, variantId: string): { product: Pro
 
 export function isLive(catalog: Catalog): boolean {
   return (catalog.shop.status ?? 'live') === 'live';
+}
+
+/** Live and listed: what shop lists and cross-shop search show. */
+export function isListed(catalog: Catalog): boolean {
+  return isLive(catalog) && (catalog.shop.visibility ?? 'public') === 'public';
 }
 
 /** URL-safe slug from a shop or product name: "Maya's Ceramics!" -> "mayas-ceramics". */

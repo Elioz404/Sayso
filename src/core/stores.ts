@@ -1,7 +1,7 @@
 // Storage contracts for shops and carts, with in-memory implementations for tests and the zero-config
 // local demo. Production uses the Postgres implementations in src/server/pg-stores.ts.
 
-import type { Catalog, StockLine } from './catalog.ts';
+import { isListed, type Catalog, type StockLine } from './catalog.ts';
 import type { PayPalCart } from './cart/spec.ts';
 
 export interface StoredCart {
@@ -54,8 +54,9 @@ export interface CatalogStore {
   byShopId(shopId: string): Promise<Catalog | undefined>;
   bySlug(slug: string): Promise<Catalog | undefined>;
   save(catalog: Catalog): Promise<void>;
-  /** Published shops only: what buyers' assistants can browse. */
+  /** Published, listed shops: what buyers' assistants can browse. */
   listLive(): Promise<Catalog[]>;
+  remove(shopId: string): Promise<void>;
   /**
    * Change a catalog atomically: `change` edits it and returns true to save, false to leave it as it
    * was. Nothing else writes the catalog in between, so a checkout taking the last unit and the owner
@@ -111,7 +112,10 @@ export class MemoryCatalogStore implements CatalogStore {
     this.catalogs.set(catalog.shop.id, structuredClone(catalog));
   }
   async listLive() {
-    return [...this.catalogs.values()].filter((c) => (c.shop.status ?? 'live') === 'live').map((c) => structuredClone(c));
+    return [...this.catalogs.values()].filter(isListed).map((c) => structuredClone(c));
+  }
+  async remove(shopId: string) {
+    this.catalogs.delete(shopId);
   }
   // Synchronous between reading and writing, which is all the atomicity one process needs.
   async modify(shopId: string, change: (catalog: Catalog) => boolean) {

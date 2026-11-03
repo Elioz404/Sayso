@@ -31,7 +31,7 @@ const bearer = (request: Request, prefix: string) => new RegExp(`^Bearer\\s+(${p
 export async function mcpPost(request: Request, endpoint: McpEndpoint = {}): Promise<Response> {
   const { shopSlug, marketplace = false, pathKey } = endpoint;
   const response = await handle(async () => {
-    const { tools, catalogs, access } = await ready();
+    const { tools, catalogs, access, wallets } = await ready();
     const agentKey = bearer(request, 'sk_agent_') ?? (pathKey?.startsWith('sk_agent_') ? pathKey : undefined);
     const key = agentKey ? await access.agentFromHeader(`Bearer ${agentKey}`) : undefined;
     if (!shopSlug && !marketplace && !key) {
@@ -56,7 +56,7 @@ export async function mcpPost(request: Request, endpoint: McpEndpoint = {}): Pro
       shopSlug,
       marketplace,
       agent,
-      walletKey: bearer(request, 'sk_wallet_') ?? (pathKey?.startsWith('sk_wallet_') ? pathKey : undefined),
+      wallet: await wallets.fromKey(bearer(request, 'sk_wallet_') ?? (pathKey?.startsWith('sk_wallet_') ? pathKey : undefined)),
       channel: channelOf(request, agent ? 'owner-agent' : 'mcp'),
     };
 

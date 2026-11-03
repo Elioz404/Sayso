@@ -109,7 +109,7 @@ body::before { content: ''; position: fixed; inset: 0 0 auto; height: env(safe-a
 .mark-bubble { fill: var(--sheet); }
 .mark-check { fill: none; stroke: var(--say); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
 .nav { display: flex; align-items: center; gap: var(--s5); margin-left: auto; }
-.nav-link { color: var(--ink-2); text-decoration: none; font-weight: 550; padding-block: 6px; }
+.nav-link { color: var(--ink-2); text-decoration: none; font-weight: 550; padding-block: 6px; white-space: nowrap; }
 .nav-link:hover { color: var(--ink); }
 .nav-link[aria-current='page'] { color: var(--ink); box-shadow: inset 0 -2px 0 var(--say); }
 .site-footer { border-top: 1px solid var(--rule); background: var(--paper-2); color: var(--ink-2); font-size: var(--t-sm); }
@@ -343,6 +343,13 @@ body:has(.owner) .site-header, body:has(.owner) .site-footer { display: none; }
 .variants .price { font-weight: 650; font-variant-numeric: tabular-nums; }
 .stock-out { color: var(--stop); }
 
+/* ---------- judges' tour ---------- */
+/* What the scripted agents did: who, the tool, and what came back, one row per call. */
+.tour-log { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s3); }
+.tour-log li { display: grid; grid-template-columns: 11rem minmax(0, 1fr); gap: var(--s3); align-items: start; }
+.tour-log code { font-size: var(--t-xs); color: var(--ink-3); }
+@media (max-width: 560px) { .tour-log li { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
+
 /* ---------- AG Grid cells ---------- */
 .cell-two { display: flex; flex-direction: column; justify-content: center; line-height: 1.3; height: 100%; }
 .cell-two small { color: var(--ink-3); font-size: var(--t-xs); }
@@ -389,7 +396,7 @@ body:has(.owner) .site-header, body:has(.owner) .site-footer { display: none; }
 @media (max-width: 640px) {
   .page { padding-block: var(--s5) var(--s7); }
   .nav { gap: var(--s4); }
-  .nav .nav-link:first-child, .nav .nav-link[href='/shop/maya-ceramics'] { display: none; }
+  .nav .nav-link-wide { display: none; }
   .doc-section td:first-child { white-space: normal; }
   .field-row { grid-template-columns: minmax(0, 1fr); }
   .ask { grid-template-columns: minmax(0, 1fr); }

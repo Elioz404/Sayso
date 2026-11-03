@@ -9,6 +9,7 @@ import type { Catalog } from '@/core/catalog.ts';
 import type { Policy } from '@/core/guard/policy.ts';
 import type { PolicyStore } from '@/core/guard/policy-store.ts';
 import type { JobNotes, JobStore } from '@/core/production.ts';
+import type { Tour, TourStore } from '@/core/tour.ts';
 import type { GuardRecord, GuardStore, RecordQuery, RecordStatus } from '@/core/guard/types.ts';
 import type { CartStore, CatalogStore, StoredCart } from '@/core/stores.ts';
 import type { Wallet, WalletStore } from '@/core/wallets.ts';
@@ -29,7 +30,7 @@ create unique index if not exists sayso_docs_slug on sayso_docs (kind, slug) whe
 create index if not exists sayso_docs_hash on sayso_docs (kind, hash) where hash is not null;
 `;
 
-type Kind = 'catalog' | 'cart' | 'guard' | 'owner' | 'key' | 'policy' | 'wallet' | 'wallet-key' | 'jobs';
+type Kind = 'catalog' | 'cart' | 'guard' | 'owner' | 'key' | 'policy' | 'wallet' | 'wallet-key' | 'jobs' | 'tour';
 type Queryable = pg.Pool | pg.PoolClient;
 
 interface Doc {
@@ -123,7 +124,12 @@ export class PgCatalogStore implements CatalogStore {
     await this.db.put({ kind: 'catalog', id: catalog.shop.id, slug: catalog.shop.slug, createdAt: catalog.shop.createdAt, data: catalog }, client);
   }
   listLive() {
-    return this.db.list<Catalog>('catalog', null, { where: ["coalesce(data->'shop'->>'status', 'live') = 'live'"] });
+    return this.db.list<Catalog>('catalog', null, {
+      where: ["coalesce(data->'shop'->>'status', 'live') = 'live'", "coalesce(data->'shop'->>'visibility', 'public') = 'public'"],
+    });
+  }
+  async remove(shopId: string) {
+    await this.db.pool.query("delete from sayso_docs where kind = 'catalog' and id = $1", [shopId]);
   }
   /** Row-locked, so two checkouts can't both take the last mug and an edit can't undo a sale. */
   modify(shopId: string, change: (catalog: Catalog) => boolean) {
@@ -258,6 +264,25 @@ export class PgJobStore implements JobStore {
        on conflict (kind, id) do update set data = sayso_docs.data || jsonb_build_object($2::text, coalesce(sayso_docs.data -> $2, '{}'::jsonb) || $3::jsonb)`,
       [shopId, jobId, JSON.stringify(notes)],
     );
+  }
+}
+
+export class PgTourStore implements TourStore {
+  private readonly db: Db;
+  constructor(db: Db) {
+    this.db = db;
+  }
+  async put(tour: Tour) {
+    await this.db.put({ kind: 'tour', id: tour.id, owner: tour.shopId, createdAt: tour.createdAt, data: tour });
+  }
+  async byShop(shopId: string) {
+    return (await this.db.list<Tour>('tour', shopId, { limit: 1 }))[0];
+  }
+  expired(now: Date) {
+    return this.db.list<Tour>('tour', null, { where: ["(data->>'expiresAt')::timestamptz <= $3"], params: [now.toISOString()] });
+  }
+  async remove(id: string) {
+    await this.db.pool.query("delete from sayso_docs where kind = 'tour' and id = $1", [id]);
   }
 }
 

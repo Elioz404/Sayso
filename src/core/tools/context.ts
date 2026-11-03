@@ -39,8 +39,8 @@ export interface ToolContext {
   agent?: { shopId: string; keyId: string; label: string };
   /** Who is calling, for the audit trail: "mcp", "cli", a client name... */
   channel: string;
-  /** A buyer's wallet key (sk_wallet_...) sent as the Authorization header, if any. */
-  walletKey?: string;
+  /** The buyer's saved PayPal, when the caller presented its key (header or personal URL). */
+  wallet?: Wallet;
 }
 
 export interface Tool {
@@ -88,9 +88,9 @@ export async function ownCart(ctx: ToolContext, cartId: string): Promise<string>
   return shopId;
 }
 
-/** The wallet from the wallet_key argument or the Authorization header. */
+/** The wallet from the wallet_key argument, or the one the caller connected with. */
 export async function walletFrom(ctx: ToolContext, given: unknown): Promise<Wallet> {
-  const wallet = await ctx.services.wallets.fromKey(typeof given === 'string' && given ? given : ctx.walletKey);
+  const wallet = typeof given === 'string' && given ? await ctx.services.wallets.fromKey(given) : ctx.wallet;
   if (!wallet) throw new ToolError('Unknown wallet key. Call connect_paypal to set one up.');
   return wallet;
 }

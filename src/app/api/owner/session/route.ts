@@ -4,9 +4,9 @@ import { cookies } from 'next/headers';
 import { HttpError } from '@/core/errors.ts';
 import { demoCatalog } from '@/core/demo-shop.ts';
 import { ready } from '@/server/context.ts';
-import { assertSameOrigin, handle, OWNER_COOKIE, readJson } from '@/server/http.ts';
+import { assertSameOrigin, handle, OWNER_COOKIE, readJson, startOwnerSession } from '@/server/http.ts';
 
-const WEEK = 7 * 86_400;
+const WEEK_MS = 7 * 86_400_000;
 
 export async function POST(request: Request) {
   return handle(async () => {
@@ -25,13 +25,7 @@ export async function POST(request: Request) {
     }
     if (!shopId) throw new HttpError(401, 'Shop or owner secret is wrong');
 
-    (await cookies()).set(OWNER_COOKIE, access.signOwnerSession(shopId, WEEK * 1000, Date.now(), kind), {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      path: '/',
-      maxAge: WEEK,
-    });
+    await startOwnerSession(shopId, kind, new Date(Date.now() + WEEK_MS));
     return Response.json({ ok: true });
   });
 }

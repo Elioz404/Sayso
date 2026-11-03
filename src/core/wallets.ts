@@ -39,6 +39,8 @@ export interface Wallet {
   paymentTokenId?: string;
   paypalCustomerId?: string;
   payerEmail?: string;
+  /** Uses another wallet's PayPal approval (a judge's tour): never deletes that PayPal token. */
+  sharedToken?: boolean;
   createdAt: string;
   connectedAt?: string;
 }
@@ -171,6 +173,32 @@ export class Wallets {
     return { wallet: connected, connectorKey };
   }
 
+  /**
+   * A connected wallet on another wallet's PayPal approval, with its own limits and its own Guard (so its
+   * daily total is its own). For the judges' tour, where a sandbox buyer approved once for everyone.
+   */
+  async lend(fromWalletId: string, label: string, limits: WalletLimits): Promise<Wallet> {
+    const source = await this.get(fromWalletId);
+    if (source.status !== 'connected' || !source.paymentTokenId) throw new HttpError(409, 'The wallet to lend from is not connected to PayPal');
+    const wallet: Wallet = {
+      id: `wal_${randomUUID().replace(/-/g, '').slice(0, 14)}`,
+      hash: hashOf(randomBytes(24).toString('base64url')), // no key: only the lender's code uses it
+      hint: '',
+      label,
+      status: 'connected',
+      limits,
+      paymentTokenId: source.paymentTokenId,
+      paypalCustomerId: source.paypalCustomerId,
+      payerEmail: source.payerEmail,
+      sharedToken: true,
+      createdAt: new Date().toISOString(),
+      connectedAt: new Date().toISOString(),
+    };
+    await this.deps.store.put(wallet);
+    await this.deps.policies.put(walletPolicy(wallet.id, limits));
+    return wallet;
+  }
+
   /** The URL a buyer adds to ChatGPT or any MCP client: every shop, plus their saved PayPal. */
   personalUrl(key: string): string {
     return this.deps.links.shoppingMcpFor(key);
@@ -178,7 +206,7 @@ export class Wallets {
 
   async disconnect(id: string): Promise<Wallet> {
     const wallet = await this.get(id);
-    if (wallet.paymentTokenId) await deletePaymentToken(this.deps.paypal, wallet.paymentTokenId).catch(() => undefined);
+    if (wallet.paymentTokenId && !wallet.sharedToken) await deletePaymentToken(this.deps.paypal, wallet.paymentTokenId).catch(() => undefined);
     // Every key issued so far stops working, so a leaked URL can't spend again after a later reconnect.
     // The hash is rotated to one no key produces; reconnecting issues fresh keys.
     const off: Wallet = { ...wallet, status: 'disconnected', paymentTokenId: undefined, hash: hashOf(randomBytes(24).toString('base64url')) };

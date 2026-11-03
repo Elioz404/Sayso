@@ -27,6 +27,7 @@ export default async function Approve({ params }: { params: Promise<{ id: string
   }
 
   const { redact } = view;
+  const onTour = Boolean(await view.tours?.forShop(view.shopId));
   const record = await view.saySo.record(view.shopId, id).catch(() => undefined);
   if (!record) {
     return (
@@ -103,6 +104,12 @@ export default async function Approve({ params }: { params: Promise<{ id: string
 
       <p className="small soft" style={{ marginTop: 18 }}>
         Request <span className="mono">{record.id}</span> · <a href="/owner#waiting">Everything waiting for you</a>
+        {onTour && (
+          <>
+            {' '}
+            · <a href="/tour">Back to the tour</a>
+          </>
+        )}
       </p>
     </main>
   );

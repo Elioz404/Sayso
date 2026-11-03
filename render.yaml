@@ -40,6 +40,12 @@ services:
         sync: false
       - key: SAYSO_DEMO_AGENT_KEY
         sync: false
+      # The judges' tour: the connected saved-PayPal wallet (wal_...) tour assistants pay with.
+      - key: SAYSO_TOUR_WALLET
+        sync: false
+      # Authenticates the scheduled cleanup of expired tour copies (POST /api/internal/sweep).
+      - key: SAYSO_CRON_SECRET
+        generateValue: true
       # Optional: push the demo shop's say-so requests to the owner's phone (ntfy app, subscribe to this topic).
       - key: SAYSO_NTFY_TOPIC
         sync: false

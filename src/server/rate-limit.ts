@@ -4,6 +4,8 @@ import { RateLimit } from '@/core/rate-limit.ts';
 
 /** New shops per address per hour: each one is an AI call on the server's budget. */
 export const onboarding = new RateLimit(10, 3_600_000);
+/** Judge tours per address per hour: each one is a shop copy and real sandbox PayPal calls. */
+export const tourStarts = new RateLimit(5, 3_600_000);
 
 /**
  * The caller's address as our hosting edge saw it. The proxy appends the real client to

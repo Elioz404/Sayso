@@ -282,7 +282,7 @@ test("saved PayPal: the buyer approves once and sets limits; the assistant pays 
   await assert.rejects(s.wallets.startConnect(walletId, { perOrder: '2000', daily: '2000' }), /already connected/, 'limits are fixed once connected');
 
   // $44.99 is inside the $50 limit: paid with no link, and the shop's Guard still captured it.
-  const paid = await s.call('pay_with_paypal', { cart_id: early.data.cart_id }, { ...s.buyer, walletKey: connect.data.wallet_key });
+  const paid = await s.call('pay_with_paypal', { cart_id: early.data.cart_id }, { ...s.buyer, wallet: await s.wallets.fromKey(connect.data.wallet_key) }); // as if sent in the header
   assert.equal(paid.data.status, 'paid', paid.text);
   assert.equal(paid.data.order.payment, 'Charged. The shop is preparing the order.');
   const order = (await s.call('list_orders', {}, s.owner)).data.find((o: { id: string }) => o.id === early.data.cart_id);

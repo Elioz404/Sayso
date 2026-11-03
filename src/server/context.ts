@@ -25,12 +25,13 @@ import { captureExecutor, refundExecutor, voidExecutor } from '@/core/paypal/exe
 import { invoiceExecutor } from '@/core/paypal/invoices.ts';
 import { policyLookup } from '@/core/policies.ts';
 import { SaySo } from '@/core/say-so.ts';
+import { MemoryTourStore, Tours } from '@/core/tour.ts';
 import { Shops } from '@/core/shops.ts';
 import { MemoryCartStore, MemoryCatalogStore, type CartStore, type CatalogStore } from '@/core/stores.ts';
 import type { ToolServices } from '@/core/tools/registry.ts';
 import { MemoryWalletStore, walletCheckoutExecutor, Wallets, type WalletStore } from '@/core/wallets.ts';
 import { notifyOwner } from './notify.ts';
-import { Db, PgAccessStore, PgCartStore, PgCatalogStore, PgGuardStore, PgJobStore, PgPolicyStore, PgWalletStore } from './pg-stores.ts';
+import { Db, PgAccessStore, PgCartStore, PgCatalogStore, PgGuardStore, PgJobStore, PgPolicyStore, PgTourStore, PgWalletStore } from './pg-stores.ts';
 
 export interface Context {
   carts: CartStore;
@@ -46,6 +47,8 @@ export interface Context {
   invoicing: Invoicing;
   wallets: Wallets;
   production: Production;
+  /** The judges' tour; only on servers that run the public demo (SAYSO_DEMO=true). */
+  tours?: Tours;
   market?: MarketPrices;
   tools: ToolServices;
   links: Links;
@@ -116,8 +119,24 @@ async function create(): Promise<Context> {
   const market = channel3 && new MarketPrices(channel3);
   const tools: ToolServices = { commerce, orders, saySo, invoicing, production, shops, catalogs, wallets, links: site, market };
 
+  // Tours copy the demo shop. SAYSO_TOUR_WALLET names a connected wallet whose PayPal approval the tour's
+  // buyer assistant may pay with; without it the tour hands out PayPal links instead.
+  const tours =
+    process.env.SAYSO_DEMO === 'true'
+      ? new Tours({
+          store: db ? new PgTourStore(db) : new MemoryTourStore(),
+          catalogs,
+          access,
+          wallets,
+          saySo,
+          tools,
+          template: demoCatalog,
+          lendFrom: process.env.SAYSO_TOUR_WALLET || undefined,
+        })
+      : undefined;
+
   await seedDemo(catalogs, policies, access);
-  return { carts, catalogs, access, model, aiBudget: ai?.budget, guard, commerce, shops, orders, saySo, invoicing, production, wallets, market, tools, links: site };
+  return { carts, catalogs, access, model, aiBudget: ai?.budget, guard, commerce, shops, orders, saySo, invoicing, production, tours, wallets, market, tools, links: site };
 }
 
 function sessionSecret(): string {

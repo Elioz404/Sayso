@@ -14,6 +14,19 @@ export async function ownerSession(): Promise<OwnerSession | undefined> {
   return access.verifyOwnerSession((await cookies()).get(OWNER_COOKIE)?.value);
 }
 
+/** Sign this browser in as `shopId`'s owner until `expires`. */
+export async function startOwnerSession(shopId: string, kind: OwnerSession['kind'], expires: Date): Promise<void> {
+  const { access } = await ready();
+  const ttlMs = expires.getTime() - Date.now();
+  (await cookies()).set(OWNER_COOKIE, access.signOwnerSession(shopId, ttlMs, Date.now(), kind), {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    maxAge: Math.floor(ttlMs / 1000),
+  });
+}
+
 /** Shop id of the signed-in owner, if any. */
 export async function ownerShopId(): Promise<string | undefined> {
   return (await ownerSession())?.shopId;

@@ -7,15 +7,17 @@ import { Icon } from './ui.tsx';
 
 export function NavLinks() {
   const path = usePathname();
+  // `wide`: only where there is room; phones keep the essentials.
   const links = [
-    { href: '/start', label: 'Start selling' },
-    { href: `/shop/${ABOUT.demoShop}`, label: 'Demo shop' },
+    { href: '/tour', label: 'For Judges' },
+    { href: '/start', label: 'Start selling', wide: true },
+    { href: `/shop/${ABOUT.demoShop}`, label: 'Demo shop', wide: true },
     { href: '/docs', label: 'Docs' },
   ];
   return (
     <nav className="nav" aria-label="Main">
       {links.map((l) => (
-        <a key={l.href} href={l.href} className="nav-link" aria-current={path.startsWith(l.href) ? 'page' : undefined}>
+        <a key={l.href} href={l.href} className={l.wide ? 'nav-link nav-link-wide' : 'nav-link'} aria-current={path.startsWith(l.href) ? 'page' : undefined}>
           {l.label}
         </a>
       ))}
