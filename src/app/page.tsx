@@ -86,8 +86,11 @@ export default async function Home() {
             <h3>
               <Icon name="shield" size={20} /> You
             </h3>
-            <p className="soft">Write your limits in plain words. Refunds, charges and rule changes that cross them wait for you, and only you.</p>
-            <span className="via">Phone approvals · dashboard</span>
+            <p className="soft">
+              Sign in and get paid with your own PayPal. Refunds, charges and rule changes that cross your limits wait for you, and the yeses you keep
+              giving become rules your agent earns.
+            </p>
+            <span className="via">Sign in with PayPal · phone approvals</span>
           </div>
         </div>
       </section>

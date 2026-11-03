@@ -5,7 +5,7 @@ import type { Metadata } from 'next';
 import { CopyField } from '@/app/_components/client-ui.tsx';
 import { ABOUT } from '@/core/about.ts';
 import { MCP_VERSIONS } from '@/core/mcp.ts';
-import { developerPortalBuilt, siteLinks } from '@/server/context.ts';
+import { developerPortalBuilt, paypalLoginEnabled, siteLinks } from '@/server/context.ts';
 
 export const metadata: Metadata = {
   title: 'Docs',
@@ -16,6 +16,7 @@ const SECTIONS = [
   { id: 'shop', title: 'Shop from your assistant' },
   { id: 'pay', title: 'Pay without a link each time' },
   { id: 'run', title: 'Run your shop with your agent' },
+  { id: 'paid', title: 'Get paid into your PayPal' },
   { id: 'cli', title: 'The sayso CLI' },
   { id: 'guard', title: 'How your money is protected' },
   { id: 'paypal', title: "PayPal's commerce platform" },
@@ -33,6 +34,7 @@ const CLI = [
   ['sayso stock <variant> 4', 'Set stock'],
   ['sayso approvals', "What is waiting for you (read-only)"],
   ['sayso policy propose "..."', 'Draft new rules; they apply after you approve'],
+  ['sayso policy earned', 'Rules your own approvals support, with the decisions behind them'],
   ['sayso audit', 'Every money move with its hash-chain check'],
   ['sayso mcp', 'Serve the tools to a local MCP client over stdio'],
 ];
@@ -41,6 +43,7 @@ export default async function Docs() {
   await connection(); // URLs come from PUBLIC_BASE_URL at request time, not at build time
   const links = siteLinks();
   const portal = developerPortalBuilt();
+  const paypalLogin = paypalLoginEnabled();
   return (
     <main className="wrap page">
       <div className="docs">
@@ -130,8 +133,15 @@ export default async function Docs() {
             <ol className="steps">
               <li>
                 <span>
-                  <a href="/start">Draft your shop</a> from photos and a price list, check it, and publish. You get an owner secret: it signs you in and is the
-                  only thing that approves money moves.
+                  <a href="/start">Draft your shop</a> from photos and a price list,{' '}
+                  {paypalLogin ? (
+                    <>
+                      make it yours with <b>Continue with PayPal</b>, check it and publish. Signing in with PayPal is the only thing that approves money
+                      moves; no agent key can.
+                    </>
+                  ) : (
+                    <>check it, and publish. You get an owner secret: it signs you in and is the only thing that approves money moves.</>
+                  )}
                 </span>
               </li>
               <li>
@@ -147,6 +157,18 @@ export default async function Docs() {
             <p>
               Your agent can now check orders, refund, add tracking, invoice custom orders, change prices and stock, and propose rules. Anything over your limits waits for you on
               your phone, and the agent is told so. Revoke the key in Agents and the URL stops working at once.
+            </p>
+          </section>
+
+          <section id="paid" className="doc-section">
+            <h2>Get paid into your PayPal</h2>
+            <p>
+              In your dashboard, press <b>Connect your PayPal</b> and sign in to the PayPal account you sell with. You allow Sayso two things: to take
+              payments for you, and to refund them. From then on every sale lands in your account directly; Sayso never holds your money.
+            </p>
+            <p>
+              Refunds of those sales come out of your account, still only inside your rules or with your OK. Sayso checks with PayPal which account you
+              connected and what you allowed before it relies on either. Each order shows which account it was paid into.
             </p>
           </section>
 
@@ -207,6 +229,11 @@ export default async function Docs() {
             <p>
               Write your rules in plain words, for example &ldquo;refunds over $30 need my OK; invoices to new clients always need my OK&rdquo;. They become
               exact rules you can read in <b>Rules</b>, and the rules decide, not the AI.
+            </p>
+            <p>
+              When you keep approving the same kind of request, Sayso suggests letting your agent handle those alone, up to what you approved and
+              never past anything you turned down. Your agent can ask for that rule too, but only you can say yes: agents earn autonomy, they never
+              take it.
             </p>
           </section>
 
