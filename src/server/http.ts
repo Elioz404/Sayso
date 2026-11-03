@@ -1,6 +1,37 @@
 import 'server-only';
+import { cookies } from 'next/headers';
+import type { AgentKey } from '@/core/access.ts';
 import { HttpError } from '@/core/commerce.ts';
 import { PayPalError } from '@/core/paypal/client.ts';
+import { ready } from './context.ts';
+
+export const OWNER_COOKIE = 'sayso_owner';
+
+/** Shop id of the signed-in owner, if any. Agent keys never produce an owner session. */
+export async function ownerShopId(): Promise<string | undefined> {
+  const { access } = await ready();
+  return access.verifyOwnerSession((await cookies()).get(OWNER_COOKIE)?.value);
+}
+
+export async function requireOwner(request: Request): Promise<string> {
+  assertSameOrigin(request);
+  const shopId = await ownerShopId();
+  if (!shopId) throw new HttpError(401, 'Sign in as the shop owner first');
+  return shopId;
+}
+
+export async function agentFrom(request: Request): Promise<AgentKey | undefined> {
+  const { access } = await ready();
+  return access.agentFromHeader(request.headers.get('authorization'));
+}
+
+/** Owner actions are cookie-authenticated, so refuse cross-site requests outright. */
+export function assertSameOrigin(request: Request): void {
+  const origin = request.headers.get('origin');
+  if (origin && origin !== new URL(request.url).origin && origin !== process.env.PUBLIC_BASE_URL?.replace(/\/$/, '')) {
+    throw new HttpError(403, 'Cross-site request refused');
+  }
+}
 
 /** Run a route body and map known errors to the JSON shapes the merchant-cart spec expects. */
 export async function handle(fn: () => Promise<Response>): Promise<Response> {
@@ -13,7 +44,8 @@ export async function handle(fn: () => Promise<Response>): Promise<Response> {
       return Response.json({ name: 'PAYPAL_ERROR', message: err.message, debug_id: err.debugId }, { status: 502 });
     }
     console.error(err);
-    return Response.json({ name: 'INTERNAL_SERVER_ERROR', message: 'Unexpected error' }, { status: 500 });
+    const message = err instanceof Error && /PAYPAL_CLIENT_ID/.test(err.message) ? 'PayPal sandbox keys are not configured on this server' : 'Unexpected error';
+    return Response.json({ name: 'INTERNAL_SERVER_ERROR', message }, { status: 500 });
   }
 }
 

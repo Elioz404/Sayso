@@ -119,6 +119,7 @@ function label(kind: ActionKind): string {
     'refund.create': 'refunds',
     'invoice.send': 'invoices',
     'dispute.accept': 'accepting disputes',
+    'policy.update': 'policy changes',
   }[kind];
 }
 

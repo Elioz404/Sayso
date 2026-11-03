@@ -8,7 +8,8 @@ export type ActionKind =
   | 'payment.void' // merchant releases an authorization (buyer is never charged)
   | 'refund.create'
   | 'invoice.send'
-  | 'dispute.accept';
+  | 'dispute.accept'
+  | 'policy.update'; // replace the owner's say-so rules (never on an agent's word alone)
 
 export type Side = 'buyer' | 'merchant';
 

@@ -6,6 +6,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { evaluate, type Policy } from './policy.ts';
 import type { ActionKind, AuditEvent, Executor, GuardRecord, GuardStore, ProposedAction } from './types.ts';
 
+const HUMAN_ONLY = new Set<ActionKind>(['policy.update']);
+
 export interface GuardDeps {
   store: GuardStore;
   executors: Partial<Record<ActionKind, Executor>>;
@@ -53,6 +55,13 @@ export class Guard {
           verdict: 'deny',
           hits: record.simulation.blockers.map((message) => ({ ruleId: 'simulation', verdict: 'deny' as const, message })),
         };
+    // Built in, not part of any policy: an agent can never change its own rules without the owner.
+    if (HUMAN_ONLY.has(action.kind) && action.actor.type === 'agent' && record.decision.verdict === 'allow') {
+      record.decision = {
+        verdict: 'require_approval',
+        hits: [...record.decision.hits, { ruleId: 'built-in:human-only', verdict: 'require_approval', message: 'Agents can propose policy changes, but only the owner can apply them.' }],
+      };
+    }
     append(record, 'decided', 'sayso', { ...record.decision }, this.now());
 
     if (record.decision.verdict === 'deny') {

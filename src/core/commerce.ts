@@ -8,11 +8,11 @@
 //        for something that can't ship).
 
 import { randomUUID } from 'node:crypto';
-import { findVariant, type Catalog } from './catalog.ts';
+import { findVariant, isLive, type Catalog } from './catalog.ts';
 import { isPayable, priceCart } from './cart/engine.ts';
 import type { CheckoutResult, PayPalCart, ValidationIssue } from './cart/spec.ts';
 import type { Guard } from './guard/engine.ts';
-import type { Actor } from './guard/types.ts';
+import type { Actor, GuardRecord } from './guard/types.ts';
 import { toMinor } from './money.ts';
 import type { PayPalClient } from './paypal/client.ts';
 import { approvalUrl, authorizeOrder, createOrderFromCart, getOrder } from './paypal/orders.ts';
@@ -28,6 +28,9 @@ export interface StoredCart {
   captureId?: string;
   guardRecordId?: string;
   merchantOrderNumber?: string;
+  /** The authorization was released (owner rejected the capture, or it could not ship). */
+  voided?: boolean;
+  tracking?: { carrier: string; number: string; addedAt: string };
   /** Who was shopping, as far as we know: e.g. "chatgpt", "mcp-client", "sayso-buyer". */
   channel?: string;
   createdAt: string;
@@ -37,12 +40,16 @@ export interface StoredCart {
 export interface CartStore {
   get(id: string): Promise<StoredCart | undefined>;
   put(cart: StoredCart): Promise<void>;
+  /** Carts of a shop, newest first. */
+  listByShop(shopId: string): Promise<StoredCart[]>;
 }
 
 export interface CatalogStore {
   byShopId(shopId: string): Promise<Catalog | undefined>;
   bySlug(slug: string): Promise<Catalog | undefined>;
   decrementInventory(shopId: string, variantId: string, quantity: number): Promise<void>;
+  save(catalog: Catalog): Promise<void>;
+  list(): Promise<Catalog[]>;
 }
 
 export interface CommerceDeps {
@@ -75,6 +82,7 @@ export class Commerce {
 
   async createCart(shopSlug: string, input: PayPalCart, channel?: string): Promise<PayPalCart> {
     const catalog = await this.catalogBySlug(shopSlug);
+    if (!isLive(catalog)) throw new HttpError(404, `Shop ${shopSlug} is not published yet`);
     const now = new Date().toISOString();
     const stored: StoredCart = {
       id: `cart_${randomUUID().replace(/-/g, '').slice(0, 16)}`,
@@ -151,13 +159,14 @@ export class Commerce {
     stored.guardRecordId = record.id;
 
     if (record.status === 'denied' || record.status === 'failed') {
-      await this.deps.guard.submit({
+      const released = await this.deps.guard.submit({
         kind: 'payment.void',
         actor: OPS_AGENT,
         ownerId: stored.shopId,
         resourceId: authorization.id,
         reason: `Capture ${record.status}: ${record.decision?.hits.map((h) => h.message).join(' ') ?? ''}`.trim(),
       });
+      stored.voided = released.status === 'verified';
       await this.deps.carts.put(stored);
       throw new HttpError(422, 'Payment could not be completed', issueBody(stored, paymentIssue('The shop could not accept this payment. You have not been charged.')));
     }
@@ -168,11 +177,31 @@ export class Commerce {
     for (const item of stored.cart.items) {
       if (item.variant_id) await this.deps.catalogs.decrementInventory(stored.shopId, item.variant_id, item.quantity);
     }
-    stored.cart = { ...stored.cart, status: 'COMPLETED', payment_method: { type: 'paypal', token, payer_id: input.payment_method?.payer_id } };
+    stored.cart = {
+      ...stored.cart,
+      status: 'COMPLETED',
+      customer: stored.cart.customer ?? (order.payer?.email_address ? { email_address: order.payer.email_address } : undefined),
+      payment_method: { type: 'paypal', token, payer_id: input.payment_method?.payer_id },
+    };
     stored.merchantOrderNumber = `SAY-${Date.now().toString(36).toUpperCase()}`;
     stored.updatedAt = new Date().toISOString();
     await this.deps.carts.put(stored);
     return this.completed(stored);
+  }
+
+  /**
+   * Keep the cart in step with a Guard record that finished later, e.g. a capture the owner approved
+   * from their phone after checkout.
+   */
+  async applyRecord(record: GuardRecord): Promise<void> {
+    const cartId = record.action.params?.cartId;
+    if (typeof cartId !== 'string' || record.status !== 'verified') return;
+    const stored = await this.deps.carts.get(cartId);
+    if (!stored) return;
+    if (record.action.kind === 'payment.capture' && record.result?.capture_id) stored.captureId = String(record.result.capture_id);
+    if (record.action.kind === 'payment.void') stored.voided = true;
+    stored.updatedAt = new Date().toISOString();
+    await this.deps.carts.put(stored);
   }
 
   /** Create (or recreate) the PayPal order whenever the cart is payable and its total changed. */
@@ -253,6 +282,11 @@ export class MemoryCartStore implements CartStore {
   all(): StoredCart[] {
     return [...this.carts.values()].map((c) => structuredClone(c));
   }
+  async listByShop(shopId: string) {
+    return this.all()
+      .filter((c) => c.shopId === shopId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
 }
 
 export class MemoryCatalogStore implements CatalogStore {
@@ -270,5 +304,13 @@ export class MemoryCatalogStore implements CatalogStore {
     const catalog = this.catalogs.find((c) => c.shop.id === shopId);
     const found = catalog && findVariant(catalog, variantId);
     if (found && found.variant.madeToOrderDays === undefined) found.variant.inventory = Math.max(0, found.variant.inventory - quantity);
+  }
+  async save(catalog: Catalog) {
+    const i = this.catalogs.findIndex((c) => c.shop.id === catalog.shop.id);
+    if (i >= 0) this.catalogs[i] = structuredClone(catalog);
+    else this.catalogs.push(structuredClone(catalog));
+  }
+  async list() {
+    return structuredClone(this.catalogs);
   }
 }
