@@ -2,7 +2,8 @@
 // audit trail. Everything here is behind the owner session.
 import { connection } from 'next/server';
 import { LoginForm, NewKey, PublishButton, RevokeKey, SignOut, Decision } from '@/app/_components/owner-actions.tsx';
-import { formatMoney } from '@/core/money.ts';
+import { AuditGrid, OrdersGrid, type AuditRow, type OrderRow } from '@/app/_components/grids.tsx';
+import { formatMoney, toMinor } from '@/core/money.ts';
 import { ready } from '@/server/context.ts';
 import { ownerShopId } from '@/server/http.ts';
 
@@ -21,7 +22,7 @@ export default async function Owner() {
     );
   }
 
-  const { shops, seller, access, baseUrl } = await ready();
+  const { shops, seller, access, baseUrl, carts } = await ready();
   const catalog = await shops.get(shopId);
   const { shop } = catalog;
   const [orders, approvals, audit, rules, keys, missed] = await Promise.all([
@@ -33,6 +34,33 @@ export default async function Owner() {
     seller.missedDemand(shopId),
   ]);
   const status = shop.status ?? 'live';
+  const when = (iso: string) => new Date(iso).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+  const cartsById = new Map((await carts.listByShop(shopId)).map((c) => [c.id, c]));
+  const orderRows: OrderRow[] = orders.map((o) => {
+    const total = cartsById.get(o.id)?.cart.totals?.total;
+    return {
+      id: o.id,
+      number: o.number ?? o.id,
+      created: when(o.createdAt),
+      status: o.status,
+      total: o.total ?? '-',
+      totalMinor: total ? toMinor(total) : 0,
+      items: o.items.map((i) => `${i.quantity}x ${i.name ?? i.variant_id}`).join(', '),
+      buyer: o.buyer ?? '-',
+      via: o.channel ?? '-',
+      tracking: o.tracking ? `${o.tracking.carrier} ${o.tracking.number}` : '-',
+    };
+  });
+  const auditRows: AuditRow[] = audit.map((r) => ({
+    id: r.id,
+    at: when(r.createdAt),
+    action: r.action.kind,
+    amount: r.action.amount !== undefined ? formatMoney(r.action.amount, r.action.currency ?? shop.currency) : '-',
+    by: r.action.actor.id,
+    status: r.status,
+    why: [...(r.decision?.hits.map((h) => h.message) ?? []), r.action.reason].filter(Boolean).join(' '),
+    chain: r.chainIntact ? 'intact' : 'tampered',
+  }));
 
   return (
     <main>
@@ -75,26 +103,7 @@ export default async function Owner() {
       </div>
 
       <h2>Orders</h2>
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr><th>Order</th><th>Status</th><th>Total</th><th>Items</th><th>Via</th><th>Tracking</th></tr>
-          </thead>
-          <tbody>
-            {orders.length === 0 && <tr><td colSpan={6} className="muted">No orders yet.</td></tr>}
-            {orders.map((o) => (
-              <tr key={o.id}>
-                <td>{o.number ?? <code>{o.id}</code>}<div className="small muted">{new Date(o.createdAt).toLocaleString('en-US')}</div></td>
-                <td><span className={`pill ${o.status}`}>{o.status.replace('_', ' ')}</span></td>
-                <td>{o.total ?? '-'}</td>
-                <td>{o.items.map((i) => `${i.quantity}x ${i.name ?? i.variant_id}`).join(', ')}</td>
-                <td>{o.channel ?? '-'}</td>
-                <td>{o.tracking ? `${o.tracking.carrier} ${o.tracking.number}` : '-'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <OrdersGrid rows={orderRows} />
 
       {missed.length > 0 && (
         <>
@@ -168,26 +177,8 @@ node cli/sayso.ts login --url ${baseUrl} --key sk_agent_...
       </div>
 
       <h2>Audit log</h2>
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr><th>When</th><th>Action</th><th>Amount</th><th>By</th><th>Status</th><th>Chain</th></tr>
-          </thead>
-          <tbody>
-            {audit.length === 0 && <tr><td colSpan={6} className="muted">No agent actions yet.</td></tr>}
-            {audit.map((r) => (
-              <tr key={r.id}>
-                <td className="small">{new Date(r.createdAt).toLocaleString('en-US')}<div><a href={`/approve/${r.id}`}><code>{r.id}</code></a></div></td>
-                <td>{r.action.kind}</td>
-                <td>{r.action.amount !== undefined ? formatMoney(r.action.amount, r.action.currency ?? shop.currency) : '-'}</td>
-                <td className="small">{r.action.actor.id}</td>
-                <td><span className={`pill ${r.status}`}>{r.status.replace('_', ' ')}</span></td>
-                <td>{r.chainIntact ? <span className="ok small">intact</span> : <span className="error small">TAMPERED</span>}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <p className="small muted">Every agent action, with its hash chain re-checked on load. &ldquo;tampered&rdquo; means a record was edited after the fact.</p>
+      <AuditGrid rows={auditRows} />
     </main>
   );
 }
