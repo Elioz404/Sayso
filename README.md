@@ -74,14 +74,15 @@ Agents can't loosen their own rules (step 3 of the tour); they earn it, one deci
 
 ## For Judges: the 2-minute tour
 
-Open `https://<host>/tour` (or **For Judges** in the header). No sign-in, nothing to install: it makes you a private copy of the demo shop and signs you in as its owner. Four buttons run scripted agents through the same tools any assistant uses, against the real PayPal sandbox:
+Open [`/tour`](https://sayso-ovph.onrender.com/tour) (or **For Judges** in the header). No sign-in, nothing to install: it makes you a private copy of the demo shop and signs you in as its owner. Five short steps, one per screen, each saying what it proves, what you do, and what happened, with the agents' transcript and the Guard record behind it. Scripted agents use the same tools any assistant uses, against the real PayPal sandbox:
 
 1. **A shopping assistant buys.** It asks for two mugs when one is left, applies the shop's fix from the merchant-cart spec, and pays with saved PayPal inside the buyer's limits; the shop's Guard captures.
 2. **Your agent asks for a big refund.** Over the $50 rule, so Guard holds it and you decide. PayPal refunds and Sayso reads it back.
-3. **Your agent tries to loosen its own rules.** Guard holds it: only the owner can change the rules.
-4. **Your agent invoices a commission.** A PayPal invoice to a new client waits for you, then lands on the Making board, blocked until paid.
+3. **Your agent invoices a commission.** A PayPal invoice to a new client waits for you, then lands on the Making board, blocked until paid.
+4. **Your agent tries to loosen its own rules.** Guard holds it: only the owner can change the rules.
+5. **Your agent earns autonomy.** It asks for three small refunds on a new order; you approve them, and Sayso suggests the rule your approvals earned. Adopt it, and refunds like those no longer need you.
 
-Each step shows what the agent did and the Guard record it produced, step by step, with its audit hash. Your copy expires after a day and nobody else sees it. Approve a few refunds in it and the **Rules** page starts suggesting what your agent could do alone.
+The wrap-up lists what happened, the PayPal ids to look up in the sandbox, and whether every audit chain is intact. Your copy expires after a day and nobody else sees it. To go further (a shop from one photo, signing in with PayPal, being paid directly), use the sandbox accounts in the testing instructions.
 
 ## Try it in five minutes, your way
 

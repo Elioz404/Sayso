@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { demoCatalog } from '../src/core/demo-shop.ts';
+import { ownerActor } from '../src/core/actors.ts';
 import { MemoryTourStore, Tours } from '../src/core/tour.ts';
 import { stack } from './stack.ts';
 
@@ -83,4 +84,24 @@ test('a refund needs the purchase first, and expired tours are swept away', asyn
   assert.equal(await store.byShop(tour.shopId), undefined);
   assert.equal((await s.access.listKeys(tour.shopId)).every((k) => k.revokedAt), true);
   assert.equal(s.pp.paymentTokens.size, 1, "the lender's PayPal approval is never deleted");
+});
+
+test('the agent earns autonomy: the judge approves three held refunds, then adopts the rule they support', async () => {
+  const s = await stack();
+  const { tours: t } = tours(s, await lender(s));
+  const tour = await t.start();
+
+  const earn = await t.run(tour.shopId, 'earn');
+  assert.equal((await s.orders.get(tour.shopId, earn.cartId!)).order.status, 'paid', 'its own order, paid with saved PayPal');
+  assert.equal(earn.recordIds?.length, 3);
+  for (const id of earn.recordIds!) {
+    assert.equal((await s.guard.get(id))?.status, 'pending_approval', 'each refund is over the $50 rule');
+    await s.saySo.decide(tour.shopId, id, 'approve', `owner:${tour.shopId}`);
+  }
+
+  const [suggestion] = (await s.saySo.autonomy(tour.shopId)).suggestions;
+  assert.match(suggestion.title, /refunds up to \$60\.00 on its own/);
+  await s.saySo.adoptSuggestion(tour.shopId, suggestion.id, ownerActor(tour.shopId));
+  const cap = (await s.saySo.policy(tour.shopId)).rules.find((r) => r.id === 'refund-cap') as { limit: number };
+  assert.equal(cap.limit, 6_000);
 });

@@ -1,8 +1,9 @@
 // The judges' tour: a private copy of the demo shop per visit, and scripted agents that walk through
 // the whole product with the same tools a real assistant uses. A buyer's assistant shops and pays with
-// saved PayPal, the owner's agent asks for a big refund (Guard holds it for the judge), tries to loosen
-// its own rules (Guard holds that too) and invoices a commission. Nothing here bypasses Guard: the tour
-// only drives the tools, and the judge gives the say-so like any owner.
+// saved PayPal, the owner's agent asks for a big refund (Guard holds it for the judge), invoices a
+// commission, tries to loosen its own rules (Guard holds that too), and finally earns some autonomy:
+// after the judge approves a few refunds like it, Sayso suggests letting the agent do those alone.
+// Nothing here bypasses Guard: the tour only drives the tools, and the judge gives the say-so like any owner.
 
 import { randomBytes } from 'node:crypto';
 import type { Access } from './access.ts';
@@ -10,18 +11,23 @@ import type { Address } from './cart/spec.ts';
 import type { Catalog } from './catalog.ts';
 import { HttpError, notFound } from './errors.ts';
 import type { Policy } from './guard/policy.ts';
-import { majorUnits } from './money.ts';
+import { majorUnits, toMoney } from './money.ts';
 import type { SaySo } from './say-so.ts';
 import type { CatalogStore } from './stores.ts';
 import { actor } from './tools/context.ts';
 import { callTool, ToolError, type ToolContext, type ToolServices } from './tools/registry.ts';
 import type { Wallets } from './wallets.ts';
 
-export const TOUR_STEPS = ['buy', 'refund', 'rules', 'commission'] as const;
+export const TOUR_STEPS = ['buy', 'refund', 'commission', 'rules', 'earn'] as const;
 export type TourStep = (typeof TOUR_STEPS)[number];
 
 /** What each step needs done first. */
-const NEEDS: Record<TourStep, TourStep | undefined> = { buy: undefined, refund: 'buy', rules: undefined, commission: undefined };
+const NEEDS: Record<TourStep, TourStep | undefined> = { buy: undefined, refund: 'buy', commission: undefined, rules: undefined, earn: undefined };
+
+/** The refunds the owner's agent asks for in the "earn" step: each over the $50 rule, so each waits for the judge. */
+const EARN_REFUNDS = [52, 56, 58];
+/** Made-to-order pieces the assistant buys for the "earn" step, so its refunds have an order of their own. */
+const EARN_PIECES = 3;
 
 export interface TranscriptLine {
   /** Which scripted agent acted. */
@@ -39,6 +45,8 @@ export interface StepResult {
   cartId?: string;
   /** The say-so request the step created, if it is waiting for the judge. */
   recordId?: string;
+  /** Several say-so requests, when the step makes more than one ("earn"). */
+  recordIds?: string[];
   /** When the tour can't pay on the judge's behalf: where to pay in PayPal sandbox instead. */
   approvalUrl?: string;
 }
@@ -171,6 +179,7 @@ export class Tours {
       });
       result.recordId = record.id;
     }
+    if (step === 'earn') await this.earn(tour, result, act);
     if (step === 'commission') {
       const invoice = await act(
         'owner-agent',
@@ -203,6 +212,34 @@ export class Tours {
       await this.deps.store.remove(tour.id);
     }
     return expired.length;
+  }
+
+  /**
+   * The buyer's assistant orders a few made-to-order pieces with saved PayPal, then the owner's agent
+   * asks for small refunds on that order, each just over the shop's $50 rule. The judge decides each one;
+   * if they approve them all, Sayso suggests the rule those approvals earned (shown on the tour page).
+   */
+  private async earn(tour: Tour, result: StepResult, act: Act) {
+    if (!tour.walletId) throw new HttpError(409, 'This step needs saved PayPal to pay for its order, and this server has none to lend');
+    const catalog = await this.deps.catalogs.byShopId(tour.shopId);
+    const piece = catalog?.products.flatMap((p) => p.variants.map((v) => ({ p, v }))).find(({ v }) => v.madeToOrderDays !== undefined);
+    if (!catalog || !piece) throw new HttpError(409, 'This shop has nothing made to order to buy');
+
+    const cart = await act('assistant', 'create_cart', { items: [{ variant_id: piece.v.id, quantity: EARN_PIECES }], shipping_address: SHIP_TO }, (r) =>
+      `Ordered ${EARN_PIECES} ${piece.p.name}s for a wedding: ${r.totals.total.value} ${r.totals.total.currency_code}.`,
+    );
+    result.cartId = cart.cart_id;
+    await act('assistant', 'pay_with_paypal', { cart_id: cart.cart_id }, (r) => (r.status === 'paid' ? `Paid with saved PayPal. Order ${r.order.number}.` : `Payment ${r.status}: ${r.next}`));
+
+    const currency = catalog.shop.currency;
+    result.recordIds = [];
+    for (const [i, units] of EARN_REFUNDS.entries()) {
+      const amount = toMoney(majorUnits(units, currency), currency).value;
+      const refund = await act('owner-agent', 'refund_order', { order_id: cart.cart_id, amount, reason: `Vase ${i + 1} of ${EARN_PIECES} has a small glaze flaw; partial refund.` }, (r) =>
+        r.status === 'pending_approval' ? `Asked to refund ${r.amount} for a glaze flaw. Guard held it for you.` : `Refund ${r.status}: ${r.next ?? ''}`.trim(),
+      );
+      result.recordIds.push(refund.say_so_id);
+    }
   }
 
   /** A buyer's assistant: search, hit the stock limit, apply the shop's fix, pay. */
