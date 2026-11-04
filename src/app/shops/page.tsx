@@ -19,11 +19,8 @@ export default async function ShopsPage() {
       <header className="shops-head">
         <div className="stack" style={{ gap: 'var(--s2)', minWidth: 0 }}>
           <h1>Shops</h1>
-          <p className="soft">Small makers who sell to AI assistants and get paid with PayPal. Open a shop to see its work, or just ask the assistant: it searches all of them.</p>
+          <p className="soft">Small makers who sell to AI assistants and get paid with PayPal. Open a shop to see its work, or tap Ask AI to shop: it searches all of them.</p>
         </div>
-        <a className="btn btn-primary" href="/assistant">
-          Shop with AI
-        </a>
       </header>
       {shops.length === 0 ? (
         <div className="empty">

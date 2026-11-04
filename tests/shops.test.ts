@@ -39,3 +39,13 @@ test('search results carry each product page and photo, so a buyer can see and o
   assert.match(mug.url, /\/shop\/maya-ceramics\//);
   assert.ok(!mug.image || /^https?:\/\//.test(mug.image), 'photos are absolute URLs');
 });
+
+test('an owner can rename the shop; its address stays so shared links keep working', async () => {
+  const { stack } = await import('./stack.ts');
+  const s = await stack();
+  const shopId = demoCatalog.shop.id;
+  const renamed = await s.shops.rename(shopId, '  Terra   Clay Studio ');
+  assert.equal(renamed.shop.name, 'Terra Clay Studio');
+  assert.equal(renamed.shop.slug, demoCatalog.shop.slug);
+  await assert.rejects(s.shops.rename(shopId, 'x'), /2 to 60/);
+});

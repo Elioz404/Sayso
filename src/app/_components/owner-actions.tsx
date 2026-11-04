@@ -203,6 +203,54 @@ export function Decision({ id, big = false, passkey = false }: { id: string; big
   );
 }
 
+/** The shop's name under the Overview title, with a way to change it (not in the shared demo). */
+export function ShopName({ name, readOnly = false }: { name: string; readOnly?: boolean }) {
+  const router = useRouter();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(name);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  if (!editing) {
+    return (
+      <p className="sub row" style={{ gap: 'var(--s2)' }}>
+        <span>{name}</span>
+        {!readOnly && (
+          <button type="button" className="link-button small" onClick={() => setEditing(true)}>
+            Rename
+          </button>
+        )}
+      </p>
+    );
+  }
+  return (
+    <form
+      className="row shop-rename"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        setError(undefined);
+        try {
+          await callApi('/api/owner/shop', 'POST', { name: value });
+          setEditing(false);
+          router.refresh();
+        } catch (err) {
+          setError((err as Error).message);
+        }
+        setBusy(false);
+      }}
+    >
+      <input value={value} onChange={(e) => setValue(e.target.value)} minLength={2} maxLength={60} aria-label="Shop name" autoFocus disabled={busy} />
+      <button className="btn btn-primary btn-small" disabled={busy || value.trim().length < 2}>
+        {busy ? 'Saving...' : 'Save'}
+      </button>
+      <button type="button" className="btn btn-quiet btn-small" onClick={() => { setEditing(false); setValue(name); }} disabled={busy}>
+        Cancel
+      </button>
+      {error && <span className="small error">{error}</span>}
+    </form>
+  );
+}
+
 export function PublishButton() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);

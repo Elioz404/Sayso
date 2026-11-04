@@ -10,7 +10,6 @@ export function NavLinks() {
   const links: { href: string; label: string; wide?: boolean; also?: string }[] = [
     { href: '/tour', label: 'For Judges' },
     { href: '/shops', label: 'Shops', also: '/shop/' },
-    { href: '/assistant', label: 'Shop with AI', wide: true },
     { href: '/start', label: 'Start selling', wide: true },
     { href: '/docs', label: 'Docs', wide: true },
   ];

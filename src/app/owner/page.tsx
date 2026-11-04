@@ -2,7 +2,7 @@
 // checklist while the shop isn't fully set up, a single row of figures and the latest orders. Everything
 // else lives in its own view.
 import { actionAmount } from '@/core/guard/describe.ts';
-import { ConnectPayouts, Decision, KeepPrice, PublishButton } from '@/app/_components/owner-actions.tsx';
+import { ConnectPayouts, Decision, KeepPrice, PublishButton, ShopName } from '@/app/_components/owner-actions.tsx';
 import { actionLabel, Icon, Status, Who } from '@/app/_components/ui.tsx';
 import { Ago } from '@/app/_components/time.tsx';
 import { pricesToConfirm } from '@/core/catalog.ts';
@@ -82,7 +82,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       <div className="view-head">
         <div>
           <h1>Overview</h1>
-          <p className="sub">{shop.name}</p>
+          <ShopName name={shop.name} readOnly={demo} />
         </div>
       </div>
 

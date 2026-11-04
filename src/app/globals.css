@@ -712,7 +712,6 @@ body:has(.owner) .site-header, body:has(.owner) .site-footer { display: none; }
 .pill-demo { font-size: var(--t-xs); font-weight: 650; text-transform: uppercase; letter-spacing: 0.05em; color: var(--agent); background: var(--agent-soft); border-radius: 99px; padding: 2px 8px; }
 .back-link { color: var(--ink-3); text-decoration: none; }
 .back-link:hover { color: var(--ink); }
-.buy-via-go { flex: none; justify-self: start; }
 .buy-via-own summary { cursor: pointer; color: var(--ink-2); font-size: var(--t-sm); font-weight: 600; }
 .buy-via-own[open] summary { margin-bottom: var(--s4); }
 .good-body { grid-template-rows: auto 1fr auto; height: 100%; }
@@ -745,3 +744,14 @@ body:has(.owner) .site-header, body:has(.owner) .site-footer { display: none; }
 .pcard-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .pcard-body { display: flex; flex-direction: column; gap: 2px; padding: var(--s2) var(--s3) var(--s3); min-width: 0; }
 .pcard-body b { font-size: var(--t-sm); line-height: 1.3; }
+
+/* In the panel the messages sit on the panel itself (no box), and its thin scroll bar runs along the panel's edge. */
+.dock-body { padding: 0; }
+.shopper-compact { gap: var(--s3); padding-bottom: var(--s3); }
+.shopper-compact .shopper-log { background: transparent; border: 0; border-radius: 0; padding: var(--s4) var(--s5); }
+.shopper-compact > :not(.shopper-log) { margin-inline: var(--s5); }
+.shopper-log { scrollbar-width: thin; scrollbar-color: var(--rule-strong) transparent; }
+.shopper-log::-webkit-scrollbar { width: 6px; }
+.shopper-log::-webkit-scrollbar-track { background: transparent; }
+.shopper-log::-webkit-scrollbar-thumb { background: var(--rule-strong); border-radius: 3px; }
+.shop-rename input { min-width: 0; width: min(100%, 22rem); }

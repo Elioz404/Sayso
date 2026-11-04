@@ -60,11 +60,11 @@ export default async function ShopPage({ params }: { params: Promise<{ slug: str
           <div className="buy-via">
             <div className="stack" style={{ gap: 'var(--s2)' }}>
               <h2 className="buy-via-title">Buy with an AI assistant</h2>
-              <p className="small soft">Say what you want in your own words. The shop prices the cart and you pay with PayPal.</p>
+              <p className="small soft">
+                Tap <b>Buy with AI</b> on a piece, or <b>Ask AI to shop</b> and say what you want in your own words. The shop prices the cart and you pay
+                with PayPal.
+              </p>
             </div>
-            <a className="btn btn-primary btn-big buy-via-go" href={assistantLink(assistantPrompt(catalog))}>
-              Shop here with the assistant
-            </a>
             <details className="buy-via-own">
               <summary>Or use your own assistant (ChatGPT, any MCP client)</summary>
             <ol className="buy-via-steps">

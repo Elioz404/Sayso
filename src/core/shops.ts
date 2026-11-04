@@ -64,6 +64,21 @@ export class Shops {
     return { catalog, questions, ownerSecret, agentKey };
   }
 
+  /**
+   * Owner only. The shop's name as buyers and assistants see it. Its address (slug) stays the same, so
+   * links and MCP URLs already shared keep working.
+   */
+  async rename(shopId: string, name: string): Promise<Catalog> {
+    const clean = name.trim().replace(/\s+/g, ' ');
+    if (clean.length < 2 || clean.length > 60) throw new HttpError(400, 'A shop name is 2 to 60 characters');
+    const renamed = await this.deps.catalogs.modify(shopId, (catalog) => {
+      if (catalog.shop.name === clean) return false;
+      catalog.shop.name = clean;
+      return true;
+    });
+    return renamed ?? this.get(shopId);
+  }
+
   /** Owner only. Registers products with PayPal and opens the shop to buyer agents. */
   async publish(shopId: string): Promise<{ catalog: Catalog; warnings: string[] }> {
     const catalog = await this.get(shopId);

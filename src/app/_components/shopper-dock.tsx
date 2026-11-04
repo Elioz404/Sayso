@@ -12,8 +12,8 @@ import { ShopperChat } from './shopper-chat.tsx';
 
 /** The owner's and checkout pages have their own job; the panel stays out of them. */
 const NOT_HERE = /^\/(owner|approve|handoff|wallet|pay\/|developers)/;
-/** Where the floating button shows: where people look at what to buy. */
-const BUYER_PAGES = /^\/(shops|shop\/)/;
+/** The floating button is the way in; not on the seller's onboarding, which is about something else. */
+const NO_BUTTON = /^\/start/;
 const OPEN_KEY = 'sayso-dock-open';
 
 export function ShopperDock({ paypalClientId }: { paypalClientId?: string }) {
@@ -86,7 +86,7 @@ export function ShopperDock({ paypalClientId }: { paypalClientId?: string }) {
   if (!here) return null;
   return (
     <>
-      {!open && BUYER_PAGES.test(path) && (
+      {!open && !NO_BUTTON.test(path) && (
         <button type="button" className="dock-fab" onClick={() => setOpen(true)}>
           <span aria-hidden="true">✦</span> Ask AI to shop
         </button>
