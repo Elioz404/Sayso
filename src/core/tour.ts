@@ -1,4 +1,8 @@
-// The judges' tour: a private copy of the demo shop per visit, and scripted agents that walk through
+// The judges' tour. A judge who opens a shop from For Judges gets scripted agents on that shop: a buyer's
+// assistant buys from it with saved PayPal, and the shop's own agent asks for a refund and tries to loosen
+// its rules, each held by Guard for the judge to decide. (The older tour made a private copy of the demo
+// shop per visit and walked the same agents through it; that still works, and is what the tests drive.)
+// The scripted agents walk through
 // the whole product with the same tools a real assistant uses. A buyer's assistant shops and pays with
 // saved PayPal, the owner's agent asks for a big refund (Guard holds it for the judge), invoices a
 // commission, tries to loosen its own rules (Guard holds that too), and finally earns some autonomy:
@@ -20,6 +24,10 @@ import type { Wallets } from './wallets.ts';
 
 export const TOUR_STEPS = ['buy', 'refund', 'commission', 'rules', 'earn'] as const;
 export type TourStep = (typeof TOUR_STEPS)[number];
+/** What the agents do on a shop the judge opened themselves. */
+export const SELLER_STEPS = ['buy', 'refund', 'rules'] as const satisfies readonly TourStep[];
+/** How long a shop opened from For Judges lives. */
+export const JUDGE_SHOP_TTL_MS = 48 * 3_600_000;
 
 /** What each step needs done first. */
 const NEEDS: Record<TourStep, TourStep | undefined> = { buy: undefined, refund: 'buy', commission: undefined, rules: undefined, earn: undefined };
@@ -58,6 +66,8 @@ export interface StepResult {
 
 export interface Tour {
   id: string;
+  /** copy: a private copy of the demo shop. seller: a shop the judge opened from photos. */
+  kind?: 'copy' | 'seller';
   shopId: string;
   slug: string;
   /** The scripted owner's agent: a real agent key of the tour shop, so the audit log names it. */
@@ -142,6 +152,45 @@ export class Tours {
     return tour;
   }
 
+  /**
+   * A shop a judge just drafted from For Judges: it closes after two days like any tour, and gets the
+   * scripted agents (a key for the shop's agent, saved PayPal lent to the buyer's assistant).
+   */
+  async adopt(shopId: string, now = new Date()): Promise<Tour> {
+    const catalog = await this.deps.catalogs.byShopId(shopId);
+    if (!catalog) throw notFound('Shop');
+    const expiresAt = new Date(now.getTime() + JUDGE_SHOP_TTL_MS).toISOString();
+    await this.deps.catalogs.modify(shopId, (c) => {
+      c.shop.expiresAt = expiresAt;
+      return true;
+    });
+    const { key } = await this.deps.access.createAgentKey(shopId, 'judge agent');
+    const currency = catalog.shop.currency;
+    // Without saved PayPal to lend (or if lending fails), the assistant hands the judge a PayPal link instead.
+    const wallet = this.deps.lendFrom
+      ? await this.deps.wallets.lend(this.deps.lendFrom, 'Shopping assistant', { perOrder: majorUnits(500, currency), daily: majorUnits(1_000, currency), currency }).catch(() => undefined)
+      : undefined;
+    const tour: Tour = { id: `tour_${randomBytes(5).toString('hex')}`, kind: 'seller', shopId, slug: catalog.shop.slug, agentKeyId: key.id, walletId: wallet?.id, createdAt: now.toISOString(), expiresAt, steps: {} };
+    await this.deps.store.put(tour);
+    return tour;
+  }
+
+  /** The demo shop sells to every judge: what they bought comes back on the hour, up to its usual stock. */
+  async restock(): Promise<void> {
+    const usual = new Map(this.deps.template.products.flatMap((p) => p.variants.map((v) => [v.id, v.inventory])));
+    await this.deps.catalogs.modify(this.deps.template.shop.id, (catalog) => {
+      let changed = false;
+      for (const v of catalog.products.flatMap((p) => p.variants)) {
+        const target = usual.get(v.id);
+        if (target !== undefined && v.inventory < target) {
+          v.inventory = target;
+          changed = true;
+        }
+      }
+      return changed;
+    });
+  }
+
   async forShop(shopId: string): Promise<Tour | undefined> {
     return this.deps.store.byShop(shopId);
   }
@@ -169,7 +218,8 @@ export class Tours {
       }
     };
 
-    if (step === 'buy') await this.buy(tour, result, act);
+    if (tour.kind === 'seller' && !(SELLER_STEPS as readonly TourStep[]).includes(step)) throw new HttpError(400, `On your own shop the steps are ${SELLER_STEPS.join(', ')}`);
+    if (step === 'buy') await (tour.kind === 'seller' ? this.buyFromSeller(tour, result, act) : this.buy(tour, result, act));
     if (step === 'refund') {
       const cartId = tour.steps.buy!.cartId!;
       const refund = await act('owner-agent', 'refund_order', { order_id: cartId, reason: 'Part of the order arrived chipped. Refund the whole order.' }, (r) =>
@@ -259,6 +309,45 @@ export class Tours {
       );
       result.recordIds.push(refund.say_so_id);
     }
+  }
+
+  /**
+   * A buyer's assistant buys from the judge's own shop: the dearest piece it can, enough of them for the
+   * order to go past the shop's refund rule (so the refund that follows waits for the judge), and pays
+   * with saved PayPal. If the shop can't sell that many, it applies the shop's own fix.
+   */
+  private async buyFromSeller(tour: Tour, result: StepResult, act: Act) {
+    const catalog = await this.deps.catalogs.byShopId(tour.shopId);
+    const pick = catalog?.products
+      .flatMap((p) => p.variants.map((v) => ({ p, v, room: v.madeToOrderDays !== undefined ? 3 : v.inventory })))
+      .filter((x) => x.room > 0 && x.v.price > 0)
+      .sort((a, b) => b.v.price - a.v.price)[0];
+    if (!catalog || !pick) throw new HttpError(409, 'Your shop has nothing in stock to buy yet');
+    const limit = majorUnits(DEFAULT_LIMITS.refundApproval, catalog.shop.currency);
+    const quantity = Math.min(pick.room, 3, Math.max(1, Math.floor(limit / pick.v.price) + 1));
+    const name = pick.p.name;
+
+    await act('assistant', 'search_products', { query: name }, (r) => `Searched ${r.shop?.name ?? 'your shop'} for "${name}": ${r.products?.length ?? 0} found.`);
+    const items = [{ variant_id: pick.v.id, quantity }];
+    let cart = await act('assistant', 'create_cart', { items, shipping_address: SHIP_TO }, (r) =>
+      r.status === 'INCOMPLETE' ? `Asked for ${quantity}. The shop says: ${r.validation_issues.map((i: Issue) => i.user_message).join(' ')}` : `Cart for ${quantity} × ${name}: ${r.totals.total.value} ${r.totals.total.currency_code} with shipping and tax.`,
+    );
+    result.cartId = cart.cart_id;
+    if (cart.status === 'INCOMPLETE') {
+      const fix = (cart.validation_issues as Issue[]).flatMap((i) => i.resolution_options ?? []).find((o) => o.action === 'REDUCE_QUANTITY');
+      const fewer = fix?.metadata?.quantity ?? 1;
+      cart = await act('assistant', 'update_cart', { cart_id: cart.cart_id, items: [{ variant_id: pick.v.id, quantity: fewer }], shipping_address: SHIP_TO }, (r) =>
+        `Applied the shop's fix (buy ${fewer}). Cart ${r.status}: ${r.totals.total.value} ${r.totals.total.currency_code}.`,
+      );
+    }
+    if (!tour.walletId) {
+      result.approvalUrl = cart.approval_url;
+      result.transcript.push({ who: 'assistant', did: 'approval_url', said: 'Handed the buyer a PayPal link to approve the payment.' });
+      return;
+    }
+    await act('assistant', 'pay_with_paypal', { cart_id: cart.cart_id }, (r) =>
+      r.status === 'paid' ? `Paid with the buyer's saved PayPal, inside their limits. Order ${r.order.number}: ${r.order.payment}` : `Payment ${r.status}: ${r.next}`,
+    );
   }
 
   /** A buyer's assistant: search, hit the stock limit, apply the shop's fix, pay. */

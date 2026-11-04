@@ -1,287 +1,274 @@
-// For Judges: the 2-minute tour. A private copy of the demo shop, two scripted agents using the same
-// tools any assistant uses, and the judge as the owner who gives (or refuses) every say-so. One step per
-// screen: what it proves, what the judge does, what happened (with the agents' transcript and the Guard
-// record behind it), then the next step. Everything is real: PayPal sandbox calls, Guard, the audit log.
+// For Judges: try Sayso for real, as a buyer or as a seller, on the PayPal sandbox. Each path is a short
+// checklist that ticks itself off from what this browser has done. Buying: the assistant finds something,
+// PayPal's button pays, the order page follows it, the assistant asks for a refund, and the shop's side
+// shows it all. Selling: a shop from photos, published with PayPal, then the scripted agents on that very
+// shop (a shopper's assistant buys, the shop's agent asks for a refund and tries to loosen its rules) while
+// Guard holds what only the judge may decide.
 import type { Metadata } from 'next';
 import { connection } from 'next/server';
-import { CopyField } from '@/app/_components/client-ui.tsx';
-import { AdoptRule, Decision } from '@/app/_components/owner-actions.tsx';
-import { RunStep, StartTour } from '@/app/_components/tour-actions.tsx';
-import { When } from '@/app/_components/time.tsx';
+import { Decision, FlashNotice } from '@/app/_components/owner-actions.tsx';
+import { OpenDemoShop, RunStep } from '@/app/_components/tour-actions.tsx';
 import { Icon, Status } from '@/app/_components/ui.tsx';
+import { buyerOrder, type BuyerOrder } from '@/core/buyer-orders.ts';
+import { isLive } from '@/core/catalog.ts';
 import { demoCatalog } from '@/core/demo-shop.ts';
 import { actionTitle } from '@/core/guard/describe.ts';
-import { verifyAuditChain } from '@/core/guard/engine.ts';
 import { DEFAULT_LIMITS } from '@/core/guard/policy.ts';
 import type { GuardRecord } from '@/core/guard/types.ts';
 import { formatMoney, majorUnits } from '@/core/money.ts';
 import { tourProgress, type StepView } from '@/core/tour-progress.ts';
-import { TOUR_ASKED_REFUND_LIMIT, TOUR_STEPS, type TourStep } from '@/core/tour.ts';
-import { developerPortalBuilt, ready } from '@/server/context.ts';
+import type { TourStep } from '@/core/tour.ts';
+import { paidHere } from '@/server/buyer-session.ts';
+import { ready } from '@/server/context.ts';
 import { ownerView } from '@/server/owner.ts';
+import { claimedShop } from '@/server/seller-session.ts';
 
-export const metadata: Metadata = { title: 'For Judges: the 2-minute tour' };
+export const metadata: Metadata = { title: 'For Judges', description: 'Try Sayso for real on the PayPal sandbox: buy with the AI assistant, or open a shop and run it with your agent.' };
 
-/** Amounts in the copy, from the rules every tour copy starts with (the demo shop's currency). */
-const money = (units: number) => formatMoney(majorUnits(units, demoCatalog.shop.currency), demoCatalog.shop.currency).replace(/\.00$/, '');
+type State = 'done' | 'now' | 'open' | 'later';
+interface Row {
+  title: string;
+  note: string;
+  state: State;
+  action?: React.ReactNode;
+  /** For the agents' steps: what happened, what to decide, what Guard recorded. */
+  detail?: React.ReactNode;
+}
 
-const STEP: Record<TourStep, { short: string; title: string; proves: string; you: string; run: string; uses: string[] }> = {
-  buy: {
-    short: 'An assistant buys',
-    title: 'A shopping assistant buys from the shop',
-    proves:
-      "AI shoppers can buy from a small shop safely. The shop prices the cart, not the AI (PayPal's merchant-cart spec). The assistant hits a stock limit and fixes it with the shop's own suggestion, then pays with the buyer's saved PayPal, inside limits the buyer set.",
-    you: 'Watch: the assistant does it all.',
-    run: 'Let the assistant shop',
-    uses: ['PayPal merchant-cart API', 'Orders v2', 'Saved PayPal (Vault)', 'Guard'],
-  },
-  refund: {
-    short: 'A big refund',
-    title: 'Your agent asks for a big refund',
-    proves: `The shop owner's own AI agent runs the shop, refunds included. But the owner's rules decide what it may do alone: refunds over ${money(DEFAULT_LIMITS.refundApproval)} wait for the owner.`,
-    you: "You are the owner. Say OK and PayPal refunds it; reject and nothing moves.",
-    run: 'Let the agent ask',
-    uses: ['Guard', 'Payments v2 refunds'],
-  },
-  commission: {
-    short: 'A commission',
-    title: 'Your agent invoices a commission',
-    proves: 'Made-to-order work is invoiced through PayPal with a deposit. A first invoice to someone who has never paid the shop waits for the owner.',
-    you: 'Decide whether the invoice goes out.',
-    run: 'Let the agent invoice',
-    uses: ['Invoicing v2', 'Guard'],
-  },
-  rules: {
-    short: 'Grabbing autonomy',
-    title: 'Your agent tries to loosen its own rules',
-    proves: `An agent can never raise its own limits. It asks to refund up to ${money(TOUR_ASKED_REFUND_LIMIT)} on its own; any rule change from an agent waits for the owner.`,
-    you: 'Decide. (A careful owner says no.)',
-    run: 'Let the agent try',
-    uses: ['Guard: rules only the owner can change'],
-  },
-  earn: {
-    short: 'Earning autonomy',
-    title: 'Your agent earns autonomy',
-    proves:
-      'When the owner keeps approving the same kind of request, Sayso suggests letting the agent handle those alone: up to what was approved, never past anything turned down. Autonomy is earned, never grabbed.',
-    you: 'The agent asks for three small refunds on a new order. Approve them, then adopt the rule they earned.',
-    run: 'Let the agent ask',
-    uses: ['Earned autonomy', 'Guard', 'Payments v2 refunds'],
-  },
+const limit = formatMoney(majorUnits(DEFAULT_LIMITS.refundApproval, demoCatalog.shop.currency), demoCatalog.shop.currency).replace(/\.00$/, '');
+
+const AGENT_STEP: Record<TourStep, { title: string; note: string; run: string } | undefined> = {
+  buy: { title: "A shopper's assistant buys from you", note: 'It pays with saved PayPal; Guard checks the stock and captures.', run: 'Let it buy' },
+  refund: { title: 'Your agent asks for a refund', note: `Over your ${limit} rule, so it waits for you.`, run: 'Let your agent ask' },
+  rules: { title: 'Your agent tries to raise its own limit', note: 'Only you can change your rules.', run: 'Let your agent try' },
+  commission: undefined,
+  earn: undefined,
 };
 
-const WHO = { assistant: "Buyer's assistant", 'owner-agent': 'Your agent' } as const;
-
-export default async function TourPage({ searchParams }: { searchParams: Promise<{ step?: string }> }) {
+export default async function JudgesPage({ searchParams }: { searchParams: Promise<{ published?: string }> }) {
   await connection();
+  const published = (await searchParams).published === '1';
+  const { carts, catalogs, orders, links, tours } = await ready();
+
+  // The buyer's side: the orders this browser paid for, newest first.
+  const deps = { carts, catalogs, orders, links };
+  const paid = (await Promise.all((await paidHere()).map((id) => buyerOrder(deps, id)))).filter((o): o is BuyerOrder => Boolean(o));
+  const order = paid.sort((a, b) => b.placedAt.localeCompare(a.placedAt))[0];
+
+  // The seller's side: the shop this browser is signed in to, if a judge opened it; else a draft in progress.
   const view = await ownerView();
-  const tour = view && (await view.tours?.forShop(view.shopId));
-  const { links, tours } = await ready();
+  const tour = view ? await tours?.forShop(view.shopId) : undefined;
+  const mine = tour?.kind === 'seller' && view ? { view, tour } : undefined;
+  const draftId = mine ? undefined : await claimedShop();
+  const drafting = draftId && (await tours?.forShop(draftId))?.kind === 'seller' ? await catalogs.byShopId(draftId) : undefined;
+  const steps = mine ? await tourProgress(mine.view, mine.tour) : [];
+  const passkey = mine ? await mine.view.passkeys.required(mine.view.shopId) : false;
 
-  if (!tours) {
-    return (
-      <main className="wrap wrap-narrow page stack">
-        <h1>The 2-minute tour</h1>
-        <div className="empty">
-          <b>The tour isn&apos;t running on this server.</b>
-          <span className="small">It is part of the hosted demo.</span>
-        </div>
-      </main>
-    );
-  }
-  if (!view || !tour) return <Intro />;
+  const buying: Row[] = [
+    {
+      title: 'Buy with the assistant',
+      note: "Ask in your own words, then pay with PayPal's button.",
+      state: order ? 'done' : 'now',
+      action: !order && (
+        <a className="btn btn-primary btn-small" href={`/assistant?ask=${encodeURIComponent('Buy me a handmade mug from Maya Ceramics, under $50.')}`}>
+          Open the assistant
+        </a>
+      ),
+    },
+    {
+      title: 'Follow your order',
+      note: 'Where it is, tracking and refunds, on any device.',
+      state: order ? 'open' : 'later',
+      action: order && (
+        <a className="btn btn-small" href={`/order/${order.id}`}>
+          Open your order
+        </a>
+      ),
+    },
+    {
+      title: 'Ask for a refund',
+      note: 'The assistant takes your reason to the shop; the owner decides.',
+      state: !order ? 'later' : order.refundRequests.length > 0 ? 'done' : 'now',
+      action: order && order.refundRequests.length === 0 && order.canAskRefund && (
+        <a className="btn btn-small" href={`/assistant?ask=${encodeURIComponent(`I'd like a refund for order ${order.number}.`)}`}>
+          Ask the assistant
+        </a>
+      ),
+    },
+    {
+      title: "See it from the shop's side",
+      note: 'Your order and your request, on the shop owner’s dashboard.',
+      state: order ? 'open' : 'later',
+      action: order && order.shop.url?.endsWith(`/shop/${demoCatalog.shop.slug}`) && <OpenDemoShop />,
+    },
+  ];
 
-  const [steps, passkey] = await Promise.all([tourProgress(view, tour), view.passkeys.required(view.shopId)]);
-  const asked = (await searchParams).step;
-  const firstOpen = steps.findIndex((s) => s.state !== 'done' && s.state !== 'unavailable');
-  const askedStep = Number(asked);
-  const index = asked === 'end' ? steps.length : Number.isInteger(askedStep) && askedStep >= 1 && askedStep <= steps.length ? askedStep - 1 : firstOpen === -1 ? steps.length : firstOpen;
-  const current = steps[index];
+  const live = Boolean(mine && isLive(mine.view.catalog));
+  // A refund needs an order: it waits until the shopper's assistant has paid.
+  const bought = steps.find((s) => s.step === 'buy')?.state === 'done';
+  const selling: Row[] = [
+    {
+      title: 'Open a shop from photos',
+      note: 'Sayso drafts each listing; you check every price.',
+      state: mine || drafting ? 'done' : 'now',
+      action: !mine && !drafting && (
+        <a className="btn btn-primary btn-small" href="/start?judge=1">
+          Start selling
+        </a>
+      ),
+    },
+    {
+      title: 'Publish with PayPal',
+      note: 'Sign in with the sandbox business account.',
+      state: live ? 'done' : mine || drafting ? 'now' : 'later',
+      action: drafting && (
+        <a className="btn btn-primary btn-small" href="/start?judge=1">
+          Review and publish
+        </a>
+      ),
+    },
+    ...steps.flatMap((s): Row[] => {
+      const info = AGENT_STEP[s.step];
+      if (!info) return [];
+      const waiting = s.step === 'refund' && !bought;
+      const state: State = !live || waiting || s.state === 'unavailable' ? 'later' : s.state === 'done' ? 'done' : 'now';
+      return [
+        {
+          title: info.title,
+          note: s.state === 'unavailable' ? (s.why ?? info.note) : info.note,
+          state,
+          action: live && !waiting && s.state === 'next' && <RunStep step={s.step} label={info.run} screen="/tour#sell" />,
+          detail: live && s.result ? <AgentDetail view={s} passkey={passkey} redact={mine!.view.redact} /> : undefined,
+        },
+      ];
+    }),
+    ...(!mine
+      ? (['buy', 'refund', 'rules'] as const).map((step): Row => ({ title: AGENT_STEP[step]!.title, note: AGENT_STEP[step]!.note, state: 'later' }))
+      : []),
+  ];
 
   return (
-    <main className="wrap page stack tour" style={{ gap: 'var(--s5)' }}>
-      <div className="tour-head">
-        <div className="stack" style={{ gap: 2 }}>
-          <span className="small soft">For Judges</span>
-          <h1 className="tour-title">The 2-minute tour</h1>
-        </div>
-        <span className="small soft">
-          Your private copy of Maya Ceramics, until <When iso={tour.expiresAt} />
-        </span>
-      </div>
+    <main className="wrap page judges">
+      <header className="judges-head">
+        <span className="small soft">For Judges</span>
+        <h1>Try Sayso for real</h1>
+        <p className="lede">Buy like a shopper, or open a shop and run it with your own agent. Everything runs on the PayPal sandbox; no real money moves.</p>
+        <p className="judges-need small">
+          <Icon name="shield" size={16} />
+          <span>
+            You&apos;ll need the PayPal sandbox accounts from the testing instructions: a <b>personal</b> account to pay, a <b>business</b> account to
+            sell.
+          </span>
+        </p>
+        {published && (
+          <FlashNotice params={['published']} className="callout small callout-say">
+            Your shop is live. Now let the agents at it, below.
+          </FlashNotice>
+        )}
+      </header>
 
-      <nav aria-label="Tour steps">
-        <ol className="tour-nav">
-          {steps.map((s, i) => (
-            <li key={s.step} className={`tour-nav-${i === index ? 'here' : s.state}`}>
-              <a href={`?step=${i + 1}`} aria-current={i === index ? 'step' : undefined}>
-                <span className="tour-dot">{s.state === 'done' ? <Icon name="check" size={13} /> : i + 1}</span>
-                <span className="tour-nav-label">{STEP[s.step].short}</span>
-              </a>
-            </li>
-          ))}
-          <li className={`tour-nav-${index === steps.length ? 'here' : 'later'}`}>
-            <a href="?step=end" aria-current={index === steps.length ? 'step' : undefined}>
-              <span className="tour-dot">
-                <Icon name="arrow" size={13} />
+      <div className="judges-paths">
+        <Path id="buy" title="Buy something" time="About 3 minutes" icon="bag" rows={buying} />
+        <Path
+          id="sell"
+          title="Open a shop and run it"
+          time="About 5 minutes"
+          icon="agent"
+          rows={selling}
+          foot={
+            mine && (
+              <span className="small">
+                <a href="/owner">Open your dashboard</a> · Your shop closes after two days.
               </span>
-              <span className="tour-nav-label">Wrap-up</span>
-            </a>
-          </li>
-        </ol>
-      </nav>
-
-      {current ? (
-        <StepScreen view={current} n={index + 1} total={steps.length} redact={view.redact} passkey={passkey} />
-      ) : (
-        <WrapUp steps={steps} mcpUrl={links.shopMcp(tour.slug)} portal={developerPortalBuilt() ? links.developers : undefined} />
-      )}
-
-      <p className="small muted tour-foot">
-        Your shop is yours to explore at any point:{' '}
-        <a href="/owner">Overview</a> · <a href="/owner/catalog">Catalog</a> · <a href="/owner/production">Making</a> · <a href="/owner/rules">Rules</a> ·{' '}
-        <a href="/owner/activity">Audit log</a>
-      </p>
+            )
+          }
+        />
+      </div>
     </main>
   );
 }
 
-function Intro() {
+function Path({ id, title, time, icon, rows, foot }: { id: string; title: string; time: string; icon: string; rows: Row[]; foot?: React.ReactNode }) {
+  const done = rows.filter((r) => r.state === 'done').length;
   return (
-    <main className="wrap page tour-intro">
-      <div className="stack" style={{ gap: 'var(--s5)' }}>
-        <div className="stack" style={{ gap: 'var(--s2)' }}>
-          <span className="small soft">For Judges</span>
-          <h1>The 2-minute tour</h1>
-          <p className="lede">
-            You get your own copy of a small shop, Maya Ceramics, and become its owner. Two AI agents act in it: a shopper&apos;s assistant and
-            the owner&apos;s own agent. Every payment is a real PayPal sandbox call, and nothing moves past the shop&apos;s rules without your
-            say-so.
-          </p>
-        </div>
-        <StartTour />
-        <p className="small muted">No sign-in, nothing to install. Five short steps, one per screen. Your copy disappears after a day.</p>
-        <p className="small">
-          Rather be the shopper? <a href="/assistant">Buy from a shop with the AI assistant</a>, or connect your own assistant to Sayso&apos;s MCP server.
-        </p>
-      </div>
-      <ol className="tour-outline">
-        {TOUR_STEPS.map((s, i) => (
-          <li key={s}>
-            <span className="tour-dot">{i + 1}</span>
-            <span className="stack" style={{ gap: 2 }}>
-              <b>{STEP[s].title}</b>
-              <span className="small soft">{STEP[s].uses.join(' · ')}</span>
+    <section id={id} className="judges-path" aria-labelledby={`${id}-title`}>
+      <header className="judges-path-head">
+        <span className="judges-path-icon" aria-hidden="true">
+          <Icon name={icon} size={20} />
+        </span>
+        <span className="stack" style={{ gap: 0, minWidth: 0 }}>
+          <h2 id={`${id}-title`}>{title}</h2>
+          <span className="small soft">
+            {time} · {done} of {rows.length} done
+          </span>
+        </span>
+      </header>
+      <ol className="judges-steps">
+        {rows.map((r, i) => (
+          <li key={r.title} className={`judges-step judges-step-${r.state}`}>
+            <span className="judges-dot" aria-hidden="true">
+              {r.state === 'done' ? <Icon name="check" size={14} /> : i + 1}
             </span>
+            <div className="judges-step-body">
+              <b>{r.title}</b>
+              <span className="small soft">{r.note}</span>
+              {r.action && <div className="judges-action">{r.action}</div>}
+              {r.detail}
+            </div>
           </li>
         ))}
       </ol>
-    </main>
+      {foot && <footer className="judges-path-foot">{foot}</footer>}
+    </section>
   );
 }
 
-function StepScreen({ view, n, total, redact, passkey }: { view: StepView; n: number; total: number; redact: (text: string) => string; passkey: boolean }) {
-  const { step, state } = view;
-  const info = STEP[step];
-  const nextHref = n === total ? '?step=end' : `?step=${n + 1}`;
+/** What an agent step did: the outcome, the say-so the judge gives right here, and Guard's record. */
+function AgentDetail({ view, passkey, redact }: { view: StepView; passkey: boolean; redact: (text: string) => string }) {
   return (
-    <section className={`tour-screen tour-screen-${state}`} aria-labelledby="step-title">
-      <div className="tour-screen-main stack" style={{ gap: 'var(--s5)' }}>
-        <div className="stack" style={{ gap: 'var(--s2)' }}>
-          <span className="small soft">
-            Step {n} of {total}
-          </span>
-          <h2 id="step-title" className="tour-step-title">
-            {info.title}
-          </h2>
-        </div>
-
-        <div className="tour-proves">
-          <b className="small">What this proves</b>
-          <p>{info.proves}</p>
-          <span className="tour-uses small">{info.uses.join(' · ')}</span>
-        </div>
-
-        <div className="stack" style={{ gap: 'var(--s3)' }}>
-          <b className="small">Your part</b>
-          {state === 'unavailable' ? (
-            <p className="soft">{view.why}</p>
-          ) : (
-            <>
-              {state === 'next' && <p className="soft">{info.you}</p>}
-              {state === 'next' && <RunStep step={step} label={info.run} screen={`/tour?step=${n}`} />}
-              {view.outcome && <p className={`tour-outcome tour-outcome-${state}`}>{redact(view.outcome)}</p>}
-              {view.decide.length > 0 && (
-                <ul className="tour-decide">
-                  {view.decide.map((r) => (
-                    <li key={r.id}>
-                      <span className="stack" style={{ gap: 0 }}>
-                        <b>{actionTitle(r.action)}</b>
-                        <span className="small soft">{r.decision?.hits.map((h) => h.message).join(' ')}</span>
-                      </span>
-                      <Decision id={r.id} passkey={passkey} />
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {view.suggestion && (
-                <div className="tour-earned">
-                  <span className="stack" style={{ gap: 4 }}>
-                    <b>{view.suggestion.title}</b>
-                    <span className="small soft">{view.suggestion.evidence}</span>
-                  </span>
-                  <AdoptRule id={view.suggestion.id} passkey={passkey} />
-                </div>
-              )}
-              {view.payUrl && (
-                <p className="small">
-                  <a className="btn btn-primary btn-small" href={view.payUrl}>
-                    Pay in PayPal sandbox
-                  </a>{' '}
-                  <span className="muted">with the sandbox buyer from the testing instructions, then come back.</span>
-                </p>
-              )}
-            </>
-          )}
-        </div>
-
-        {view.result && (
-          <details className="tour-details">
-            <summary>What the agents did, and what Guard checked</summary>
-            <ol className="tour-log">
-              {view.result.transcript.map((line, i) => (
-                <li key={i}>
-                  <span className="who who-agent">
-                    <Icon name="agent" size={14} />
-                    {WHO[line.who]}
-                  </span>
-                  <span className="stack" style={{ gap: 2, minWidth: 0 }}>
-                    <code>{line.did}</code>
-                    <span className="small">{redact(line.said)}</span>
-                  </span>
-                </li>
-              ))}
-            </ol>
-            {view.records.map((r) => (
-              <Trace key={r.id} record={r} />
-            ))}
-          </details>
-        )}
-      </div>
-
-      <div className="tour-screen-nav">
-        {n > 1 ? (
-          <a className="btn btn-quiet" href={`?step=${n - 1}`}>
-            <Icon name="back" size={16} /> Back
-          </a>
-        ) : (
-          <span />
-        )}
-        <a className={state === 'done' || state === 'unavailable' ? 'btn btn-primary' : 'btn'} href={nextHref}>
-          {n === total ? 'Wrap-up' : state === 'done' || state === 'unavailable' ? 'Next step' : 'Skip for now'} <Icon name="arrow" size={16} />
+    <div className="judges-detail">
+      {view.outcome && <p className={`tour-outcome tour-outcome-${view.state}`}>{redact(view.outcome)}</p>}
+      {view.payUrl && (
+        <a className="btn btn-primary btn-small" href={view.payUrl}>
+          Pay in PayPal sandbox
         </a>
-      </div>
-    </section>
+      )}
+      {view.decide.length > 0 && (
+        <ul className="tour-decide">
+          {view.decide.map((r) => (
+            <li key={r.id}>
+              <span className="stack" style={{ gap: 0 }}>
+                <b>{actionTitle(r.action)}</b>
+                <span className="small soft">{r.decision?.hits.map((h) => h.message).join(' ')}</span>
+              </span>
+              <Decision id={r.id} passkey={passkey} />
+            </li>
+          ))}
+        </ul>
+      )}
+      {view.result && (
+        <details className="tour-details">
+          <summary>What the agents did, and what Guard checked</summary>
+          <ol className="tour-log">
+            {view.result.transcript.map((line, i) => (
+              <li key={i}>
+                <span className="who who-agent">
+                  <Icon name="agent" size={14} />
+                  {line.who === 'assistant' ? "Shopper's assistant" : 'Your agent'}
+                </span>
+                <span className="stack" style={{ gap: 2, minWidth: 0 }}>
+                  <code>{line.did}</code>
+                  <span className="small">{redact(line.said)}</span>
+                </span>
+              </li>
+            ))}
+          </ol>
+          {view.records.map((r) => (
+            <Trace key={r.id} record={r} />
+          ))}
+        </details>
+      )}
+    </div>
   );
 }
 
@@ -315,71 +302,5 @@ function Trace({ record }: { record: GuardRecord }) {
         ))}
       </ol>
     </div>
-  );
-}
-
-/** The end: what the judge just did, the evidence behind it, and how to go further. */
-function WrapUp({ steps, mcpUrl, portal }: { steps: StepView[]; mcpUrl: string; portal?: string }) {
-  const records = steps.flatMap((s) => s.records);
-  const intact = records.every((r) => verifyAuditChain(r));
-  const ids = [...new Set(records.flatMap((r) => [r.result?.capture_id, r.result?.refund_id, r.result?.invoice_id]).filter((x): x is string => typeof x === 'string'))];
-  return (
-    <section className="tour-screen" aria-labelledby="wrap-title">
-      <div className="tour-screen-main stack" style={{ gap: 'var(--s6)' }}>
-        <div className="stack" style={{ gap: 'var(--s2)' }}>
-          <h2 id="wrap-title" className="tour-step-title">
-            That&apos;s Sayso
-          </h2>
-          <p className="lede">Small shops that AI shoppers can buy from, run by the owner&apos;s own agent, where money only moves with the owner&apos;s say-so.</p>
-        </div>
-
-        <ol className="tour-recap">
-          {steps.map((s) => (
-            <li key={s.step} className={`tour-recap-${s.state}`}>
-              <span className="tour-dot">{s.state === 'done' ? <Icon name="check" size={13} /> : '·'}</span>
-              <span className="stack" style={{ gap: 2 }}>
-                <b>{STEP[s.step].title}</b>
-                <span className="small soft">{s.outcome ?? (s.state === 'unavailable' ? s.why : 'Not run yet.')}</span>
-              </span>
-            </li>
-          ))}
-        </ol>
-
-        <div className="tour-proves">
-          <b className="small">The evidence</b>
-          <p>
-            {records.length} Guard record{records.length === 1 ? '' : 's'}, each with a hash chain that is {intact ? 'intact' : 'BROKEN'}.
-            {ids.length > 0 && <> PayPal ids you can look up in the sandbox: </>}
-          </p>
-          {ids.length > 0 && <p className="mono small tour-ids">{ids.join('  ')}</p>}
-        </div>
-
-        <div className="stack" style={{ gap: 'var(--s4)' }}>
-          <h3>Go deeper, with the sandbox accounts from the testing instructions</h3>
-          <div className="tour-deeper">
-            <a href="/owner/phone">
-              <b>Take it to your phone</b>
-              <span className="small soft">Scan a QR code, install Sayso, get pinged and approve the next request with your fingerprint or face. The signature lands in the audit.</span>
-            </a>
-            <a href="/start">
-              <b>Open a shop from one photo</b>
-              <span className="small soft">AI names and describes it; Channel3 suggests a price you confirm before publishing.</span>
-            </a>
-            <a href="/owner">
-              <b>Sign in with PayPal and get paid directly</b>
-              <span className="small soft">Claim the shop with a sandbox business account, then connect it: sales land in that account.</span>
-            </a>
-            <a href={portal ?? '/docs'}>
-              <b>{portal ? 'Developer portal' : 'Docs'}</b>
-              <span className="small soft">The shops API, typed SDKs and a try-it console, generated with APIMatic.</span>
-            </a>
-          </div>
-          <div className="field">
-            <span className="field-label">Or shop your copy from your own assistant (MCP)</span>
-            <CopyField value={mcpUrl} />
-          </div>
-        </div>
-      </div>
-    </section>
   );
 }

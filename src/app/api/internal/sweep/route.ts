@@ -1,4 +1,5 @@
-// POST: the hourly cleanup. Expired tour copies (and everything they made), carts abandoned before they
+// POST: the hourly cleanup. Expired tour copies and judges' shops (and everything they made), the demo
+// shop's stock back to its usual levels, carts abandoned before they
 // were paid, spent one-time codes. Meant for a scheduled job (Render Cron), authenticated with
 // `Authorization: Bearer $SAYSO_CRON_SECRET`; without that secret configured the route doesn't exist.
 import { timingSafeEqual } from 'node:crypto';
@@ -15,6 +16,7 @@ export async function POST(request: Request) {
     if (given.length !== expected.length || !timingSafeEqual(given, expected)) throw new HttpError(401, 'Wrong or missing cron secret');
     const { tours, housekeeping } = await ready();
     const toursRemoved = tours ? await tours.sweep() : 0;
+    await tours?.restock();
     const swept = housekeeping ? await housekeeping.sweep() : { carts: 0, codes: 0 };
     return Response.json({ tours_removed: toursRemoved, abandoned_carts_removed: swept.carts, expired_codes_removed: swept.codes });
   });

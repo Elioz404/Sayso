@@ -8,7 +8,7 @@ import type { Policy } from './guard/policy.ts';
 import type { GuardRecord } from './guard/types.ts';
 import type { Orders } from './orders.ts';
 import type { SaySo } from './say-so.ts';
-import { TOUR_STEPS, type StepResult, type Tour, type TourStep } from './tour.ts';
+import { SELLER_STEPS, TOUR_STEPS, type StepResult, type Tour, type TourStep } from './tour.ts';
 
 /** next: run it now. needs-you: waits on the judge. done: finished. unavailable: can't run here. */
 export type StepState = 'next' | 'needs-you' | 'done' | 'unavailable';
@@ -42,7 +42,7 @@ export async function tourProgress(deps: TourProgressDeps, tour: Tour): Promise<
   const paid = order?.status === 'paid';
 
   const views: StepView[] = [];
-  for (const step of TOUR_STEPS) {
+  for (const step of tour.kind === 'seller' ? SELLER_STEPS : TOUR_STEPS) {
     const result = tour.steps[step];
     if (step === 'buy') {
       const captures = buy?.cartId ? await deps.guard.list(shopId, { cartId: buy.cartId, kind: 'payment.capture' }) : [];
@@ -61,7 +61,7 @@ export async function tourProgress(deps: TourProgressDeps, tour: Tour): Promise<
     }
     if (!result) {
       const blocked = step === 'refund' && Boolean(buy) && !paid;
-      views.push({ step, state: blocked ? 'unavailable' : 'next', records: [], decide: [], why: blocked ? 'Step 1 has to be paid first: there is nothing to refund yet.' : undefined });
+      views.push({ step, state: blocked ? 'unavailable' : 'next', records: [], decide: [], why: blocked ? 'The purchase has to be paid first: there is nothing to refund yet.' : undefined });
       continue;
     }
     const r = result.recordId ? await deps.guard.get(result.recordId) : undefined;

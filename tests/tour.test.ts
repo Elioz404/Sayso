@@ -123,3 +123,61 @@ test('an old rule proposal approved after the rules changed is refused, not appl
   const cap = (await s.saySo.policy(tour.shopId)).rules.find((r) => r.id === 'refund-cap') as { limit: number };
   assert.equal(cap.limit, 6_000, 'the earned rule is still in force');
 });
+
+/** A shop a judge opened from photos: their own pieces and prices, published. */
+async function judgeShop(s: Stack): Promise<string> {
+  const catalog = structuredClone(demoCatalog);
+  const shopId = 'shop_judge_1';
+  catalog.shop = { ...catalog.shop, id: shopId, slug: 'clay-corner', name: 'Clay Corner', status: 'live' };
+  catalog.products = [
+    {
+      ...catalog.products[0],
+      id: 'prod_cup',
+      shopId,
+      name: 'Tea cup',
+      variants: [{ ...catalog.products[0].variants[0], id: 'var_cup', productId: 'prod_cup', title: 'Ash glaze', price: 2_200, inventory: 5, madeToOrderDays: undefined }],
+    },
+  ];
+  await s.catalogs.save(catalog);
+  return shopId;
+}
+
+test("on a judge's own shop: an assistant buys, the refund and the rule change wait for the judge, and it closes after two days", async () => {
+  const s = await stack();
+  const { tours: t, store } = tours(s, await lender(s));
+  const shopId = await judgeShop(s);
+  const now = new Date();
+  const tour = await t.adopt(shopId, now);
+  assert.equal(tour.kind, 'seller');
+  assert.equal((await s.catalogs.byShopId(shopId))?.shop.expiresAt, tour.expiresAt);
+  assert.equal(Date.parse(tour.expiresAt) - now.getTime(), 48 * 3_600_000);
+
+  // Three $22 cups: past the $50 refund rule, so the refund that follows waits for the judge.
+  const buy = await t.run(shopId, 'buy');
+  assert.match(buy.transcript.find((l) => l.did === 'create_cart')!.said, /Cart for 3 × Tea cup/);
+  assert.match(buy.transcript.at(-1)!.said, /Paid with the buyer's saved PayPal/);
+  assert.equal((await s.orders.get(shopId, buy.cartId!)).order.status, 'paid');
+
+  const refund = await t.run(shopId, 'refund');
+  assert.equal((await s.guard.get(refund.recordId!))?.status, 'pending_approval');
+  const rules = await t.run(shopId, 'rules');
+  assert.equal((await s.guard.get(rules.recordId!))?.status, 'pending_approval');
+  await assert.rejects(t.run(shopId, 'commission'), /On your own shop the steps are buy, refund, rules/);
+
+  assert.equal(await t.sweep(new Date(now.getTime() + 49 * 3_600_000)), 1);
+  assert.equal(await s.catalogs.byShopId(shopId), undefined, 'gone after two days, with what it made');
+  assert.equal(await store.byShop(shopId), undefined);
+});
+
+test('the demo shop gets back the stock judges bought, never more than it usually has', async () => {
+  const s = await stack();
+  const { tours: t } = tours(s);
+  const shopId = demoCatalog.shop.id;
+  await s.catalogs.modify(shopId, (c) => {
+    c.products[0].variants[0].inventory = 0;
+    return true;
+  });
+  await t.restock();
+  const restocked = (await s.catalogs.byShopId(shopId))!;
+  assert.equal(restocked.products[0].variants[0].inventory, demoCatalog.products[0].variants[0].inventory);
+});

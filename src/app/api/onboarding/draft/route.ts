@@ -5,7 +5,7 @@ import { draftView } from '@/core/catalog-view.ts';
 import { HttpError } from '@/core/errors.ts';
 import { ready } from '@/server/context.ts';
 import { assertSameOrigin, handle, readBody } from '@/server/http.ts';
-import { claimedShop, rememberPublish } from '@/server/seller-session.ts';
+import { claimedShop, forgetClaim, rememberPublish } from '@/server/seller-session.ts';
 
 const text = (max: number) => ({ type: 'string', maxLength: max }) as const;
 const EDITS = {
@@ -42,7 +42,7 @@ export async function PUT(request: Request) {
     const shopId = await claimedShop();
     if (!shopId) throw new HttpError(401, 'This draft is no longer open in this browser. Start again to draft your shop.');
     const body = await readBody(request, EDITS);
-    const { shops, paypalLogin, links } = await ready();
+    const { shops, paypalLogin, links, access } = await ready();
     const catalog = await shops.reviewDraft(shopId, {
       shopName: body.shop_name,
       products: body.products?.map((p) => ({
@@ -58,8 +58,18 @@ export async function PUT(request: Request) {
     if (!body.publish) return Response.json({ draft });
     if (draft.to_confirm) throw new HttpError(409, `Confirm ${draft.to_confirm === 1 ? 'the last price' : `${draft.to_confirm} prices`} first`);
     // Signing in with PayPal claims the shop and publishes it; without PayPal sign-in, the owner signs in with their secret and publishes from the dashboard.
-    if (!paypalLogin) return Response.json({ draft, next: links.owner.home });
+    // The browser that drafted it gets the owner secret now (a new one: a draft picked up later never saw the first).
+    if (!paypalLogin) return Response.json({ draft, next: links.owner.home, owner_secret: await access.createOwner(shopId) });
     await rememberPublish(shopId);
     return Response.json({ draft, next: links.paypalSignIn });
+  });
+}
+
+/** Start over: this browser lets go of the draft (it is never published, and is cleared with old drafts). */
+export async function DELETE(request: Request) {
+  return handle(async () => {
+    assertSameOrigin(request);
+    await forgetClaim();
+    return Response.json({ ok: true });
   });
 }

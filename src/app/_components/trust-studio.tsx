@@ -432,7 +432,7 @@ export default function TrustStudio({ data, licenseKey }: { data: TrustReport; l
               : 'Orders from assistants, Shop with AI and the cart land here by channel, each with its money trail.'}
           </span>
           <span className="small muted">
-            To see it full, take <a href="/tour">the judges&apos; tour</a>: you get your own copy of this shop, the agents shop and ask, and this report fills up.
+            To see it fill up, open a shop from <a href="/tour">For Judges</a> and let the agents at it.
           </span>
         </div>
       ) : (

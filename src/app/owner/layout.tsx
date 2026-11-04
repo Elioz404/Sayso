@@ -29,7 +29,8 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
 
   const { shop, shopId } = view;
   const [pending, seller] = await Promise.all([pendingFor(shopId).then((p) => p.length), signedInSeller()]);
-  const onTour = Boolean(await view.tours?.forShop(shopId));
+  const tour = await view.tours?.forShop(shopId);
+  const onTour = Boolean(tour);
   const status = shop.status ?? 'live';
 
   return (
@@ -76,10 +77,18 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
           {onTour && (
             <div className="callout">
               <span className="small">
-                <b>This is your private tour copy of the shop.</b> Everything here is real and yours alone.
+                {tour?.kind === 'seller' ? (
+                  <>
+                    <b>You opened this shop from For Judges.</b> Everything here is real; it closes after two days.
+                  </>
+                ) : (
+                  <>
+                    <b>This is your private copy of the demo shop.</b> Everything here is real and yours alone.
+                  </>
+                )}
               </span>
-              <a className="btn btn-small" href="/tour">
-                Back to the tour
+              <a className="btn btn-small" href="/tour#sell">
+                Back to For Judges
               </a>
             </div>
           )}

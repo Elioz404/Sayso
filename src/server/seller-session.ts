@@ -57,6 +57,11 @@ export async function claimedShop(): Promise<string | undefined> {
   return (await ready()).access.verifyValue('claim', (await cookies()).get(CLAIM_COOKIE)?.value);
 }
 
+/** Start over: this browser lets go of its draft. */
+export async function forgetClaim(): Promise<void> {
+  (await cookies()).delete(CLAIM_COOKIE);
+}
+
 /** The owner pressed Publish: publish `shopId` as soon as PayPal signs them in (within the hour). */
 export async function rememberPublish(shopId: string): Promise<void> {
   await setCookie(PUBLISH_COOKIE, (await ready()).access.signValue('publish', shopId, HOUR), HOUR);

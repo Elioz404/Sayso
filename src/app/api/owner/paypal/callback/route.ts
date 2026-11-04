@@ -10,7 +10,7 @@ import { checkSignInState, startSellerSession, takeClaim, takeNext, takePublish 
 import { logError } from '@/server/log.ts';
 
 export async function GET(request: Request) {
-  const { paypal, sellers, shops, links } = await ready();
+  const { paypal, sellers, shops, links, tours } = await ready();
   const params = new URL(request.url).searchParams;
   // A buyer signing in to see their orders comes back here too (the one return address PayPal knows).
   const forBuyer = await takeBuyerSignIn();
@@ -45,7 +45,8 @@ export async function GET(request: Request) {
     if (publish && publish === claim) {
       try {
         await shops.publish(publish);
-        return Response.redirect(`${links.owner.home}?published=1`, 303);
+        const judge = (await tours?.forShop(publish))?.kind === 'seller';
+        return Response.redirect(judge ? `${links.base}/tour?published=1#sell` : `${links.owner.home}?published=1`, 303);
       } catch (err) {
         logError('publish after sign-in', err);
         return Response.redirect(`${links.owner.home}?published=failed`, 303);

@@ -512,53 +512,36 @@ body:has(.owner) .site-header, body:has(.owner) .site-footer { display: none; }
   .item { grid-template-columns: minmax(0, 1fr); gap: var(--s5); }
 }
 
-/* ---------- the judges' tour: one step per screen ---------- */
-.tour { max-width: 980px; }
-.tour-head { display: flex; justify-content: space-between; align-items: end; gap: var(--s4); flex-wrap: wrap; }
-.tour-title { font-size: var(--t-xl); }
-.tour-dot { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; flex: none; font-size: var(--t-xs); font-weight: 700; border: 1.5px solid var(--rule-strong); color: var(--ink-3); background: var(--paper); }
-/* The step bar: one segmented line, a segment per step (done, waiting on the judge, here, to come),
-   with each step's name under it where there is room. Every segment is a full tap target. */
-.tour-nav { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
-.tour-nav a { display: grid; gap: 8px; padding: 6px 0 4px; color: var(--ink-3); text-decoration: none; }
-.tour-nav a::before { content: ''; display: block; width: 100%; height: 4px; border-radius: 2px; background: var(--rule-strong); transition: background-color 0.2s; }
-.tour-nav a:hover::before { background: var(--field); }
-.tour-nav-done a::before, .tour-nav-done a:hover::before { background: var(--say); }
-.tour-nav-needs-you a::before, .tour-nav-needs-you a:hover::before { background: var(--hold); }
-.tour-nav-here a::before, .tour-nav-here a:hover::before { height: 6px; margin-top: -1px; background: var(--ink); }
-.tour-nav .tour-dot { display: none; }
-.tour-nav-label { font-size: var(--t-xs); font-weight: 600; line-height: 1.3; }
-.tour-nav-done a, .tour-nav-needs-you a { color: var(--ink-2); }
-.tour-nav-here a { color: var(--ink); }
-.tour-screen { display: grid; gap: var(--s5); padding: var(--s6); border-radius: var(--radius); background: var(--sheet); border: 1px solid var(--rule); }
-.tour-step-title { font-size: clamp(1.5rem, 3vw, 2rem); line-height: 1.15; }
-.tour-proves { display: grid; gap: 6px; padding: var(--s4) var(--s5); border-radius: var(--radius-sm); background: var(--paper); border-left: 0; }
-.tour-proves p { margin: 0; max-width: 70ch; }
-.tour-uses { color: var(--ink-3); }
-.tour-outcome { margin: 0; font-weight: 600; font-size: var(--t-md); }
+/* ---------- For Judges: two real paths, each a checklist that ticks itself off ---------- */
+.judges { display: flex; flex-direction: column; gap: var(--s6); }
+.judges-head { display: flex; flex-direction: column; gap: var(--s2); max-width: 70ch; }
+.judges-need { display: inline-flex; align-items: center; gap: var(--s2); margin: var(--s2) 0 0; padding: var(--s2) var(--s3); border-radius: var(--radius-sm); background: var(--paper-2); color: var(--ink-2); align-self: flex-start; }
+.judges-need .icon { flex: none; color: var(--say); }
+.judges-paths { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s5); align-items: start; }
+.judges-path { display: flex; flex-direction: column; gap: var(--s4); padding: var(--s5); border: 1px solid var(--rule); border-radius: var(--radius); background: var(--sheet); }
+.judges-path-head { display: flex; align-items: center; gap: var(--s3); }
+.judges-path-head h2 { font-size: var(--t-lg); }
+.judges-path-icon { flex: none; width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--say-soft); color: var(--say); }
+.judges-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.judges-step { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: var(--s3); padding-bottom: var(--s4); }
+.judges-step:last-child { padding-bottom: 0; }
+.judges-step:not(:last-child)::after { content: ''; position: absolute; left: 13px; top: 32px; bottom: 4px; width: 2px; border-radius: 2px; background: var(--rule); }
+.judges-step-done:not(:last-child)::after { background: var(--ok); }
+.judges-dot { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: var(--t-sm); font-weight: 700; border: 1.5px solid var(--rule-strong); color: var(--ink-3); background: var(--sheet); }
+.judges-step-done .judges-dot { background: var(--ok); border-color: var(--ok); color: var(--sheet); }
+.judges-step-now .judges-dot { border-color: var(--say); color: var(--say); box-shadow: 0 0 0 4px var(--say-soft); }
+.judges-step-open .judges-dot { border-color: var(--ink-3); color: var(--ink-2); }
+.judges-step-later b { color: var(--ink-3); font-weight: 600; }
+.judges-step-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-top: 3px; }
+.judges-action { margin-top: var(--s2); }
+.judges-detail { display: flex; flex-direction: column; gap: var(--s3); margin-top: var(--s3); }
+.judges-path-foot { padding-top: var(--s3); border-top: 1px solid var(--rule); color: var(--ink-2); }
+.tour-outcome { margin: 0; font-weight: 600; }
 .tour-outcome-needs-you { color: var(--hold); }
-.tour-outcome-done { color: var(--say); }
+.tour-outcome-done { color: var(--ok); }
 .tour-decide { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s3); }
-.tour-decide li { display: flex; justify-content: space-between; align-items: center; gap: var(--s4); flex-wrap: wrap; padding: var(--s3) var(--s4); border: 1px solid var(--rule); border-radius: var(--radius-sm); }
-.tour-earned { display: flex; justify-content: space-between; align-items: center; gap: var(--s4); flex-wrap: wrap; padding: var(--s4) var(--s5); border-radius: var(--radius-sm); background: var(--say-soft); }
-.tour-screen-nav { display: flex; justify-content: space-between; gap: var(--s3); padding-top: var(--s4); border-top: 1px solid var(--rule); }
-.tour-foot a { color: inherit; }
-.tour-intro { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); gap: var(--s7); align-items: start; }
-.tour-outline { list-style: none; margin: 0; padding: var(--s5); display: grid; gap: var(--s4); border-radius: var(--radius); background: var(--sheet); border: 1px solid var(--rule); }
-.tour-outline li, .tour-recap li { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: var(--s3); align-items: start; }
-.tour-recap { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s4); }
-.tour-recap-done .tour-dot { background: var(--say); border-color: var(--say); color: var(--say-ink); }
-.tour-ids { margin: 0; color: var(--ink-2); overflow-wrap: anywhere; }
-.tour-deeper { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: var(--s3); }
-.tour-deeper a { display: grid; gap: 4px; align-content: start; padding: var(--s4); border: 1px solid var(--rule); border-radius: var(--radius-sm); color: var(--ink); text-decoration: none; }
-.tour-deeper a:hover { border-color: var(--say); }
-@media (max-width: 760px) {
-  .tour-nav { gap: 4px; }
-  .tour-nav a { padding: 12px 0; }
-  .tour-nav-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-  .tour-screen { padding: var(--s5) var(--s4); }
-  .tour-intro { grid-template-columns: minmax(0, 1fr); gap: var(--s5); }
-}
+.tour-decide li { display: flex; justify-content: space-between; align-items: center; gap: var(--s4); flex-wrap: wrap; padding: var(--s3) var(--s4); border-radius: var(--radius-sm); background: var(--hold-soft); }
+@media (max-width: 860px) { .judges-paths { grid-template-columns: minmax(0, 1fr); } .judges-path { padding: var(--s4); } }
 
 /* ---------- On your phone: setup, passkeys, camera ---------- */
 .callout-ok, .callout-phone { background: var(--say-soft); }
@@ -1016,3 +999,4 @@ span.sell-qty { border-color: transparent; background: transparent; padding: 0; 
 .flash { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s3); }
 .flash-x { flex: none; border: 0; background: none; padding: 2px; color: inherit; opacity: 0.7; cursor: pointer; }
 .flash-x:hover { opacity: 1; }
+.sell-samples { align-self: center; }

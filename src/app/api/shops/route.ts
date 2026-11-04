@@ -23,6 +23,8 @@ const ONBOARDING = {
     agent_label: { type: 'string', maxLength: 60 },
     // The web flow connects an agent later, from Agents; the CLI (sayso init) wants a key now.
     agent_key: { type: 'boolean' },
+    // Opened from For Judges: the scripted agents come with it, and it closes after two days.
+    judge: { type: 'boolean' },
   },
 } as const;
 
@@ -38,14 +40,16 @@ export async function POST(request: Request) {
     const body = await readBody(request, ONBOARDING, PHOTO_BODY_LIMIT);
     const images = body.images?.length ? checkPhotos(body.images, MAX_ONBOARDING_PHOTOS) : [];
 
-    const { shops, links, paypalLogin } = await ready();
+    const { shops, links, paypalLogin, tours } = await ready();
     const result = await shops.onboard(
       { text: body.text, images, shopName: body.shop_name, currency: body.currency, country: body.country },
       body.agent_label || 'my agent',
       { ownerSecret: !paypalLogin, agentKey: body.agent_key !== false },
     );
     const { shop } = result.catalog;
-    if (paypalLogin) await rememberClaim(shop.id);
+    if (body.judge && tours) await tours.adopt(shop.id);
+    // This browser may edit the draft before publishing (and, with PayPal sign-in, claim it).
+    await rememberClaim(shop.id);
     return Response.json(
       {
         shop: { id: shop.id, slug: shop.slug, name: shop.name, status: shop.status },

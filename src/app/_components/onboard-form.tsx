@@ -21,13 +21,17 @@ interface Created {
   owner_secret?: string;
 }
 
+/** Pictures of real-looking pieces, for trying the flow without photos of your own. */
+const SAMPLES = ['/photos/mugs.webp', '/photos/bowl.webp', '/photos/vase.webp'];
+
 const EXAMPLE = `Hand-thrown mugs, 12 oz, $34. Sage green (6 left) and speckled white (1).
 Ramen bowls $48, 3 left. Custom bud vases $62, made to order in about 10 days.
 USPS in the US $8.95, free over $75.`;
 
-export function OnboardFlow({ paypalLogin }: { paypalLogin: boolean }) {
+/** `judge`: opened from For Judges (the shop closes after two days). `resume`: a draft this browser is still reviewing. */
+export function OnboardFlow({ paypalLogin, judge = false, resume }: { paypalLogin: boolean; judge?: boolean; resume?: Created }) {
   const [photos, setPhotos] = useState<string[]>([]);
-  const [created, setCreated] = useState<Created>();
+  const [created, setCreated] = useState<Created | undefined>(resume);
   const [drafting, setDrafting] = useState(false);
   const step = created ? 2 : 1;
 
@@ -36,10 +40,18 @@ export function OnboardFlow({ paypalLogin }: { paypalLogin: boolean }) {
       <header className="sell-head">
         <h1>Open your shop</h1>
         <p className="lede">Photos in, a shop AI shoppers can buy from out. You check everything before it goes live.</p>
+        {judge && <p className="small soft">From For Judges: your shop closes after two days.</p>}
       </header>
       <Steps step={step} drafting={drafting} paypalLogin={paypalLogin} />
       {created ? (
-        <Review created={created} paypalLogin={paypalLogin} onStartOver={() => setCreated(undefined)} />
+        <Review
+          created={created}
+          paypalLogin={paypalLogin}
+          onStartOver={() => {
+            void callApi('/api/onboarding/draft', 'DELETE').catch(() => undefined);
+            setCreated(undefined);
+          }}
+        />
       ) : drafting ? (
         <Drafting photos={photos} />
       ) : (
@@ -49,7 +61,7 @@ export function OnboardFlow({ paypalLogin }: { paypalLogin: boolean }) {
           onDraft={async (body) => {
             setDrafting(true);
             try {
-              setCreated(await callApi<Created>('/api/shops', 'POST', { ...body, images: photos, agent_key: false }));
+              setCreated(await callApi<Created>('/api/shops', 'POST', { ...body, images: photos, agent_key: false, ...(judge ? { judge: true } : {}) }));
             } finally {
               setDrafting(false);
             }
@@ -174,7 +186,19 @@ function Upload({ photos, setPhotos, onDraft }: { photos: string[]; setPhotos: (
             )}
           </ul>
         )}
-        {unread > 0 && <p className="small error">{unread === 1 ? "One photo couldn't be read here" : `${unread} photos couldn't be read here`}; try a JPEG or PNG.</p>}
+        {photos.length === 0 && (
+          <button
+            type="button"
+            className="link-button small sell-samples"
+            onClick={async () => {
+              const files = await Promise.all(SAMPLES.map(async (src) => new File([await (await fetch(src)).blob()], src.split('/').pop()!, { type: 'image/webp' })));
+              await add(files);
+            }}
+          >
+            No photos at hand? Use sample photos
+          </button>
+        )}
+        {unread > 0 &&<p className="small error">{unread === 1 ? "One photo couldn't be read here" : `${unread} photos couldn't be read here`}; try a JPEG or PNG.</p>}
       </div>
 
       <div className="sell-details">
@@ -254,6 +278,7 @@ function Review({ created, paypalLogin, onStartOver }: { created: Created; paypa
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [secretNext, setSecretNext] = useState<string>();
+  const [secret, setSecret] = useState(created.owner_secret ?? '');
 
   const kept = draft.products.filter((p) => !products[p.id].remove);
   const unconfirmed = kept.flatMap((p) => p.variants).filter((v) => !variants[v.id].confirmed || !variants[v.id].price.trim()).length;
@@ -278,9 +303,12 @@ function Review({ created, paypalLogin, onStartOver }: { created: Created; paypa
         shipping: draft.shipping.map((s) => ({ id: s.id, price: shipping[s.id].price, free_above: shipping[s.id].free_above })),
         publish: true,
       };
-      const { next } = await callApi<{ next: string }>('/api/onboarding/draft', 'PUT', body);
+      const { next, owner_secret } = await callApi<{ next: string; owner_secret?: string }>('/api/onboarding/draft', 'PUT', body);
       if (paypalLogin) window.location.href = next;
-      else setSecretNext(next);
+      else {
+        if (owner_secret) setSecret(owner_secret);
+        setSecretNext(next);
+      }
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);
@@ -392,7 +420,7 @@ function Review({ created, paypalLogin, onStartOver }: { created: Created; paypa
         <div className="sell-bar">
           <div className="stack" style={{ gap: 'var(--s2)', flex: 1, minWidth: 0 }}>
             <b>Saved. Sign in with your owner secret to publish.</b>
-            <CopyField value={created.owner_secret ?? ''} secret />
+            <CopyField value={secret} secret />
           </div>
           <a className="btn btn-primary" href={secretNext}>
             Sign in

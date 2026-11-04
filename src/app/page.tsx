@@ -30,7 +30,7 @@ export default async function Home() {
               Open your shop <Icon name="arrow" size={17} />
             </a>
             <a className="btn" href="/tour">
-              For Judges: the 2-minute tour
+              For Judges: try it for real
             </a>
           </div>
         </div>

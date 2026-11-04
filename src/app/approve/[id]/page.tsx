@@ -121,7 +121,7 @@ export default async function Approve({ params }: { params: Promise<{ id: string
         {onTour && (
           <>
             {' '}
-            · <a href="/tour">Back to the tour</a>
+            · <a href="/tour#sell">Back to For Judges</a>
           </>
         )}
       </p>
