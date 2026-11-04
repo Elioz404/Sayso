@@ -2,6 +2,7 @@
 // country? } -> a draft shop and a first agent key, returned exactly once. Where owners sign in with
 // PayPal, this browser may then claim the shop (claim_url); otherwise the owner secret comes back, once.
 import { HttpError } from '@/core/errors.ts';
+import { draftView } from '@/core/catalog-view.ts';
 import { checkPhotos } from '@/core/media.ts';
 import { formatMoney } from '@/core/money.ts';
 import { MAX_ONBOARDING_PHOTOS } from '@/core/photo-limits.ts';
@@ -20,6 +21,8 @@ const ONBOARDING = {
     currency: { type: 'string', pattern: '^[A-Za-z]{3}$' },
     country: { type: 'string', pattern: '^[A-Za-z]{2}$' },
     agent_label: { type: 'string', maxLength: 60 },
+    // The web flow connects an agent later, from Agents; the CLI (sayso init) wants a key now.
+    agent_key: { type: 'boolean' },
   },
 } as const;
 
@@ -39,7 +42,7 @@ export async function POST(request: Request) {
     const result = await shops.onboard(
       { text: body.text, images, shopName: body.shop_name, currency: body.currency, country: body.country },
       body.agent_label || 'my agent',
-      { ownerSecret: !paypalLogin },
+      { ownerSecret: !paypalLogin, agentKey: body.agent_key !== false },
     );
     const { shop } = result.catalog;
     if (paypalLogin) await rememberClaim(shop.id);
@@ -60,13 +63,18 @@ export async function POST(request: Request) {
             stock: v.madeToOrderDays !== undefined ? `Made to order, ${v.madeToOrderDays} days` : `${v.inventory} in stock`,
           })),
         })),
+        draft: draftView(result.catalog),
         questions: result.questions,
         owner_secret: result.ownerSecret,
         claim_url: paypalLogin ? links.paypalSignIn : undefined,
-        agent_key: result.agentKey,
         review_url: links.owner.home,
-        mcp: { seller: links.sellerMcpFor(result.agentKey), buyer: links.shoppingMcp, this_shop: links.shopMcp(shop.slug) },
-        cli_login: links.cliLogin(result.agentKey),
+        ...(result.agentKey
+          ? {
+              agent_key: result.agentKey,
+              mcp: { seller: links.sellerMcpFor(result.agentKey), buyer: links.shoppingMcp, this_shop: links.shopMcp(shop.slug) },
+              cli_login: links.cliLogin(result.agentKey),
+            }
+          : {}),
       },
       { status: 201 },
     );

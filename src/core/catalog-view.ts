@@ -1,7 +1,8 @@
 // The catalog as rows, one per variant: what the owner's grid shows and edits. Framework-free so the
 // page, the API route and tests share it.
 
-import { findVariant, type Catalog } from './catalog.ts';
+import { findVariant, pricesToConfirm, type Catalog } from './catalog.ts';
+import { formatMoney, toMoney } from './money.ts';
 
 export interface VariantRow {
   id: string;
@@ -60,3 +61,33 @@ export function soldSince(orders: { status: string; number?: string; createdAt: 
   }
   return sold;
 }
+
+/** A draft shop as its owner reviews it before publishing: amounts as typed (decimal strings), a suggested price with the range it came from. */
+export function draftView(catalog: Catalog) {
+  const { shop } = catalog;
+  const amount = (minor: number) => toMoney(minor, shop.currency).value;
+  return {
+    shop: { id: shop.id, slug: shop.slug, name: shop.name, currency: shop.currency, country: shop.country },
+    products: catalog.products.map((p) => ({
+      id: p.id,
+      name: p.name,
+      description: p.description,
+      image: p.imageUrl,
+      variants: p.variants.map((v) => ({
+        id: v.id,
+        title: v.title,
+        price: v.price ? amount(v.price) : '',
+        to_confirm: Boolean(v.priceToConfirm),
+        ...(v.priceToConfirm?.suggested
+          ? { suggested: { low: formatMoney(v.priceToConfirm.suggested.low, shop.currency), high: formatMoney(v.priceToConfirm.suggested.high, shop.currency), listings: v.priceToConfirm.suggested.listings } }
+          : {}),
+        stock: v.inventory,
+        ...(v.madeToOrderDays !== undefined ? { made_to_order_days: v.madeToOrderDays } : {}),
+      })),
+    })),
+    shipping: shop.shipping.map((r) => ({ id: r.id, name: r.name, countries: r.countries, price: amount(r.price), free_above: r.freeAbove ? amount(r.freeAbove) : '', days: `${r.minDays}-${r.maxDays}` })),
+    to_confirm: pricesToConfirm(catalog).length,
+  };
+}
+
+export type DraftView = ReturnType<typeof draftView>;

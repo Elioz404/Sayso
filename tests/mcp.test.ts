@@ -200,7 +200,7 @@ test('onboarding: a new shop starts as a draft, and publishing registers it with
   };
   const s = await stack(model);
   const { catalog, ownerSecret, agentKey } = await s.shops.onboard({ text: 'Soy candles, $18' });
-  assert.ok(ownerSecret?.startsWith('sk_owner_') && agentKey.startsWith('sk_agent_'));
+  assert.ok(ownerSecret?.startsWith('sk_owner_') && agentKey?.startsWith('sk_agent_'));
   assert.ok(await s.access.checkOwnerSecret(catalog.shop.id, ownerSecret!));
 
   const closed = await s.call('search_products', {}, { shopSlug: catalog.shop.slug });

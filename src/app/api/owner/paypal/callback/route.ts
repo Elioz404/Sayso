@@ -6,11 +6,11 @@ import { identityFromCode } from '@/core/paypal/identity.ts';
 import { ready } from '@/server/context.ts';
 import { startBuyerSession, takeBuyerSignIn } from '@/server/buyer-session.ts';
 import { startOwnerSession } from '@/server/http.ts';
-import { checkSignInState, startSellerSession, takeClaim, takeNext } from '@/server/seller-session.ts';
+import { checkSignInState, startSellerSession, takeClaim, takeNext, takePublish } from '@/server/seller-session.ts';
 import { logError } from '@/server/log.ts';
 
 export async function GET(request: Request) {
-  const { paypal, sellers, links } = await ready();
+  const { paypal, sellers, shops, links } = await ready();
   const params = new URL(request.url).searchParams;
   // A buyer signing in to see their orders comes back here too (the one return address PayPal knows).
   const forBuyer = await takeBuyerSignIn();
@@ -40,6 +40,17 @@ export async function GET(request: Request) {
     const shopId = claim ?? (await sellers.shops(seller.id))[0]?.shop.id;
     if (!shopId) return back('no-shop');
     await startOwnerSession(shopId);
+    // They pressed Publish on their draft: signing in was the last step.
+    const publish = await takePublish();
+    if (publish && publish === claim) {
+      try {
+        await shops.publish(publish);
+        return Response.redirect(`${links.owner.home}?published=1`, 303);
+      } catch (err) {
+        logError('publish after sign-in', err);
+        return Response.redirect(`${links.owner.home}?published=failed`, 303);
+      }
+    }
     return Response.redirect(`${links.base}${await takeNext()}`, 303);
   } catch (err) {
     if (err instanceof HttpError && err.status === 409) return back('taken');

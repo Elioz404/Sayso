@@ -210,14 +210,15 @@ export default async function Docs() {
             <ol className="steps">
               <li>
                 <span>
-                  <a href="/start">Draft your shop</a> from photos and a price list,{' '}
+                  <a href="/start">Upload photos of your pieces</a>: Sayso drafts each listing and suggests a price from similar items. Check the draft on
+                  the same page (names, prices, stock, shipping) and confirm every price,{' '}
                   {paypalLogin ? (
                     <>
-                      make it yours with <b>Continue with PayPal</b>, check it and publish. Signing in with PayPal is the only thing that approves money
-                      moves; no agent key can.
+                      then <b>Publish with PayPal</b>: signing in claims the shop and publishes it. Signing in with PayPal is the only thing that approves
+                      money moves; no agent key can.
                     </>
                   ) : (
-                    <>check it, and publish. You get an owner secret: it signs you in and is the only thing that approves money moves.</>
+                    <>then publish. You get an owner secret: it signs you in and is the only thing that approves money moves.</>
                   )}
                 </span>
               </li>

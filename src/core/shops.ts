@@ -12,7 +12,7 @@ import { fromLlmError, HttpError, notFound } from './errors.ts';
 import type { Links } from './links.ts';
 import type { MarketPrices } from './market.ts';
 import { checkPhotos, MAX_DRAFT_PHOTOS, mediaIdOf, photoFromDataUrl, type MediaStore } from './media.ts';
-import { formatMoney } from './money.ts';
+import { formatMoney, parseAmount } from './money.ts';
 import type { PayPalClient } from './paypal/client.ts';
 import { createCatalogProduct } from './paypal/products.ts';
 import type { CatalogStore } from './stores.ts';
@@ -39,8 +39,27 @@ export interface OnboardResult {
   questions: string[];
   /** Only when the owner signs in with a secret instead of PayPal. */
   ownerSecret?: string;
-  agentKey: string;
+  /** Only when asked for (the CLI's `sayso init`); the web flow connects agents later, from Agents. */
+  agentKey?: string;
 }
+
+/**
+ * What the owner changes in a draft before publishing, as typed: amounts like "56" or "56.00". A price
+ * given for a variant is the owner's, even when it is the suggested one: giving it confirms it.
+ */
+export interface DraftEdits {
+  shopName?: string;
+  products?: {
+    id: string;
+    name?: string;
+    description?: string;
+    remove?: boolean;
+    variants?: { id: string; title?: string; price?: string; inventory?: number }[];
+  }[];
+  shipping?: { id: string; price?: string; freeAbove?: string | null }[];
+}
+
+const MAX_STOCK = 100_000;
 
 export class Shops {
   private readonly deps: ShopsDeps;
@@ -49,8 +68,8 @@ export class Shops {
     this.deps = deps;
   }
 
-  /** `ownerSecret: false` when the owner will claim the shop by signing in with PayPal. */
-  async onboard(input: OnboardingInput, agentLabel = 'my agent', options: { ownerSecret: boolean } = { ownerSecret: true }): Promise<OnboardResult> {
+  /** `ownerSecret: false` when the owner will claim the shop by signing in with PayPal; `agentKey: false` when no agent connects yet. */
+  async onboard(input: OnboardingInput, agentLabel = 'my agent', options: { ownerSecret: boolean; agentKey?: boolean } = { ownerSecret: true }): Promise<OnboardResult> {
     if (!this.deps.model) throw new HttpError(503, 'Onboarding needs an AI key (OPENAI_API_KEY or DEEPSEEK_API_KEY) on the server');
     const { catalog, questions, photoOf } = await draftCatalog(this.deps.model, input).catch((err: unknown) => {
       throw fromLlmError(err, 'Could not read that catalog');
@@ -60,8 +79,82 @@ export class Shops {
     questions.push(...priceQuestions(catalog));
     await this.deps.catalogs.save(catalog);
     const ownerSecret = options.ownerSecret ? await this.deps.access.createOwner(catalog.shop.id) : undefined;
-    const { secret: agentKey } = await this.deps.access.createAgentKey(catalog.shop.id, agentLabel);
-    return { catalog, questions, ownerSecret, agentKey };
+    const agentKey = options.agentKey === false ? undefined : (await this.deps.access.createAgentKey(catalog.shop.id, agentLabel)).secret;
+    return { catalog, questions, ownerSecret, ...(agentKey ? { agentKey } : {}) };
+  }
+
+  /**
+   * The browser that drafted the shop (or its owner) only, while it is still a draft. Applies the owner's
+   * edits: names, descriptions, prices (confirming them), stock, shipping, pieces taken out. Everything is
+   * checked before anything changes, so a bad amount changes nothing.
+   */
+  async reviewDraft(shopId: string, edits: DraftEdits): Promise<Catalog> {
+    const draft = await this.get(shopId);
+    if (isLive(draft)) throw new HttpError(409, 'This shop is already live; change it from your dashboard');
+    const currency = draft.shop.currency;
+    const amount = (value: string, what: string, zeroOk = false) => {
+      const minor = parseAmount(value, currency);
+      if (minor === undefined || minor < 0 || (!zeroOk && minor === 0)) throw new HttpError(400, `${what}: write an amount like 24.50`);
+      return minor;
+    };
+    const prices = new Map<string, number>();
+    for (const p of edits.products ?? []) {
+      const product = draft.products.find((x) => x.id === p.id);
+      if (!product || p.remove) continue;
+      for (const v of p.variants ?? []) {
+        const variant = product.variants.find((x) => x.id === v.id);
+        if (!variant) continue;
+        if (v.price !== undefined) prices.set(variant.id, amount(v.price, `${product.name} (${variant.title})`));
+        if (v.inventory !== undefined && (!Number.isSafeInteger(v.inventory) || v.inventory < 0 || v.inventory > MAX_STOCK)) {
+          throw new HttpError(400, `${product.name} (${variant.title}): stock is a whole number, 0 or more`);
+        }
+      }
+    }
+    const removed = new Set((edits.products ?? []).filter((p) => p.remove).map((p) => p.id));
+    if (draft.products.every((p) => removed.has(p.id))) throw new HttpError(400, 'Keep at least one piece in your shop');
+    const shipping = new Map<string, { price?: number; freeAbove?: number | null }>();
+    for (const s of edits.shipping ?? []) {
+      const rule = draft.shop.shipping.find((x) => x.id === s.id);
+      if (!rule) continue;
+      shipping.set(rule.id, {
+        ...(s.price !== undefined ? { price: amount(s.price, `Shipping (${rule.name})`, true) } : {}),
+        ...(s.freeAbove !== undefined ? { freeAbove: s.freeAbove === null || s.freeAbove.trim() === '' ? null : amount(s.freeAbove, 'Free shipping above') } : {}),
+      });
+    }
+    const name = edits.shopName?.trim().replace(/\s+/g, ' ');
+    if (name !== undefined && (name.length < 2 || name.length > 60)) throw new HttpError(400, 'A shop name is 2 to 60 characters');
+
+    const updated = await this.deps.catalogs.modify(shopId, (catalog) => {
+      if (isLive(catalog)) return false;
+      if (name) catalog.shop.name = name;
+      catalog.products = catalog.products.filter((p) => !removed.has(p.id));
+      for (const p of edits.products ?? []) {
+        const product = catalog.products.find((x) => x.id === p.id);
+        if (!product) continue;
+        if (p.name?.trim()) product.name = p.name.trim().slice(0, 120);
+        if (p.description !== undefined) product.description = p.description.trim().slice(0, 2_000);
+        for (const v of p.variants ?? []) {
+          const variant = product.variants.find((x) => x.id === v.id);
+          if (!variant) continue;
+          if (v.title?.trim()) variant.title = v.title.trim().slice(0, 80);
+          if (prices.has(variant.id)) {
+            variant.price = prices.get(variant.id)!;
+            delete variant.priceToConfirm; // the owner gave this price, even if it is the suggestion
+          }
+          if (v.inventory !== undefined) variant.inventory = v.inventory;
+        }
+      }
+      for (const rule of catalog.shop.shipping) {
+        const change = shipping.get(rule.id);
+        if (!change) continue;
+        if (change.price !== undefined) rule.price = change.price;
+        if (change.freeAbove === null) delete rule.freeAbove;
+        else if (change.freeAbove !== undefined) rule.freeAbove = change.freeAbove;
+      }
+      return true;
+    });
+    if (!updated && isLive(await this.get(shopId))) throw new HttpError(409, 'This shop is already live; change it from your dashboard');
+    return updated ?? (await this.get(shopId));
   }
 
   /**

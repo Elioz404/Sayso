@@ -69,3 +69,35 @@ test('without enough market data the price stays empty and still waits for the o
     assert.ok(questions.includes('What does Stoneware mug (Speckled white) cost? Set a price before publishing.'));
   }
 });
+
+test("the owner's review of a draft: edits, prices kept or changed are confirmed, then it publishes", async () => {
+  const { shops } = setup([2_800, 3_200, 3_600]);
+  const { catalog, agentKey } = await shops.onboard({ images: [PHOTO] }, 'laptop', { ownerSecret: false, agentKey: false });
+  assert.equal(agentKey, undefined, 'the web flow connects an agent later');
+  const shopId = catalog.shop.id;
+  const [product] = catalog.products;
+  const [variant] = product.variants;
+  const [rule] = catalog.shop.shipping;
+
+  // A bad amount changes nothing at all.
+  await assert.rejects(shops.reviewDraft(shopId, { shopName: 'Clay Corner & Co', products: [{ id: product.id, variants: [{ id: variant.id, price: 'cheap' }] }] }), /write an amount like 24.50/);
+  assert.equal((await shops.get(shopId)).shop.name, 'Clay Corner');
+  await assert.rejects(shops.reviewDraft(shopId, { products: [{ id: product.id, remove: true }] }), /Keep at least one piece/);
+
+  // Keeping the suggested price ($36.00) is the owner's confirmation; stock and names are theirs too.
+  const reviewed = await shops.reviewDraft(shopId, {
+    shopName: '  Clay   Corner Studio ',
+    products: [{ id: product.id, name: 'Speckled stoneware mug', description: 'Wheel-thrown, 12 oz.', variants: [{ id: variant.id, price: '36', inventory: 6 }] }],
+    shipping: [{ id: rule.id, price: '7.50', freeAbove: '60' }],
+  });
+  assert.equal(reviewed.shop.name, 'Clay Corner Studio');
+  const edited = reviewed.products[0];
+  assert.deepEqual([edited.name, edited.description, edited.variants[0].price, edited.variants[0].inventory, edited.variants[0].priceToConfirm], ['Speckled stoneware mug', 'Wheel-thrown, 12 oz.', 3_600, 6, undefined]);
+  assert.deepEqual([reviewed.shop.shipping[0].price, reviewed.shop.shipping[0].freeAbove], [750, 6_000]);
+  assert.deepEqual(pricesToConfirm(reviewed), []);
+
+  // Free shipping above can be taken away; once live, the draft can't be edited from here.
+  assert.equal((await shops.reviewDraft(shopId, { shipping: [{ id: rule.id, freeAbove: '' }] })).shop.shipping[0].freeAbove, undefined);
+  assert.equal((await shops.publish(shopId)).catalog.shop.status, 'live');
+  await assert.rejects(shops.reviewDraft(shopId, { shopName: 'Another name' }), /already live/);
+});

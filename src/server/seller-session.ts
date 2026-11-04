@@ -9,6 +9,7 @@ import { ready } from './context.ts';
 const STATE_COOKIE = 'sayso_paypal_state';
 const NEXT_COOKIE = 'sayso_paypal_next';
 const CLAIM_COOKIE = 'sayso_claim';
+const PUBLISH_COOKIE = 'sayso_publish';
 const SELLER_COOKIE = 'sayso_seller';
 const TEN_MINUTES = 10 * 60_000;
 const HOUR = 60 * 60_000;
@@ -49,6 +50,24 @@ export async function checkSignInState(state: string | null): Promise<boolean> {
 /** This browser just created `shopId` and may claim it with PayPal within the hour. */
 export async function rememberClaim(shopId: string): Promise<void> {
   await setCookie(CLAIM_COOKIE, (await ready()).access.signValue('claim', shopId, HOUR), HOUR);
+}
+
+/** The draft this browser created and may still edit and claim (within the hour); not consumed. */
+export async function claimedShop(): Promise<string | undefined> {
+  return (await ready()).access.verifyValue('claim', (await cookies()).get(CLAIM_COOKIE)?.value);
+}
+
+/** The owner pressed Publish: publish `shopId` as soon as PayPal signs them in (within the hour). */
+export async function rememberPublish(shopId: string): Promise<void> {
+  await setCookie(PUBLISH_COOKIE, (await ready()).access.signValue('publish', shopId, HOUR), HOUR);
+}
+
+/** The shop to publish on this sign-in, consumed by reading it. */
+export async function takePublish(): Promise<string | undefined> {
+  const jar = await cookies();
+  const shopId = (await ready()).access.verifyValue('publish', jar.get(PUBLISH_COOKIE)?.value);
+  jar.delete(PUBLISH_COOKIE);
+  return shopId;
 }
 
 /** The shop this browser may claim, consumed by reading it. */

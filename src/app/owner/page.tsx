@@ -19,6 +19,11 @@ import { trustReport } from '@/core/trust-report.ts';
 import { ownerView, pendingFor } from '@/server/owner.ts';
 
 /** What PayPal's payout onboarding came back with, as /owner?payouts=... */
+const PUBLISHED: Record<string, string> = {
+  '1': 'Your shop is live. Shoppers on Sayso and their assistants can buy from it now.',
+  failed: "You're signed in, but publishing didn't go through. Check your prices below and publish again.",
+};
+
 const PAYOUT_OUTCOMES: Record<string, string> = {
   connected: 'Your PayPal is connected. New sales are paid straight into it.',
   pending: "PayPal hasn't finished connecting your account yet. If you closed PayPal early, connect again.",
@@ -26,11 +31,12 @@ const PAYOUT_OUTCOMES: Record<string, string> = {
   failed: 'Something went wrong while checking with PayPal. Please try again.',
 };
 
-export default async function Overview({ searchParams }: { searchParams: Promise<{ payouts?: string }> }) {
+export default async function Overview({ searchParams }: { searchParams: Promise<{ payouts?: string; published?: string }> }) {
   const view = await ownerView();
   if (!view) return null;
   const { shop, shopId, orders: shopOrders, catalog, redact, saySo, payouts, demo } = view;
-  const outcome = PAYOUT_OUTCOMES[(await searchParams).payouts ?? ''];
+  const asked = await searchParams;
+  const outcome = PAYOUT_OUTCOMES[asked.payouts ?? ''] ?? PUBLISHED[asked.published ?? ''];
   const onTour = shop.visibility === 'private';
   const [approvals, orders, { suggestions }, passkey, devices, records, policy] = await Promise.all([
     pendingFor(shopId),
