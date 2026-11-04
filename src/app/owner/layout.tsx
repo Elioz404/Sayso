@@ -54,6 +54,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
           <RailNav
             items={[
               { href: '/owner', label: 'Overview', icon: 'home', count: pending },
+              { href: '/owner/assistant', label: 'Assistant', icon: 'chat' },
               { href: '/owner/orders', label: 'Orders', icon: 'list' },
               { href: '/owner/catalog', label: 'Catalog', icon: 'box' },
               { href: '/owner/production', label: 'Making', icon: 'calendar' },

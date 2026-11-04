@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ActionRules } from '@/core/guard/rules-by-action.ts';
 import { callApi } from './api.ts';
 import { CopyField } from './client-ui.tsx';
+import { forgetOwnerChats } from './owner-assistant.tsx';
 import { signChallenge, usePasskeyChallenge } from './passkey-client.ts';
 import { RulesTable } from './rules-table.tsx';
 import { Icon } from './ui.tsx';
@@ -25,6 +26,8 @@ const SIGN_IN_OUTCOMES: Record<string, string> = {
 /** `next`: where to land after signing in with PayPal (this page by default lands on /owner). */
 export function LoginForm({ demo, paypal, next }: { demo: boolean; paypal: boolean; next?: string }) {
   const router = useRouter();
+  // Signed out, however it happened: no owner conversation stays behind in this tab.
+  useEffect(() => forgetOwnerChats(), []);
   const outcome = useSearchParams().get('signin') ?? undefined;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -218,6 +221,7 @@ export function SignOutEverywhere() {
         onClick={() =>
           void run(async () => {
             await callApi('/api/owner/session', 'DELETE', { everywhere: true });
+            forgetOwnerChats();
             window.location.assign('/owner');
           })
         }
@@ -236,6 +240,7 @@ export function SignOut() {
       className="btn btn-quiet btn-small"
       onClick={async () => {
         await callApi('/api/owner/session', 'DELETE').catch(() => {});
+        forgetOwnerChats();
         router.refresh();
       }}
     >

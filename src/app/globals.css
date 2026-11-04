@@ -1119,3 +1119,17 @@ span.sell-qty { border-color: transparent; background: transparent; padding: 0; 
 .connect-choice { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; padding: var(--s3) var(--s4); border: 1px solid var(--rule-strong); border-radius: var(--radius); background: var(--sheet); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
 .connect-choice:hover, .connect-choice:focus-visible { border-color: var(--ink-3); background: var(--paper-2); }
 .connect-open { align-self: flex-start; margin-top: var(--s1); }
+/* ---------- the owner's assistant ---------- */
+.assistant { display: flex; flex-direction: column; gap: var(--s3); max-width: 860px; }
+.assistant-log { display: flex; flex-direction: column; gap: var(--s4); min-height: 340px; max-height: min(62vh, 640px); overflow-y: auto; padding: var(--s5); background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius); scrollbar-width: thin; scrollbar-color: var(--rule-strong) transparent; }
+.assistant-me { align-self: flex-end; max-width: 80%; margin: 0; padding: var(--s2) var(--s3); border-radius: var(--radius) var(--radius) 4px var(--radius); background: var(--paper-2); overflow-wrap: anywhere; white-space: pre-wrap; }
+.assistant-bot { display: flex; flex-direction: column; gap: var(--s1); max-width: 92%; margin: 0; }
+.assistant-bot p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.55; }
+.assistant-empty { margin: auto 0; display: flex; flex-direction: column; gap: var(--s3); }
+.assistant-suggestions { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.assistant-suggestion { padding: var(--s2) var(--s3); border: 1px solid var(--rule-strong); border-radius: 999px; background: transparent; color: var(--ink-2); font: inherit; font-size: var(--t-sm); cursor: pointer; }
+.assistant-suggestion:hover:not(:disabled) { border-color: var(--ink-3); color: var(--ink); }
+.assistant-box { display: flex; gap: var(--s2); }
+.assistant-box input { flex: 1; min-width: 0; }
+.assistant-new { align-self: flex-start; }
+@media (max-width: 640px) { .assistant-log { padding: var(--s4); min-height: 240px; max-height: calc(100dvh - 330px); } }

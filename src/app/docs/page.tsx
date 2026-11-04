@@ -241,7 +241,8 @@ export default async function Docs() {
             <p>
               Your dashboard&apos;s <b>Overview</b> shows the week against the one before (revenue, orders, average order, refund rate), what your agents
               did with your money, the latest orders and where they came from, and an in-depth report of every request, sale and money move, each
-              checked against PayPal. <b>Orders</b>, <b>Catalog</b>, <b>Making</b> and <b>Activity</b> hold the rest.
+              checked against PayPal. <b>Assistant</b> answers questions about your own shop (sales, refunds and net for any period, a month-end
+              estimate, what waits for you) and only reads. <b>Orders</b>, <b>Catalog</b>, <b>Making</b> and <b>Activity</b> hold the rest.
             </p>
           </section>
 

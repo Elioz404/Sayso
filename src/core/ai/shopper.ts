@@ -4,18 +4,11 @@
 // conversation and sends it back, so each turn is checked and capped here before the model sees it.
 
 import type { ChatMessage, ChatModel, ToolCall } from './llm.ts';
+import { toolLoop, type LoopStep, type LoopTool, type RunTool } from './tool-loop.ts';
 
-export interface ShopperTool {
-  name: string;
-  description: string;
-  inputSchema: unknown;
-}
-
-/** Runs one tool for the shopper; tool errors come back as results the model can read and fix. */
-export type RunTool = (name: string, args: unknown) => Promise<{ isError: boolean; result: unknown }>;
-
-/** What the person sees for one turn: each tool the assistant used, and what it said. */
-export type ShopperStep = { tool: string; args: unknown; result: unknown; isError: boolean } | { text: string };
+export type { RunTool } from './tool-loop.ts';
+export type ShopperTool = LoopTool;
+export type ShopperStep = LoopStep;
 
 export const SHOPPER_LIMITS = { messages: 40, userChars: 600, toolChars: 8_000, rounds: 6 } as const;
 
@@ -65,30 +58,6 @@ export function cleanHistory(raw: unknown): ChatMessage[] {
 /** One shopper turn: the model calls tools until it has an answer (or runs out of rounds). */
 /** `context`: what the site knows for this turn only (the shopper's own orders), never kept in the history. */
 export async function shopperTurn(deps: { model: ChatModel; tools: ShopperTool[]; run: RunTool }, history: ChatMessage[], text: string, context?: string) {
-  if (!deps.model.chat) throw new Error(`${deps.model.name} can't use tools`);
   const messages: ChatMessage[] = [...history, { role: 'user', content: text.slice(0, SHOPPER_LIMITS.userChars) }];
-  const steps: ShopperStep[] = [];
-  const tools = deps.tools.map((t) => ({ name: t.name, description: t.description, parameters: t.inputSchema }));
-  for (let round = 0; round < SHOPPER_LIMITS.rounds; round++) {
-    const system: ChatMessage[] = [{ role: 'system', content: SHOPPER_PROMPT }, ...(context ? [{ role: 'system' as const, content: context }] : [])];
-    const reply = await deps.model.chat({ messages: [...system, ...messages], tools });
-    messages.push({ role: 'assistant', content: reply.content || null, ...(reply.toolCalls.length ? { tool_calls: reply.toolCalls } : {}) });
-    if (reply.content) steps.push({ text: reply.content });
-    if (reply.toolCalls.length === 0) return { messages, steps };
-    for (const call of reply.toolCalls) {
-      let args: unknown = {};
-      try {
-        args = JSON.parse(call.function.arguments || '{}');
-      } catch {
-        args = {};
-      }
-      const known = deps.tools.some((t) => t.name === call.function.name);
-      const out = known ? await deps.run(call.function.name, args) : { isError: true, result: `There is no tool called ${call.function.name}.` };
-      steps.push({ tool: call.function.name, args, result: out.result, isError: out.isError });
-      const content = typeof out.result === 'string' ? out.result : JSON.stringify(out.result);
-      messages.push({ role: 'tool', tool_call_id: call.id, content: content.slice(0, SHOPPER_LIMITS.toolChars) });
-    }
-  }
-  steps.push({ text: "That took more steps than I'm allowed in one go. Tell me what to do next and I'll continue." });
-  return { messages, steps };
+  return toolLoop(deps, [SHOPPER_PROMPT, ...(context ? [context] : [])], messages, SHOPPER_LIMITS);
 }

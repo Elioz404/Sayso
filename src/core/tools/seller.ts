@@ -4,6 +4,7 @@
 import { pricesToConfirm } from '../catalog.ts';
 import { formatMoney, parseAmount } from '../money.ts';
 import type { PaymentState, ProductionJob } from '../production.ts';
+import { PERIODS } from '../sales-summary.ts';
 import { money } from './args.ts';
 import { actor, shop, ToolError, type Tool } from './context.ts';
 import { catalogView, priceReferenceView, sayso } from './views.ts';
@@ -46,6 +47,36 @@ export const sellerTools: Tool[] = [
           suggested_from: variant.priceToConfirm?.suggested && `${variant.priceToConfirm.suggested.listings} similar listings`,
         })),
       };
+    },
+  },
+  {
+    name: 'sales_summary',
+    title: 'Sales summary',
+    description:
+      'Sales, refunds, net, orders, average order, top products and channels for a period (this month unless asked otherwise), against the period before, plus a straight-line estimate while the period is still running. The totals are computed here from every order: quote them as given, never add up order lists yourself.',
+    side: 'seller',
+    annotations: { readOnlyHint: true },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        period: { type: 'string', enum: [...PERIODS], description: 'Defaults to this_month' },
+        from: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'A custom range instead of period: first day, YYYY-MM-DD (UTC)' },
+        to: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'Last day included, YYYY-MM-DD (UTC)' },
+      },
+    },
+    async run(input, ctx) {
+      const shopId = shop(ctx);
+      const { shop: info } = await ctx.services.shops.get(shopId);
+      try {
+        return await ctx.services.orders.salesSummary(shopId, info.currency, {
+          period: input.period as (typeof PERIODS)[number] | undefined,
+          from: input.from as string | undefined,
+          to: input.to as string | undefined,
+        });
+      } catch (err) {
+        if (err instanceof RangeError) throw new ToolError(err.message);
+        throw err;
+      }
     },
   },
   {

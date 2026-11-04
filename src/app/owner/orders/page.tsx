@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: 'Orders' };
 export default async function Orders() {
   const view = await ownerView();
   if (!view) return null;
-  const { shopId, orders: shopOrders, invoicing, redact, catalog } = view;
+  const { shopId, orders: shopOrders, invoicing, redact, catalog, demo } = view;
   const [orders, invoices] = await Promise.all([shopOrders.list(shopId), invoicing.list(shopId)]);
   const placed = orders.filter((o) => o.number);
   const open = orders.length - placed.length;
@@ -79,7 +79,7 @@ export default async function Orders() {
                     {i.total}
                   </span>
                   <Status value={i.status} />
-                  {i.payer_url ? (
+                  {i.payer_url && !demo ? (
                     <a className="small" href={i.payer_url}>
                       Payment page
                     </a>

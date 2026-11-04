@@ -3,7 +3,8 @@
 // the story still reads; street lines and postcodes are hidden, the town and country stay.
 
 const EMAIL = /([A-Za-z0-9])[A-Za-z0-9._%+-]*@([A-Za-z0-9.-]+\.[A-Za-z]{2,})/g;
-const HIDDEN_FIELDS = new Set(['address_line_1', 'address_line_2', 'postal_code', 'phone', 'payer_id']);
+// payer_url: PayPal's invoice page for the recipient, which shows their full name and email.
+const HIDDEN_FIELDS = new Set(['address_line_1', 'address_line_2', 'postal_code', 'phone', 'payer_id', 'payer_url']);
 
 export function maskPersonalData(text: string): string {
   return text.replace(EMAIL, (_all, first: string, domain: string) => `${first}***@${domain}`);

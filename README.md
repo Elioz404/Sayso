@@ -123,6 +123,8 @@ The demo shop is **Maya Ceramics**, a one-person studio selling mugs, bowls and 
 3. Tick the box confirming you trust the connector and press **Create**.
 4. In a new chat: *"Use Sayso to find me a handmade mug under $40."* It searches every shop, builds the cart with the shop's prices and shows it as a card with a **Pay with PayPal** button.
 
+**The owner's assistant** (dashboard → **Assistant**) answers questions about the owner's own shop: sales, refunds and net for any period against the one before, a month-end estimate, top products, orders, what waits for them, their rules. It runs only with the owner's own session and reads that one shop with the read-only seller tools (`sales_summary` computes the totals, so the model never adds up lists). It can't refund, invoice, change prices or rules, or approve anything, so text buyers write (refund reasons, notes) can't make it act. The buyers' assistant never gets any seller tool.
+
 The owner's agent connects with OAuth: in **Agents → Connect an agent**, pick ChatGPT or Claude and add `https://sayso-ovph.onrender.com/api/mcp` as a custom connector. The app sends the owner to Sayso to allow it and gets an agent key of its own, listed (and revocable) under Agents. Other MCP apps, scripts and the CLI can use a key the owner copies once instead.
 
 ## How it uses PayPal
@@ -183,7 +185,7 @@ The skill in [`skills/sayso/SKILL.md`](skills/sayso/SKILL.md) teaches an agent t
 |---|---|---|
 | `POST /api/shopping/mcp` | none | Every published shop: `list_shops`, `search_products`, `create_cart`, `update_cart`, `get_cart`, `request_refund`, `connect_paypal`, `wallet_status`, `pay_with_paypal` |
 | `POST /api/shops/<slug>/mcp` | none | One shop's buyer tools |
-| `POST /api/mcp` | `Bearer sk_agent_...` (OAuth or a copied key) | `shop_overview`, `list_products`, `update_variant`, `price_check`, `production_board`, `plan_job`, `finish_job`, `list_orders`, `get_order`, `refund_order`, `add_tracking`, `send_invoice`, `list_invoices`, `list_approvals`, `get_say_so`, `get_policy`, `propose_policy`, `rule_suggestions`, `propose_rule_suggestion`, `audit_log` |
+| `POST /api/mcp` | `Bearer sk_agent_...` (OAuth or a copied key) | `shop_overview`, `sales_summary`, `list_products`, `update_variant`, `price_check`, `production_board`, `plan_job`, `finish_job`, `list_orders`, `get_order`, `refund_order`, `add_tracking`, `send_invoice`, `list_invoices`, `list_approvals`, `get_say_so`, `get_policy`, `propose_policy`, `rule_suggestions`, `propose_rule_suggestion`, `audit_log` |
 
 **A cart card instead of a link.** `create_cart` and `update_cart` declare an MCP Apps UI (`ui://sayso/cart-v1.html`, served by `resources/read`). Hosts that render MCP Apps, ChatGPT included, show the shop's items and totals with a **Pay with PayPal** button that opens the approval; other clients still get `approval_url` in the result. The card is self-contained and makes no requests of its own. In Sayso's own **Ask AI to shop** panel and in its cart, the cart gets PayPal's official checkout button (JS SDK), so the buyer approves without leaving the page; once paid it turns into a receipt, and a paid cart is never offered again (if it was paid through the link in another tab, the panel asks the shop).
 

@@ -8,6 +8,7 @@ import type { Actor, GuardRecord } from './guard/types.ts';
 import { DEFAULT_CURRENCY, formatMoney, parseAmount, toMinor } from './money.ts';
 import type { PayPalClient } from './paypal/client.ts';
 import { addTracking } from './paypal/orders.ts';
+import { resolvePeriod, salesSummary, type SalesQuery } from './sales-summary.ts';
 import type { CartStore, StoredCart } from './stores.ts';
 
 export interface OrdersDeps {
@@ -41,6 +42,8 @@ export interface OrderSummary {
 /** Validation issues that mean a buyer wanted something the shop could not sell them. */
 const MISSED = new Set(['INVENTORY_ISSUE', 'DATA_ERROR', 'SHIPPING_ERROR', 'BUSINESS_RULE_ERROR']);
 const DEFAULT_LIMIT = 200;
+/** Orders read for a sales summary. */
+const SALES_LIMIT = 2_000;
 
 export class Orders {
   private readonly deps: OrdersDeps;
@@ -85,6 +88,18 @@ export class Orders {
       reason: input.reason.trim().slice(0, 300) || 'Refund',
       params: { orderId: cart.orderId, cartId: cart.id },
     });
+  }
+
+  /** Sales, refunds and net for a period, against the one before, computed from the orders themselves. */
+  async salesSummary(shopId: string, currency: string, query: SalesQuery, now = new Date()) {
+    // Refunds asked for since a while before the period before began (one asked earlier can be confirmed
+    // later): the window decides what is read, not the store's default page size.
+    const since = new Date(resolvePeriod(query, now).previous.start - 60 * 86_400_000);
+    const [placed, refunds] = await Promise.all([
+      this.deps.carts.listPlaced(shopId, SALES_LIMIT),
+      this.deps.guard.list(shopId, { kind: 'refund.create', status: 'verified', since, limit: SALES_LIMIT }),
+    ]);
+    return salesSummary({ placed, refunds, currency, query, now, partial: placed.length >= SALES_LIMIT || refunds.length >= SALES_LIMIT });
   }
 
   /** Not a money movement, so no Guard round-trip; still idempotent per order + tracking number. */
