@@ -56,7 +56,7 @@ export function cartForAgent(cart: PayPalCart) {
     cart.status === 'COMPLETED'
       ? "Order placed. For a problem with it, use request_refund with the buyer's reason."
       : cart.payment_method?.approval_url
-        ? 'Send the buyer to approval_url to pay with PayPal. The order completes when they approve.'
+        ? "Ready to pay. Apps that show Sayso's cart card already give the buyer this cart with a Pay with PayPal button below it: then answer in one short sentence and don't repeat the items, totals or link. Otherwise send the buyer to approval_url. The order completes when they approve."
         : 'Fix the validation_issues (apply a resolution option with update_cart), then the cart gets an approval_url.';
   return {
     cart_id: cart.id,

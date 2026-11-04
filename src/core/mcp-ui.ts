@@ -33,7 +33,7 @@ export function cartWidgetContents() {
     _meta: {
       ui: { prefersBorder: true, csp: { connectDomains: [], resourceDomains: [] } },
       'openai/widgetPrefersBorder': true,
-      'openai/widgetDescription': "Shows the shop's cart and a PayPal button to pay for it.",
+      'openai/widgetDescription': "Shows the buyer the shop's cart (items, shipping, tax, total) and a Pay with PayPal button. Don't repeat them; one short sentence after it is enough.",
     },
   };
 }

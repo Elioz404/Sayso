@@ -695,5 +695,7 @@ body:has(.owner) .site-header, body:has(.owner) .site-footer { display: none; }
 @media (max-width: 560px) { .setup > li { grid-template-columns: 28px minmax(0, 1fr); } .setup > li > :nth-child(3) { grid-column: 2; justify-self: start; } .nudge { flex-wrap: wrap; } }
 .link-button { background: none; border: 0; padding: 0; font: inherit; color: var(--say); text-decoration: underline; cursor: pointer; }
 .shopper-note { margin: 0; }
+/* color-scheme light: PayPal's button frame is light, and a frame whose scheme differs from the page's gets an opaque white backdrop in dark mode. */
 .shopper-checkout { width: min(100%, 320px); display: flex; flex-direction: column; gap: var(--s1); }
+.shopper-checkout > div:first-child { color-scheme: light; }
 .shopper-paid { align-self: flex-start; padding: 6px var(--s3); border-radius: var(--radius-sm); background: var(--say-soft); color: var(--say); font-weight: 650; font-size: var(--t-sm); }

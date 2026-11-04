@@ -18,7 +18,7 @@ declare global {
 /** PayPal's JS SDK, loaded once per page (and currency). */
 const sdk = new Map<string, Promise<void>>();
 function loadPayPal(clientId: string, currency: string): Promise<void> {
-  const src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(clientId)}&currency=${encodeURIComponent(currency)}&intent=authorize&components=buttons`;
+  const src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(clientId)}&currency=${encodeURIComponent(currency)}&intent=authorize&components=buttons&disable-funding=card,paylater,venmo`;
   if (!sdk.has(src)) {
     sdk.set(
       src,
@@ -51,7 +51,7 @@ function PayPalCheckout({ clientId, cartId, orderId, currency, approvalUrl, onPa
         box.current.innerHTML = '';
         return window.paypal
           .Buttons({
-            style: { layout: 'vertical', shape: 'pill', color: 'gold', label: 'pay', height: 44 },
+            style: { layout: 'horizontal', tagline: false, shape: 'pill', color: 'gold', label: 'pay', height: 44 },
             createOrder: () => orderId,
             onApprove: async (data: { orderID: string }) => {
               try {
@@ -254,7 +254,6 @@ export function ShopperChat({ paypalClientId }: { paypalClientId?: string }) {
                   <div className={`shopper-tool${s.isError ? ' shopper-tool-warn' : ''}`}>
                     <span aria-hidden="true">{s.isError ? '!' : '✓'}</span> Sayso <code>{s.tool}</code> <span className="muted">{summary(s.tool, s.result, s.isError)}</span>
                   </div>
-                  {checkoutFor(s)}
                 </div>
               ) : (
                 <div key={k} className="shopper-bot">
@@ -266,6 +265,7 @@ export function ShopperChat({ paypalClientId }: { paypalClientId?: string }) {
                 </div>
               ),
             )}
+            {t.steps.map(checkoutFor).find(Boolean)}
           </div>
         ))}
         {busy && <div className="shopper-tool shopper-thinking">Using Sayso's tools…</div>}
