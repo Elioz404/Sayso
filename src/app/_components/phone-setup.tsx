@@ -1,8 +1,12 @@
 'use client';
 
-// The three steps that put a shop on the owner's phone: install it, turn on notifications, and add a
-// passkey so every OK is signed by this device. Managing passkeys needs a recent sign-in, or (once the
-// shop has one) a passkey confirmation of that exact change.
+// The steps that put a shop on the owner's phone: put it on the home screen, turn on notifications, and
+// add a passkey so every OK is signed by this device. Managing passkeys needs a recent sign-in, or (once
+// the shop has one) a passkey confirmation of that exact change.
+//
+// Installing is only needed on iPhone (Safari sends notifications to home-screen apps only). On Android
+// everything works in the browser, and installing is offered only in Chrome: other Android browsers
+// package the app themselves for an old Android version, and Play Protect warns it is unsafe.
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -37,6 +41,25 @@ function deviceLabel(): string {
 }
 
 const isIos = () => /iPhone|iPad/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+
+/** Android browsers that aren't Chrome, by how they name themselves. In-app browsers can't install at all. */
+const OTHER_ANDROID_BROWSERS: [RegExp, string][] = [
+  [/SamsungBrowser/, 'Samsung Internet'],
+  [/EdgA\//, 'Edge'],
+  [/OPR\/|Opera/, 'Opera'],
+  [/Firefox\//, 'Firefox'],
+  [/YaBrowser/, 'Yandex Browser'],
+  [/DuckDuckGo/, 'DuckDuckGo'],
+  [/FBAN|FBAV|Instagram|WhatsApp|Line\/|; wv\)/, 'an in-app browser'],
+];
+
+/** On Android: whether this is Chrome itself, and what to call it if not. */
+function androidBrowser(): { android: boolean; chrome: boolean; name?: string } {
+  const ua = navigator.userAgent;
+  if (!/Android/.test(ua)) return { android: false, chrome: false };
+  const other = OTHER_ANDROID_BROWSERS.find(([re]) => re.test(ua))?.[1] ?? ((navigator as { brave?: unknown }).brave ? 'Brave' : undefined);
+  return { android: true, chrome: !other && /Chrome\//.test(ua), name: other };
+}
 const isInstalled = () => window.matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone === true;
 
 async function pushState(): Promise<PushState> {
@@ -46,14 +69,15 @@ async function pushState(): Promise<PushState> {
   return (await reg.pushManager.getSubscription()) ? 'on' : 'off';
 }
 
-function Step({ n, done }: { n: number; done: boolean }) {
-  return <span className={`phone-step${done ? ' phone-step-done' : ''}`}>{done ? <Icon name="check" size={16} /> : n}</span>;
+function Step({ n, done, optional = false }: { n: number; done: boolean; optional?: boolean }) {
+  return <span className={`phone-step${done ? ' phone-step-done' : ''}${optional && !done ? ' phone-step-optional' : ''}`}>{done ? <Icon name="check" size={16} /> : optional ? <Icon name="plus" size={16} /> : n}</span>;
 }
 
 export function PhoneSetup({ pushKey, passkeys, devices, fresh }: { pushKey: string; passkeys: PasskeyRowView[]; devices: string[]; fresh: boolean }) {
   const router = useRouter();
   const [installed, setInstalled] = useState(false);
   const [ios, setIos] = useState(false);
+  const [android, setAndroid] = useState<ReturnType<typeof androidBrowser>>({ android: false, chrome: false });
   const [installEvent, setInstallEvent] = useState<BeforeInstallPrompt>();
   const [push, setPush] = useState<PushState>('checking');
   const [canPasskey, setCanPasskey] = useState<boolean>();
@@ -69,6 +93,7 @@ export function PhoneSetup({ pushKey, passkeys, devices, fresh }: { pushKey: str
   useEffect(() => {
     setInstalled(isInstalled());
     setIos(isIos());
+    setAndroid(androidBrowser());
     setLabel(deviceLabel());
     const onPrompt = (e: Event) => {
       e.preventDefault();
@@ -77,9 +102,10 @@ export function PhoneSetup({ pushKey, passkeys, devices, fresh }: { pushKey: str
     const onInstalled = () => setInstalled(true);
     window.addEventListener('beforeinstallprompt', onPrompt);
     window.addEventListener('appinstalled', onInstalled);
-    const check = window.PublicKeyCredential?.isUserVerifyingPlatformAuthenticatorAvailable;
-    if (check) check().then(setCanPasskey, () => setCanPasskey(false));
-    else setCanPasskey(false);
+    // Called on PublicKeyCredential itself: detached, browsers throw "Illegal invocation".
+    if (window.PublicKeyCredential?.isUserVerifyingPlatformAuthenticatorAvailable) {
+      window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable().then(setCanPasskey, () => setCanPasskey(false));
+    } else setCanPasskey(false);
     pushState().then(setPush, () => setPush('unsupported'));
     return () => {
       window.removeEventListener('beforeinstallprompt', onPrompt);
@@ -139,47 +165,62 @@ export function PhoneSetup({ pushKey, passkeys, devices, fresh }: { pushKey: str
 
   const needsConfirm = hasPasskey && !fresh && !addProof;
 
+  // On Android installing is optional, so it goes last and the steps that matter are numbered first.
+  const optionalInstall = android.android;
+  const first = optionalInstall ? 0 : 1;
+  const installCard = (
+    <section className="phone-card" aria-labelledby="install">
+      <Step n={1} done={installed} optional={optionalInstall} />
+      <div className="phone-card-body">
+        <h2 id="install">{android.android && !installed ? 'Optional: an icon on your home screen' : 'Put Sayso on your home screen'}</h2>
+        {installed ? (
+          <p className="soft">Installed. Sayso opens full screen, straight on your shop.</p>
+        ) : android.android && !android.chrome ? (
+          <p className="soft">
+            You don’t need it: on Android, notifications and your fingerprint work right here. Want the icon anyway? Scan the code again with <b>Chrome</b> and install from there.
+            Installing from {android.name ?? 'this browser'} makes Android warn that the app is unsafe, because that browser packages it for an old Android version.
+          </p>
+        ) : installEvent ? (
+          <>
+            <p className="soft">One tap: it opens like an app, straight on your shop, no app store.</p>
+            <button
+              className="btn btn-primary"
+              onClick={async () => {
+                await installEvent.prompt();
+                if ((await installEvent.userChoice).outcome === 'accepted') setInstalled(true);
+              }}
+            >
+              <Icon name="plus" size={18} /> Install Sayso
+            </button>
+          </>
+        ) : ios ? (
+          <ol className="phone-how">
+            <li>
+              Tap <b>Share</b> <span aria-hidden="true">(the square with an arrow)</span> in Safari.
+            </li>
+            <li>
+              Choose <b>Add to Home Screen</b>, then <b>Add</b>.
+            </li>
+            <li>Open Sayso from your home screen to turn on notifications.</li>
+          </ol>
+        ) : android.android ? (
+          <p className="soft">
+            You don’t need it: notifications and your fingerprint work right here. For the icon, use Chrome’s menu (⋮) and <b>Install app</b>.
+          </p>
+        ) : (
+          <p className="soft">
+            Open this page on your phone. On iPhone, Sayso needs to be on the home screen to send notifications; on Android it works in Chrome as it is.
+          </p>
+        )}
+      </div>
+    </section>
+  );
+
   return (
     <div className="phone-setup">
-      <section className="phone-card" aria-labelledby="install">
-        <Step n={1} done={installed} />
-        <div className="phone-card-body">
-          <h2 id="install">Put Sayso on your home screen</h2>
-          {installed ? (
-            <p className="soft">Installed. Sayso opens full screen, straight on your shop.</p>
-          ) : installEvent ? (
-            <>
-              <p className="soft">One tap: it opens like an app, straight on your shop, no app store.</p>
-              <button
-                className="btn btn-primary"
-                onClick={async () => {
-                  await installEvent.prompt();
-                  if ((await installEvent.userChoice).outcome === 'accepted') setInstalled(true);
-                }}
-              >
-                <Icon name="plus" size={18} /> Install Sayso
-              </button>
-            </>
-          ) : ios ? (
-            <ol className="phone-how">
-              <li>
-                Tap <b>Share</b> <span aria-hidden="true">(the square with an arrow)</span> in Safari.
-              </li>
-              <li>
-                Choose <b>Add to Home Screen</b>, then <b>Add</b>.
-              </li>
-              <li>Open Sayso from your home screen to turn on notifications.</li>
-            </ol>
-          ) : (
-            <p className="soft">
-              Open this page on your phone, then use your browser’s menu: <b>Install app</b> or <b>Add to Home Screen</b>.
-            </p>
-          )}
-        </div>
-      </section>
-
+      {!optionalInstall && installCard}
       <section className="phone-card" aria-labelledby="notify">
-        <Step n={2} done={push === 'on'} />
+        <Step n={first + 1} done={push === 'on'} />
         <div className="phone-card-body">
           <h2 id="notify">Get a ping when your agent needs you</h2>
           <p className="soft">When an agent’s request waits for your say-so, and when an order is paid. Tap it and you’re on the decision.</p>
@@ -216,7 +257,7 @@ export function PhoneSetup({ pushKey, passkeys, devices, fresh }: { pushKey: str
       </section>
 
       <section className="phone-card" aria-labelledby="passkey">
-        <Step n={3} done={hasPasskey} />
+        <Step n={first + 2} done={hasPasskey} />
         <div className="phone-card-body">
           <h2 id="passkey">Approve with your fingerprint or face</h2>
           <p className="soft">
@@ -253,6 +294,8 @@ export function PhoneSetup({ pushKey, passkeys, devices, fresh }: { pushKey: str
           )}
         </div>
       </section>
+
+      {optionalInstall && installCard}
 
       {(error || note) && (
         <p className={error ? 'error' : 'ok-note'} role="status">

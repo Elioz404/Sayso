@@ -617,6 +617,7 @@ body:has(.owner) .site-header, body:has(.owner) .site-footer { display: none; }
 .phone-card p { max-width: 62ch; }
 .phone-step { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; background: var(--paper-2); color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .phone-step-done { background: var(--say); color: var(--say-ink); }
+.phone-step-optional { background: transparent; border: 1px dashed var(--rule-strong); color: var(--ink-3); }
 .phone-how { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; color: var(--ink-2); }
 
 .signed { display: flex; gap: 6px; align-items: flex-start; }
