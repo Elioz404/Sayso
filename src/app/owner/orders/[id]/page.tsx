@@ -20,7 +20,7 @@ const STATE: Record<string, { label: string; tone: string }> = {
   paid: { label: 'Paid, to ship', tone: 'hold' },
   waiting: { label: 'Waiting for your OK', tone: 'hold' },
   shipped: { label: 'Shipped', tone: 'ok' },
-  'refund-asked': { label: 'Refund asked', tone: 'hold' },
+  'refund-asked': { label: 'Refund waiting for you', tone: 'hold' },
   refunded: { label: 'Refunded', tone: 'quiet' },
   cancelled: { label: 'Cancelled', tone: 'quiet' },
 };
@@ -48,7 +48,7 @@ export default async function OrderDetail({ params }: { params: Promise<{ id: st
   const address = cart.cart.shipping_address;
   const history = [...records].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   // The same progress line the buyer sees on their order page.
-  const progress = order.number ? await buyerOrder(view, cart.id) : undefined;
+  const progress = order.number ? await buyerOrder(view, cart.id, { owner: true }) : undefined;
   const state = progress ? STATE[progress.state] : undefined;
   const waiting = records.filter((r) => r.status === 'pending_approval');
   const capture = waiting.find((r) => r.action.kind === 'payment.capture');
@@ -92,7 +92,10 @@ export default async function OrderDetail({ params }: { params: Promise<{ id: st
       {refundAsk && (
         <section className="callout" aria-label="Next step">
           <span className="small">
-            <b>The buyer asked for a refund{actionAmount(refundAsk.action) ? ` of ${actionAmount(refundAsk.action)}` : ''}.</b> &ldquo;{redact(refundAsk.action.reason)}&rdquo;
+            <b>
+              {refundAsk.action.actor.side === 'buyer' ? 'The buyer asked for a refund' : 'Your agent asks to refund'}
+              {actionAmount(refundAsk.action) ? ` ${refundAsk.action.actor.side === 'buyer' ? 'of ' : ''}${actionAmount(refundAsk.action)}` : ''}.
+            </b> &ldquo;{redact(refundAsk.action.reason)}&rdquo;
           </span>
           <a className="btn btn-small" href={`/approve/${refundAsk.id}`}>
             Review
@@ -101,14 +104,22 @@ export default async function OrderDetail({ params }: { params: Promise<{ id: st
       )}
       {toShip && (
         <section className="panel order-ship" aria-labelledby="ship">
-          <div className="stack" style={{ gap: 4 }}>
+          <div className="stack" style={{ gap: 'var(--s3)' }}>
             <h2 id="ship" className="h3">
               Next: ship it
             </h2>
-            <p className="small soft">
-              It&apos;s paid. When you hand it to the carrier, add the tracking number from their label (or a photo of it). PayPal shows it to the buyer, and the order
-              moves to Shipped.
-            </p>
+            <p className="small soft">The buyer has paid. You pack and send it yourself; Sayso and PayPal don&apos;t handle the parcel.</p>
+            <ol className="ship-steps small">
+              <li>
+                <b>Pack it and buy a label</b> from your carrier (USPS, UPS, FedEx…), at the post office or on their site.
+              </li>
+              <li>
+                <b>Add the tracking number</b> printed on that label below. Or take a photo of the label and Sayso reads the carrier and number for you.
+              </li>
+              <li>
+                <b>Mark as shipped.</b> PayPal shows the buyer where the parcel is, and the order moves to Shipped.
+              </li>
+            </ol>
           </div>
           {demo ? <p className="small muted">The shared demo shop doesn&apos;t ship.</p> : <LabelScanner orderId={order.id} />}
         </section>

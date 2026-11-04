@@ -1156,3 +1156,5 @@ span.sell-qty { border-color: transparent; background: transparent; padding: 0; 
 .modal-product .sell-card { border: 0; padding: 0; background: transparent; }
 .order-ship { display: flex; flex-direction: column; gap: var(--s4); }
 .scan-save { align-self: flex-start; }
+.ship-steps { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: var(--s2); color: var(--ink-2); }
+.ship-steps b { color: var(--ink); }

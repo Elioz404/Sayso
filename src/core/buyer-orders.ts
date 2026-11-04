@@ -49,12 +49,15 @@ export interface BuyerOrder {
 
 const show = (m?: Money) => (m ? formatMoney(toMinor(m), m.currency_code) : undefined);
 
-/** One order by its link. Undefined for anything that isn't a placed order. */
-export async function buyerOrder(deps: BuyerOrderDeps, cartId: string): Promise<BuyerOrder | undefined> {
+/**
+ * One order by its link. Undefined for anything that isn't a placed order. `owner`: the shop owner's view,
+ * whose progress line also shows refunds their own agent asked for (a buyer only sees their own requests).
+ */
+export async function buyerOrder(deps: BuyerOrderDeps, cartId: string, options: { owner?: boolean } = {}): Promise<BuyerOrder | undefined> {
   if (!/^[A-Za-z0-9_-]{6,60}$/.test(cartId)) return undefined;
   const cart = await deps.carts.get(cartId);
   if (!cart || cart.cart.status !== 'COMPLETED' || !cart.merchantOrderNumber) return undefined;
-  return view(deps, cart, await deps.catalogs.byShopId(cart.shopId));
+  return view(deps, cart, await deps.catalogs.byShopId(cart.shopId), options.owner);
 }
 
 /** Every order the PayPal account paid for, in every shop, newest first. */
@@ -68,7 +71,7 @@ export async function buyerOrders(deps: BuyerOrderDeps, payer: PayerRef): Promis
   return Promise.all(carts.map(async (c) => view(deps, c, await catalogOf(c.shopId))));
 }
 
-async function view(deps: BuyerOrderDeps, cart: StoredCart, catalog?: Catalog): Promise<BuyerOrder> {
+async function view(deps: BuyerOrderDeps, cart: StoredCart, catalog?: Catalog, owner = false): Promise<BuyerOrder> {
   const { order, records } = await deps.orders.get(cart.shopId, cart.id);
   const totals = cart.cart.totals;
   const paid = Boolean(cart.captureId);
@@ -79,6 +82,9 @@ async function view(deps: BuyerOrderDeps, cart: StoredCart, catalog?: Catalog): 
 
   const requests = records.filter((r) => r.action.kind === 'refund.create' && r.action.actor.side === 'buyer');
   const waitingRequest = requests.some((r) => r.status === 'pending_approval');
+  // The owner also sees refunds their own agent asked for, waiting for them or turned down.
+  const shown = owner ? records.filter((r) => r.action.kind === 'refund.create') : requests;
+  const waitingShown = shown.some((r) => r.status === 'pending_approval');
   const partly = order.refundedMinor > 0 && !fullyRefunded ? ` ${order.refunded} refunded through PayPal.` : '';
 
   const state: BuyerOrderState = cart.released
@@ -87,7 +93,7 @@ async function view(deps: BuyerOrderDeps, cart: StoredCart, catalog?: Catalog): 
       ? 'waiting'
       : fullyRefunded
         ? 'refunded'
-        : waitingRequest
+        : waitingShown
           ? 'refund-asked'
           : tracking
             ? 'shipped'
@@ -108,7 +114,7 @@ async function view(deps: BuyerOrderDeps, cart: StoredCart, catalog?: Catalog): 
     placedAt: cart.paidAt ?? cart.updatedAt,
     state,
     status,
-    steps: progress(cart, records, { paid, fullyRefunded, waitingRequest, refundedMinor: order.refundedMinor }),
+    steps: progress(cart, records, { paid, fullyRefunded, waitingRequest: waitingShown, refundedMinor: order.refundedMinor, asks: shown, owner }),
     items: cart.cart.items.map((i) => {
       const found = catalog && i.variant_id ? findVariant(catalog, i.variant_id) : undefined;
       const at = (i.name ?? '').lastIndexOf(' - ');
@@ -142,7 +148,11 @@ const eventAt = (r: GuardRecord, type: AuditEvent['type']) => r.events.find((e) 
  * done is where it is now. Of the buyer's refund requests only the latest is a step (the others are listed
  * under Refunds), and refunds count once PayPal confirms them.
  */
-function progress(cart: StoredCart, records: readonly GuardRecord[], o: { paid: boolean; fullyRefunded: boolean; waitingRequest: boolean; refundedMinor: number }): Step[] {
+function progress(
+  cart: StoredCart,
+  records: readonly GuardRecord[],
+  o: { paid: boolean; fullyRefunded: boolean; waitingRequest: boolean; refundedMinor: number; asks: readonly GuardRecord[]; owner: boolean },
+): Step[] {
   if (cart.released) {
     return [
       { label: 'Authorized', done: true },
@@ -157,13 +167,13 @@ function progress(cart: StoredCart, records: readonly GuardRecord[], o: { paid: 
     happened.push({ step: { label: 'Preparing', done: true }, t }, { step: { label: 'Shipped', done: true, at: cart.tracking.addedAt }, t });
   }
   const refunds = records.filter((r) => r.action.kind === 'refund.create');
-  const asked = refunds
-    .filter((r) => r.action.actor.side === 'buyer' && r.status !== 'denied' && r.status !== 'failed')
+  const asked = o.asks
+    .filter((r) => r.status !== 'denied' && r.status !== 'failed')
     .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
     .at(-1);
   const add = (label: string, at: string, stop?: true) => happened.push({ step: { label, done: true, at, ...(stop ? { stop } : {}) }, t: Date.parse(at) });
   if (asked) {
-    add('Refund asked', asked.createdAt);
+    add(asked.action.actor.side === 'buyer' ? 'Refund asked' : 'Refund proposed', asked.createdAt);
     if (asked.status === 'rejected') add('Refund declined', eventAt(asked, 'rejected'), true);
     if (asked.status === 'executing' || asked.status === 'executed' || asked.status === 'unverified') add('Refund sent', eventAt(asked, 'executed'));
   }
@@ -171,7 +181,7 @@ function progress(cart: StoredCart, records: readonly GuardRecord[], o: { paid: 
   if (confirmed && o.refundedMinor > 0) add(o.fullyRefunded ? 'Refunded' : 'Partly refunded', confirmed);
 
   const next: Step[] = o.waitingRequest
-    ? [{ label: 'Shop decides', done: false }]
+    ? [{ label: o.owner ? 'Your OK' : 'Shop decides', done: false }]
     : !o.fullyRefunded && !cart.tracking
       ? [
           { label: 'Preparing', done: false },

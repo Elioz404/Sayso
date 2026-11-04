@@ -153,3 +153,22 @@ test('tracking links for the carriers people know', () => {
   assert.match(trackingLink('FEDEX', '1234')!, /fedex\.com/);
   assert.equal(trackingLink('OTHER', '1234'), undefined);
 });
+
+test("the owner's line shows refunds their agent asked for, and turned down; the buyer's doesn't", async () => {
+  const s = await stack();
+  const deps = { carts: s.carts, catalogs: s.catalogs, orders: s.orders, links: links('https://sayso.test') };
+  await s.policies.put({ ownerId: 'shop_maya', currency: 'USD', rules: [{ id: 'all', type: 'always_approve', kinds: ['refund.create'] }] });
+  const id = await buy(s, 'var_mug_sage', ALEX);
+  const asked = await s.call('refund_order', { order_id: id, reason: 'Part of the order arrived chipped' }, s.owner);
+  assert.equal(asked.data.status, 'pending_approval', asked.text);
+
+  const owner = (await buyerOrder(deps, id, { owner: true }))!;
+  assert.equal(owner.state, 'refund-asked');
+  assert.deepEqual(steps(owner), [['Paid', true], ['Refund proposed', true], ['Your OK', false]]);
+  assert.deepEqual(steps((await buyerOrder(deps, id))!), [['Paid', true], ['Preparing', false], ['Shipped', false]], "the buyer doesn't see the shop's own proposals");
+
+  await s.saySo.decide('shop_maya', asked.data.say_so_id, 'reject', 'owner:shop_maya');
+  const declined = (await buyerOrder(deps, id, { owner: true }))!;
+  assert.equal(declined.state, 'paid');
+  assert.deepEqual(steps(declined), [['Paid', true], ['Refund proposed', true], ['Refund declined', 'stop'], ['Preparing', false], ['Shipped', false]]);
+});

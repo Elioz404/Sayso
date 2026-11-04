@@ -47,7 +47,7 @@ export function LabelScanner({ orderId }: { orderId: string }) {
     <div className="scan">
       <input ref={file} type="file" accept="image/*" capture="environment" hidden onChange={(e) => e.target.files?.[0] && void read(e.target.files[0])} />
       <button type="button" className="btn scan-shoot" disabled={Boolean(busy)} onClick={() => file.current?.click()}>
-        <Icon name="camera" size={18} /> {busy === 'read' ? 'Reading the label…' : 'Fill it from a photo of the label'}
+        <Icon name="camera" size={18} /> {busy === 'read' ? 'Reading the label…' : 'Read it from a photo of the label'}
       </button>
       <div className="scan-row">
         {preview && <img src={preview} alt="The label you photographed" className="scan-preview" />}
