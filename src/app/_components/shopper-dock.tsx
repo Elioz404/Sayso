@@ -7,14 +7,12 @@
 // conversation is kept in this browser.
 
 import { usePathname } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { DOCK_OPEN_KEY as OPEN_KEY, NOT_HERE } from './dock-restore.ts';
 import { ShopperChat } from './shopper-chat.tsx';
 
-/** The owner's and checkout pages have their own job; the panel stays out of them. */
-const NOT_HERE = /^\/(owner|approve|handoff|wallet|pay\/|developers)/;
 /** The floating button is the way in; not on the seller's onboarding, which is about something else. */
 const NO_BUTTON = /^\/start/;
-const OPEN_KEY = 'sayso-dock-open';
 
 export function ShopperDock({ paypalClientId }: { paypalClientId?: string }) {
   const path = usePathname();
@@ -38,7 +36,7 @@ export function ShopperDock({ paypalClientId }: { paypalClientId?: string }) {
       return;
     }
     try {
-      if (sessionStorage.getItem(OPEN_KEY)) setOpen(true);
+      if (sessionStorage.getItem(OPEN_KEY) || document.documentElement.classList.contains('dock-open')) setOpen(true);
     } catch {
       // storage off: starts closed
     }
@@ -75,13 +73,21 @@ export function ShopperDock({ paypalClientId }: { paypalClientId?: string }) {
     panel.current?.querySelector<HTMLInputElement>('.shopper-input')?.focus({ preventScroll: true });
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
     document.addEventListener('keydown', onKey);
-    document.documentElement.classList.add('dock-open');
     return () => {
       document.removeEventListener('keydown', onKey);
-      document.documentElement.classList.remove('dock-open');
       opener.current?.focus({ preventScroll: true });
     };
   }, [open]);
+
+  // The page makes room in the same frame the panel starts to move (before paint), never a frame later.
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle('dock-open', open && here);
+    if (!root.classList.contains('dock-instant')) return;
+    // Restored before paint: let the next open or close animate again.
+    const frame = requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove('dock-instant')));
+    return () => cancelAnimationFrame(frame);
+  }, [open, here]);
 
   if (!here) return null;
   return (

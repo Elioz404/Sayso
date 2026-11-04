@@ -1,3 +1,4 @@
+import { DOCK_RESTORE_SCRIPT } from '@/app/_components/dock-restore.ts';
 import { ShopperDock } from '@/app/_components/shopper-dock.tsx';
 import type { Metadata, Viewport } from 'next';
 import localFont from 'next/font/local';
@@ -57,7 +58,11 @@ export const viewport: Viewport = {
 // No cookies or database here, so pages that don't need them can be rendered ahead of time.
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${bricolage.variable} ${figtree.variable} ${plexMono.variable}`}>
+    // suppressHydrationWarning: the head script may mark the panel open before React starts.
+    <html lang="en" className={`${bricolage.variable} ${figtree.variable} ${plexMono.variable}`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: DOCK_RESTORE_SCRIPT }} />
+      </head>
       <body>
         <ServiceWorker />
         <header className="site-header">
