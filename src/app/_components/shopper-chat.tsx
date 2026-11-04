@@ -230,6 +230,8 @@ export function ShopperChat({ paypalClientId, request, compact = false, onTurns,
       if (told.length) setUntold((u) => u.filter((id) => !told.includes(id)));
       setHistory(reply.messages);
       setTurns((t) => [...t.slice(0, -1), { user: said, steps: reply.steps, ...(hidden ? { hidden } : {}) }]);
+      // A page that follows the shopper's orders (For Judges) refreshes: a payment, a refund request.
+      window.dispatchEvent(new Event('sayso:changed'));
     } catch (err) {
       setError((err as Error).message);
       setTurns((t) => t.slice(0, -1));

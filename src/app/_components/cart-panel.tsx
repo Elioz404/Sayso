@@ -87,6 +87,7 @@ export function CartPanel({ paypalClientId, onAskAi }: { paypalClientId?: string
           onPaid={(receipt) => {
             receipts.add(receipt);
             cartStore.clear(slug);
+            window.dispatchEvent(new Event('sayso:changed'));
           }}
         />
       ))}

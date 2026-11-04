@@ -198,8 +198,11 @@ export function actorName(actor: { type: 'agent' | 'human'; id: string; side?: '
   if (actor.type !== 'agent') return actor.id.startsWith('owner:') ? 'You' : actor.id;
   if (actor.id === OPS_AGENT.id) return 'Sayso checkout';
   const label = actor.id.split(':')[1] ?? actor.id;
-  return actor.side === 'buyer' ? `Buyer's assistant (${label})` : label;
+  return actor.side === 'buyer' ? `Buyer's assistant (${BUYER_CHANNEL[label] ?? label})` : label;
 }
+
+/** Where a buyer's assistant came from, as an owner would say it. */
+const BUYER_CHANNEL: Record<string, string> = { 'sayso-assistant': 'Shop with AI', mcp: 'over MCP', 'tour-assistant': 'For Judges', test: 'test' };
 
 /** How an action reads to people, from the one list Guard governs. */
 export function actionLabel(kind: string): string {

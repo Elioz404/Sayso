@@ -5,10 +5,12 @@
 // shop (a shopper's assistant buys, the shop's agent asks for a refund and tries to loosen its rules) while
 // Guard holds what only the judge may decide.
 import type { Metadata } from 'next';
+import { cookies } from 'next/headers';
 import { connection } from 'next/server';
 import { CopyField } from '@/app/_components/client-ui.tsx';
 import { Decision, FlashNotice } from '@/app/_components/owner-actions.tsx';
-import { OpenDemoShop, RunStep } from '@/app/_components/tour-actions.tsx';
+import { SEEN_COOKIE } from '@/app/_components/judges-seen.ts';
+import { JudgesRefresh, OpenDemoShop, RunStep, SeenLink, SwitchToShop } from '@/app/_components/tour-actions.tsx';
 import { Icon, Status } from '@/app/_components/ui.tsx';
 import { buyerOrder, type BuyerOrder } from '@/core/buyer-orders.ts';
 import { isLive } from '@/core/catalog.ts';
@@ -22,7 +24,7 @@ import type { TourStep } from '@/core/tour.ts';
 import { paidHere } from '@/server/buyer-session.ts';
 import { ready } from '@/server/context.ts';
 import { ownerView } from '@/server/owner.ts';
-import { claimedShop } from '@/server/seller-session.ts';
+import { claimedShop, sellerId } from '@/server/seller-session.ts';
 
 // It lists the sandbox accounts judges pay and sell with: no need for search engines to keep a copy.
 export const metadata: Metadata = {
@@ -67,7 +69,10 @@ export default async function JudgesPage({ searchParams }: { searchParams: Promi
   await connection();
   const published = (await searchParams).published === '1';
   const accounts = sandboxAccounts();
-  const { carts, catalogs, orders, links, tours } = await ready();
+  const context = await ready();
+  const { carts, catalogs, orders, links, tours } = context;
+  // What the judge has opened from here (their order, the shop's dashboard): those steps count as done.
+  const seen = new Set(((await cookies()).get(SEEN_COOKIE)?.value ?? '').split('.'));
 
   // The buyer's side: the orders this browser paid for, newest first.
   const deps = { carts, catalogs, orders, links };
@@ -77,11 +82,16 @@ export default async function JudgesPage({ searchParams }: { searchParams: Promi
   // The seller's side: the shop this browser is signed in to, if a judge opened it; else a draft in progress.
   const view = await ownerView();
   const tour = view ? await tours?.forShop(view.shopId) : undefined;
-  const mine = tour?.kind === 'seller' && view ? { view, tour } : undefined;
+  const signedIn = tour?.kind === 'seller' && view ? { view, tour } : undefined;
+  // Signed in elsewhere now (the demo shop's dashboard, say), the judge's own shop is still theirs through
+  // their PayPal sign-in: show where it stands, and offer to switch back to it.
+  const elsewhere = signedIn ? undefined : await judgeShopOfSeller(context);
+  const mine = signedIn ? { shopId: signedIn.view.shopId, catalog: signedIn.view.catalog, tour: signedIn.tour } : elsewhere;
   const draftId = mine ? undefined : await claimedShop();
   const drafting = draftId && (await tours?.forShop(draftId))?.kind === 'seller' ? await catalogs.byShopId(draftId) : undefined;
-  const steps = mine ? await tourProgress(mine.view, mine.tour) : [];
-  const passkey = mine ? await mine.view.passkeys.required(mine.view.shopId) : false;
+  const steps = mine ? await tourProgress(context, mine.tour) : [];
+  const passkey = signedIn ? await signedIn.view.passkeys.required(signedIn.view.shopId) : false;
+  const redact = signedIn?.view.redact ?? ((text: string) => text);
 
   const buying: Row[] = [
     {
@@ -97,11 +107,11 @@ export default async function JudgesPage({ searchParams }: { searchParams: Promi
     {
       title: 'Follow your order',
       note: 'Where it is, tracking and refunds, on any device.',
-      state: order ? 'open' : 'later',
+      state: !order ? 'later' : seen.has('order') ? 'done' : 'now',
       action: order && (
-        <a className="btn btn-small" href={`/order/${order.id}`}>
-          Open your order
-        </a>
+        <SeenLink className="btn btn-small" href={`/order/${order.id}`} seen="order">
+          Open your order ↗
+        </SeenLink>
       ),
     },
     {
@@ -117,12 +127,14 @@ export default async function JudgesPage({ searchParams }: { searchParams: Promi
     {
       title: "See it from the shop's side",
       note: 'Your order and your request, on the shop owner’s dashboard.',
-      state: order ? 'open' : 'later',
+      state: !order ? 'later' : seen.has('shop') ? 'done' : order.shop.url?.endsWith(`/shop/${demoCatalog.shop.slug}`) ? 'now' : 'open',
       action: order && order.shop.url?.endsWith(`/shop/${demoCatalog.shop.slug}`) && <OpenDemoShop />,
     },
   ];
 
-  const live = Boolean(mine && isLive(mine.view.catalog));
+  const live = Boolean(mine && isLive(mine.catalog));
+  // The agents act on the shop this browser is signed in to; from elsewhere, switch back first.
+  const active = live && Boolean(signedIn);
   // A refund needs an order: it waits until the shopper's assistant has paid.
   const bought = steps.find((s) => s.step === 'buy')?.state === 'done';
   const selling: Row[] = [
@@ -156,8 +168,8 @@ export default async function JudgesPage({ searchParams }: { searchParams: Promi
           title: info.title,
           note: s.state === 'unavailable' ? (s.why ?? info.note) : info.note,
           state,
-          action: live && !waiting && s.state === 'next' && <RunStep step={s.step} label={info.run} screen="/tour#sell" />,
-          detail: live && s.result ? <AgentDetail view={s} passkey={passkey} redact={mine!.view.redact} /> : undefined,
+          action: active && !waiting && s.state === 'next' && <RunStep step={s.step} label={info.run} screen="/tour#sell" />,
+          detail: live && s.result ? <AgentDetail view={s} passkey={passkey} redact={redact} decide={active} /> : undefined,
         },
       ];
     }),
@@ -195,6 +207,7 @@ export default async function JudgesPage({ searchParams }: { searchParams: Promi
         </section>
       )}
 
+      <JudgesRefresh />
       <div className="judges-paths">
         <Path id="buy" title="Buy something" time="About 3 minutes" icon="bag" rows={buying} />
         <Path
@@ -204,11 +217,17 @@ export default async function JudgesPage({ searchParams }: { searchParams: Promi
           icon="agent"
           rows={selling}
           foot={
-            mine && (
+            mine &&
+            (elsewhere ? (
+              <div className="stack" style={{ gap: 'var(--s2)', alignItems: 'flex-start' }}>
+                <span className="small">You&apos;re looking at another shop&apos;s dashboard right now. Switch back to {elsewhere.catalog.shop.name} to carry on.</span>
+                <SwitchToShop slug={elsewhere.catalog.shop.slug} />
+              </div>
+            ) : (
               <span className="small">
                 <a href="/owner">Open your dashboard</a> · Your shop closes after two days.
               </span>
-            )
+            ))
           }
         />
       </div>
@@ -265,8 +284,17 @@ function Path({ id, title, time, icon, rows, foot }: { id: string; title: string
   );
 }
 
-/** What an agent step did: the outcome, the say-so the judge gives right here, and Guard's record. */
-function AgentDetail({ view, passkey, redact }: { view: StepView; passkey: boolean; redact: (text: string) => string }) {
+/** The newest shop the PayPal-signed-in seller opened from For Judges, if any. */
+async function judgeShopOfSeller({ sellers, tours }: Awaited<ReturnType<typeof ready>>) {
+  const id = await sellerId();
+  if (!id || !tours) return undefined;
+  const found = await Promise.all((await sellers.shops(id)).map(async (catalog) => ({ catalog, tour: await tours.forShop(catalog.shop.id) })));
+  const theirs = found.filter((f) => f.tour?.kind === 'seller').sort((a, b) => b.tour!.createdAt.localeCompare(a.tour!.createdAt))[0];
+  return theirs ? { shopId: theirs.catalog.shop.id, catalog: theirs.catalog, tour: theirs.tour! } : undefined;
+}
+
+/** What an agent step did: the outcome, the say-so the judge gives right here (when signed in to the shop), and Guard's record. */
+function AgentDetail({ view, passkey, redact, decide }: { view: StepView; passkey: boolean; redact: (text: string) => string; decide: boolean }) {
   return (
     <div className="judges-detail">
       {view.outcome && <p className={`tour-outcome tour-outcome-${view.state}`}>{redact(view.outcome)}</p>}
@@ -275,7 +303,7 @@ function AgentDetail({ view, passkey, redact }: { view: StepView; passkey: boole
           Pay in PayPal sandbox
         </a>
       )}
-      {view.decide.length > 0 && (
+      {decide && view.decide.length > 0 && (
         <ul className="tour-decide">
           {view.decide.map((r) => (
             <li key={r.id}>
