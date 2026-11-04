@@ -2,8 +2,7 @@
 // Server-safe (no hooks); interactive pieces live in the client files.
 
 import type { ReactNode } from 'react';
-import { OPS_AGENT } from '@/core/actors.ts';
-import { ACTIONS, type ActionKind } from '@/core/guard/types.ts';
+import { actorName } from '@/core/actors.ts';
 
 export function Mark({ size = 28 }: { size?: number }) {
   return (
@@ -193,18 +192,4 @@ export function Who({ actor }: { actor: { type: 'agent' | 'human'; id: string; s
   );
 }
 
-/** How an actor reads to the owner: their agents by label, buyers' assistants as such, people as "You". */
-export function actorName(actor: { type: 'agent' | 'human'; id: string; side?: 'buyer' | 'merchant' }): string {
-  if (actor.type !== 'agent') return actor.id.startsWith('owner:') ? 'You' : actor.id;
-  if (actor.id === OPS_AGENT.id) return 'Sayso checkout';
-  const label = actor.id.split(':')[1] ?? actor.id;
-  return actor.side === 'buyer' ? `Buyer's assistant (${BUYER_CHANNEL[label] ?? label})` : label;
-}
-
-/** Where a buyer's assistant came from, as an owner would say it. */
-const BUYER_CHANNEL: Record<string, string> = { 'sayso-assistant': 'Shop with AI', mcp: 'over MCP', 'tour-assistant': 'For Judges', test: 'test' };
-
-/** How an action reads to people, from the one list Guard governs. */
-export function actionLabel(kind: string): string {
-  return kind in ACTIONS ? ACTIONS[kind as ActionKind].label : kind;
-}
+export { actionLabel, actorName } from '@/core/actors.ts';

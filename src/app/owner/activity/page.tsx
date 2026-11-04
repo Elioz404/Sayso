@@ -1,9 +1,7 @@
-import { actionAmount } from '@/core/guard/describe.ts';
 import type { Metadata } from 'next';
 import { AuditGrid, type AuditRow } from '@/app/_components/grids.tsx';
-import { actionLabel, actorName } from '@/app/_components/ui.tsx';
-import { outcomeOf } from '@/core/trust-report.ts';
 import { ownerView } from '@/server/owner.ts';
+import { recordView, whyNow } from '@/core/record-view.ts';
 
 export const metadata: Metadata = { title: 'Activity' };
 
@@ -15,19 +13,20 @@ export default async function Activity() {
   const tampered = audit.filter((r) => !r.chainIntact).length;
 
   const rows: AuditRow[] = audit.map((r) => {
-    const agent = r.action.actor.type === 'agent';
+    const v = recordView(r, redact);
     return {
-      id: r.id,
-      at: r.createdAt,
-      action: actionLabel(r.action.kind),
-      amount: actionAmount(r.action) ?? '',
-      by: actorName(r.action.actor),
-      byAgent: agent,
-      status: r.status,
-      why: redact(r.decision?.hits.map((h) => h.message).join(' ') || r.action.reason),
-      tampered: !r.chainIntact,
-      outcome: outcomeOf(r),
-      ...(r.verification ? { readBack: r.verification.ok } : {}),
+      id: v.id,
+      at: v.at,
+      action: v.action,
+      amount: v.amount ?? '',
+      stopped: v.stopped,
+      by: v.by,
+      byAgent: v.byAgent,
+      status: v.status,
+      why: whyNow(v),
+      tampered: !v.chainIntact,
+      outcome: v.outcome,
+      paypal: v.paypal,
     };
   });
 

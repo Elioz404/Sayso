@@ -1,11 +1,11 @@
 // The owner's say-so screen, built for a phone: this is where the push notification lands. It needs
-// the owner session; an agent holding an agent key has no way in.
-import { actionAmount } from '@/core/guard/describe.ts';
+// the owner session; an agent holding an agent key has no way in. The request shows as its receipt, the
+// same one Activity opens, with the OK and Reject buttons while it waits.
 import type { Metadata } from 'next';
 import { connection } from 'next/server';
 import { Decision, LoginForm } from '@/app/_components/owner-actions.tsx';
-import { actionLabel, Icon, Status, Who } from '@/app/_components/ui.tsx';
-import { When } from '@/app/_components/time.tsx';
+import { RecordReceipt } from '@/app/_components/record-receipt.tsx';
+import { recordView } from '@/core/record-view.ts';
 import { demoEnabled, paypalLoginEnabled } from '@/server/context.ts';
 import { ownerView } from '@/server/owner.ts';
 
@@ -27,7 +27,6 @@ export default async function Approve({ params }: { params: Promise<{ id: string
     );
   }
 
-  const { redact } = view;
   const onTour = Boolean(await view.tours?.forShop(view.shopId));
   const record = await view.saySo.record(view.shopId, id).catch(() => undefined);
   if (!record) {
@@ -40,84 +39,16 @@ export default async function Approve({ params }: { params: Promise<{ id: string
     );
   }
 
-  const { action } = record;
-  const pending = record.status === 'pending_approval';
   const [passkey, signed] = await Promise.all([view.passkeys.required(view.shopId), view.passkeys.checkApproval(record)]);
-  const decided = record.events.find((e) => e.type === 'approved' || e.type === 'rejected');
-  const note = decided?.data?.note;
-  const effects = (record.simulation?.effects ?? []).map((e) => redact(e.replace(/^- /, '')));
+  const receipt = recordView(record, view.redact, signed);
 
   return (
     <main className="wrap wrap-narrow page" style={{ paddingTop: 'var(--s6)' }}>
-      <article className="sayso-card" style={{ maxWidth: 'none' }}>
-        <div className="spread">
-          <Who actor={action.actor} />
-          <span className="small muted">
-            <When iso={record.createdAt} />
-          </span>
-        </div>
-
-        <div className="stack" style={{ gap: 6 }}>
-          {actionAmount(action) ? (
-            <>
-              <span className="soft">{actionLabel(action.kind)}</span>
-              <span className="amount">{actionAmount(action)}</span>
-            </>
-          ) : (
-            <h1>{actionLabel(action.kind)}</h1>
-          )}
-          {action.counterparty && <span className="small soft">to {redact(action.counterparty)}</span>}
-        </div>
-
-        <p className="reason">&ldquo;{redact(action.reason)}&rdquo;</p>
-
-        <ul className="facts">
-          <li>
-            <span>Would do</span>
-            <span className="stack" style={{ gap: 4 }}>
-              {effects.map((e) => (
-                <span key={e}>{e}</span>
-              ))}
-            </span>
-          </li>
-          <li>
-            <span>Needs you</span>
-            <span className="stack needs" style={{ gap: 4 }}>
-              {record.decision?.hits.map((h) => (
-                <span key={h.ruleId + h.message}>{redact(h.message)}</span>
-              ))}
-            </span>
-          </li>
-        </ul>
-
-        {pending ? (
-          <Decision id={record.id} big passkey={passkey} />
-        ) : (
-          <div className="stack" style={{ gap: 14, alignItems: 'flex-start' }}>
-            {decided ? (
-              <span className={`stamp ${decided.type === 'approved' ? 'stamp-ok' : 'stamp-stop'}`}>
-                {decided.type === 'approved' ? 'Approved' : 'Rejected'}
-                <small>
-                  <When iso={decided.at} />
-                </small>
-              </span>
-            ) : (
-              <Status value={record.status} />
-            )}
-            {signed && (
-              <p className={`small signed ${signed.ok ? 'signed-ok' : 'signed-bad'}`}>
-                <Icon name="fingerprint" size={16} />
-                {signed.ok ? `Signed with the passkey on ${signed.label}. The signature matches this exact request.` : `The passkey signature${signed.label ? ` from ${signed.label}` : ''} does not match this request as stored.`}
-              </p>
-            )}
-            {typeof note === 'string' && <p className="small soft">Your note: {note}</p>}
-            {record.verification && <p className="small soft">{record.verification.detail}</p>}
-          </div>
-        )}
-      </article>
-
+      <div className="receipt-page">
+        <RecordReceipt record={receipt}>{receipt.status === 'pending_approval' && <Decision id={record.id} big passkey={passkey} />}</RecordReceipt>
+      </div>
       <p className="small soft" style={{ marginTop: 18 }}>
-        Request <span className="mono">{record.id}</span> · <a href="/owner#waiting">Everything waiting for you</a>
+        <a href="/owner#waiting">Everything waiting for you</a> · <a href="/owner/activity">Activity</a>
         {onTour && (
           <>
             {' '}

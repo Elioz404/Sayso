@@ -1,8 +1,8 @@
 'use client';
 
 // AG Grid (Community) views for the owner area. Columns fit the container (no sideways scrolling):
-// secondary columns hide on narrow screens. Orders and activity rows open their detail page; the
-// catalog is edited in place.
+// secondary columns hide on narrow screens. Order rows open their detail page, activity rows their
+// receipt in a modal; the catalog is edited in place.
 
 import {
   CellStyleModule,
@@ -29,7 +29,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { VariantRow } from '@/core/catalog-view.ts';
 import { formatMoney, parseAmount, toMoney } from '@/core/money.ts';
 import { callApi } from './api.ts';
+import type { PayPalCheck } from '@/core/record-view.ts';
 import { ChannelBadge, Thumb } from './owner-bits.tsx';
+import { RecordModal } from './record-modal.tsx';
+import { OUTCOME_TONE } from './record-receipt.tsx';
 import { formatWhen } from './time.tsx';
 import { Status } from './ui.tsx';
 
@@ -253,25 +256,29 @@ export interface AuditRow {
   at: string;
   action: string;
   amount: string;
+  /** Nothing moved (blocked, turned down, failed): the amount is struck through. */
+  stopped: boolean;
   by: string;
   byAgent: boolean;
   status: string;
+  /** Why, as things stand now (see whyNow). */
   why: string;
   tampered: boolean;
   /** What happened, in the owner's words (Allowed by your rules, You said OK, Waiting for you...). */
   outcome: string;
-  /** PayPal confirmed the money move by reading it back (undefined: nothing moved). */
-  readBack?: boolean;
+  paypal: PayPalCheck;
 }
 
-const OUTCOME_TONE: Record<string, string> = {
-  'Allowed by your rules': 'ok',
-  'You said OK': 'ok',
-  'Waiting for you': 'hold',
-  'You said no': 'quiet',
-  'Blocked by a rule': 'stop',
-  Failed: 'stop',
-};
+function AmountCell({ data }: ICellRendererParams<AuditRow>) {
+  if (!data?.amount) return null;
+  return data.stopped ? (
+    <span className="cell-stopped" title="Nothing moved">
+      {data.amount}
+    </span>
+  ) : (
+    <>{data.amount}</>
+  );
+}
 
 function ActionCell({ data }: ICellRendererParams<AuditRow>) {
   return (
@@ -292,13 +299,21 @@ function AuditStatusCell({ data }: ICellRendererParams<AuditRow>) {
   return <span className={`status status-${OUTCOME_TONE[data.outcome] ?? 'quiet'}`}>{data.outcome}</span>;
 }
 
+const PAYPAL_CHECK: Record<PayPalCheck, { mark: string; className: string; title: string }> = {
+  ok: { mark: '✓', className: 'check-ok', title: 'Read back from PayPal' },
+  bad: { mark: '!', className: 'check-bad', title: 'PayPal did not confirm it' },
+  sent: { mark: '…', className: 'check-none', title: 'Sent to PayPal, waiting for the read-back' },
+  none: { mark: '–', className: 'check-none', title: 'Nothing went to PayPal' },
+};
+
 /** Two checks every money move gets: PayPal read it back, and its record's hash chain still holds. */
 function ChecksCell({ data }: ICellRendererParams<AuditRow>) {
   if (!data) return null;
+  const paypal = PAYPAL_CHECK[data.paypal];
   return (
     <span className="checks">
-      <span className={data.readBack === undefined ? 'check-none' : data.readBack ? 'check-ok' : 'check-bad'} title={data.readBack === undefined ? 'No money moved' : data.readBack ? 'Read back from PayPal' : 'PayPal did not confirm it'}>
-        PayPal {data.readBack === undefined ? '–' : data.readBack ? '✓' : '!'}
+      <span className={paypal.className} title={paypal.title}>
+        PayPal {paypal.mark}
       </span>
       <span className={data.tampered ? 'check-bad' : 'check-ok'} title={data.tampered ? 'This record was edited after the fact' : 'Hash chain intact'}>
         Chain {data.tampered ? '!' : '✓'}
@@ -311,10 +326,18 @@ export function AuditGrid({ rows }: { rows: AuditRow[] }) {
   const router = useRouter();
   const { ref, width } = useGridSize();
   const narrow = width < NARROW;
+  const [open, setOpen] = useState<string>();
+  // Records change while the owner is elsewhere (a buyer asks for a refund, they answer on their phone):
+  // coming back to this tab shows them as they are now.
+  useEffect(() => {
+    const again = () => document.visibilityState === 'visible' && router.refresh();
+    document.addEventListener('visibilitychange', again);
+    return () => document.removeEventListener('visibilitychange', again);
+  }, [router]);
   const columns = useMemo<ColDef<AuditRow>[]>(
     () => [
       { field: 'action', headerName: 'Action', cellRenderer: ActionCell, minWidth: 124, flex: 1.3 },
-      { field: 'amount', headerName: 'Amount', minWidth: 80, flex: 0.7, type: 'rightAligned', cellClass: RIGHT },
+      { field: 'amount', headerName: 'Amount', cellRenderer: AmountCell, minWidth: 80, flex: 0.7, type: 'rightAligned', cellClass: RIGHT },
       { field: 'by', headerName: 'Asked by', cellRenderer: ByCell, minWidth: 180, flex: 1.1, hide: narrow, tooltipField: 'by' },
       { field: 'outcome', headerName: 'Outcome', cellRenderer: AuditStatusCell, minWidth: 196, flex: 1.1 },
       { colId: 'checks', headerName: 'Checks', cellRenderer: ChecksCell, minWidth: 168, flex: 0.8, sortable: false, hide: narrow },
@@ -335,7 +358,8 @@ export function AuditGrid({ rows }: { rows: AuditRow[] }) {
           onGridSizeChanged={(e) => e.api.sizeColumnsToFit()}
           domLayout="autoHeight"
           containerStyle={{ height: 'auto' }}
-          onRowClicked={(e) => e.data && router.push(`/approve/${e.data.id}`)}
+          onRowClicked={(e) => e.data && setOpen(e.data.id)}
+          getRowId={(p) => p.data.id}
           pagination={rows.length > 15}
           paginationPageSize={15}
           paginationPageSizeSelector={[15, 50, 100]}
@@ -344,6 +368,7 @@ export function AuditGrid({ rows }: { rows: AuditRow[] }) {
       ) : (
         <GridSkeleton rows={rows.length} />
       )}
+      {open && <RecordModal id={open} onClose={() => setOpen(undefined)} />}
     </div>
   );
 }

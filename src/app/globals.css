@@ -1018,3 +1018,28 @@ span.sell-qty { border-color: transparent; background: transparent; padding: 0; 
 .judges-reset { display: inline-flex; align-items: center; gap: var(--s2); flex-wrap: wrap; justify-content: flex-end; }
 .judges-head { max-width: none; }
 .judges-head > :not(.judges-top) { max-width: 70ch; }
+/* ---------- a Guard record as its receipt: Activity's modal and the say-so page ---------- */
+.receipt { display: flex; flex-direction: column; gap: var(--s4); }
+.receipt-head { display: flex; justify-content: space-between; align-items: center; gap: var(--s3); flex-wrap: wrap; padding-right: 36px; }
+.receipt-what { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.receipt-what .status { margin-top: 4px; }
+.receipt-stopped { color: var(--ink-3); text-decoration: line-through; text-decoration-thickness: 3px; }
+.receipt-lines { display: grid; grid-template-columns: 116px minmax(0, 1fr); gap: var(--s3); margin: 0; padding-top: var(--s4); border-top: 1px dashed var(--rule-strong); font-size: var(--t-sm); }
+.receipt-lines dt { color: var(--ink-3); }
+.receipt-lines dd { margin: 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.receipt-lines dd.needs { color: var(--hold); font-weight: 600; }
+.receipt-ok { color: var(--ok); }
+.receipt-bad { color: var(--stop); }
+.receipt-page { background: var(--sheet); border: 1px solid var(--rule); border-radius: 20px; box-shadow: var(--shadow); padding: var(--s5); position: relative; }
+.receipt-page .receipt-head { padding-right: 0; }
+.receipt-dialog { width: min(520px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; border: 1px solid var(--rule); border-radius: 20px; background: var(--sheet); color: var(--ink); box-shadow: var(--shadow); overflow: auto; }
+.receipt-dialog::backdrop { background: rgb(20 16 13 / 0.45); }
+.receipt-dialog-body { position: relative; padding: var(--s5); }
+.receipt-close { position: absolute; top: var(--s3); right: var(--s3); width: 32px; height: 32px; border: 0; border-radius: 50%; background: var(--paper-2); color: var(--ink-2); font-size: 1.25rem; line-height: 1; cursor: pointer; }
+.receipt-close:hover { color: var(--ink); }
+.receipt-loading { display: flex; flex-direction: column; gap: var(--s3); padding-block: var(--s2); }
+.receipt-loading span { height: 14px; border-radius: 6px; background: var(--paper-2); }
+.receipt-loading span:nth-child(2) { height: 40px; width: 50%; }
+.receipt-loading span:nth-child(3) { width: 80%; }
+.cell-stopped { color: var(--ink-3); text-decoration: line-through; }
+@media (max-width: 480px) { .receipt-lines { grid-template-columns: minmax(0, 1fr); gap: 2px var(--s3); } .receipt-lines dd + dt { margin-top: var(--s2); } .receipt-dialog-body, .receipt-page { padding: var(--s4); } }

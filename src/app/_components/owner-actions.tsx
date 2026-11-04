@@ -243,7 +243,8 @@ export function SignOut() {
 }
 
 /** `passkey`: the shop approves with a passkey, so "Say OK" opens the fingerprint/face prompt first. */
-export function Decision({ id, big = false, passkey = false }: { id: string; big?: boolean; passkey?: boolean }) {
+/** `onDone`: after the answer is saved (the page around it refreshes either way). */
+export function Decision({ id, big = false, passkey = false, onDone }: { id: string; big?: boolean; passkey?: boolean; onDone?: () => void }) {
   const router = useRouter();
   const [note, setNote] = useState('');
   const { busy, error, run } = useAction();
@@ -258,6 +259,7 @@ export function Decision({ id, big = false, passkey = false }: { id: string; big
           proof = await signChallenge(signing.challenge);
         }
         await callApi(`/api/guard/${id}`, 'POST', { decision, note: note || undefined, passkey: proof });
+        onDone?.();
         router.refresh();
       } catch (err) {
         if (passkey) void signing.reload(); // each challenge works once
