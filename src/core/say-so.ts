@@ -62,13 +62,30 @@ export class SaySo {
 
   /** Draft rules from the owner's words and submit them. From an agent this always waits for the owner. */
   async proposePolicy(shopId: string, text: string, actor: Actor): Promise<{ record: GuardRecord; unclear: string[] }> {
+    const { policy, unclear } = await this.draftRules(shopId, text);
+    return { record: await this.submitPolicy(policy, `New rules: "${text.slice(0, 200)}"`, actor), unclear };
+  }
+
+  /** Draft rules from plain words without submitting them: the owner reads them before saving. */
+  async draftRules(shopId: string, text: string): Promise<{ policy: Policy; unclear: string[] }> {
     if (!this.deps.model) throw new HttpError(503, 'Policy drafting needs an AI key (OPENAI_API_KEY or DEEPSEEK_API_KEY) on the server');
     if (!this.drafts.allow(shopId)) throw new HttpError(429, `Up to ${DRAFTS_PER_HOUR} rule drafts an hour; try again later`);
     const { shop } = await this.deps.shops.get(shopId);
-    const { policy, unclear } = await draftPolicy(this.deps.model, shopId, text, shop.currency).catch((err: unknown) => {
+    return draftPolicy(this.deps.model, shopId, text, shop.currency).catch((err: unknown) => {
       throw fromLlmError(err, 'Could not draft that policy');
     });
-    return { record: await this.submitPolicy(policy, `New rules: "${text.slice(0, 200)}"`, actor), unclear };
+  }
+
+  /**
+   * The owner saves rules they drafted and read. It goes through Guard like any rule change (audited, and
+   * refused if the rules changed meanwhile), confirmed with their passkey once the shop has one.
+   */
+  async saveRules(shopId: string, policy: Policy, actor: Actor, proof?: PasskeyProof): Promise<GuardRecord> {
+    if (policy.ownerId !== shopId) throw new HttpError(403, 'These rules are for another shop');
+    if (actor.type === 'human' && this.deps.passkeys && (await this.deps.passkeys.required(shopId))) {
+      await this.deps.passkeys.confirm(shopId, `rules:${policyVersion(policy)}`, proof);
+    }
+    return this.submitPolicy(policy, `New rules: "${(policy.source ?? '').slice(0, 200)}"`, actor);
   }
 
   /** Rules the owner's own approvals support, and how close the others are. Recomputed every time. */

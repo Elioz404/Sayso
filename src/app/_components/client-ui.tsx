@@ -1,6 +1,6 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Icon } from './ui.tsx';
 
@@ -224,4 +224,15 @@ export function TabBar({ waiting }: { waiting: number }) {
       })}
     </nav>
   );
+}
+
+/** Reloads the page's data when the owner comes back to the tab (after allowing an app elsewhere, say). */
+export function RefreshWhenBack() {
+  const router = useRouter();
+  useEffect(() => {
+    const again = () => document.visibilityState === 'visible' && router.refresh();
+    document.addEventListener('visibilitychange', again);
+    return () => document.removeEventListener('visibilitychange', again);
+  }, [router]);
+  return null;
 }

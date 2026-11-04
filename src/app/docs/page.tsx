@@ -224,18 +224,19 @@ export default async function Docs() {
               </li>
               <li>
                 <span>
-                  In your dashboard, open <b>Agents</b> and press <b>Connect an agent</b>. You get a personal URL like the one below. Paste it as a
-                  connector in ChatGPT or any MCP client.
+                  In your dashboard, open <b>Agents</b> and press <b>Connect an agent</b>. For ChatGPT or Claude, add the address below as a custom
+                  connector: the app sends you to Sayso to allow it and gets a key of its own (OAuth), so there is nothing secret to copy. Any other MCP
+                  app, a script or the terminal gets a key you copy once.
                 </span>
               </li>
             </ol>
-            <div className="copy-field" aria-label="Example personal URL">
-              <code>{links.sellerMcpFor('sk_agent_...')}</code>
+            <div className="copy-field" aria-label="Address for ChatGPT, Claude or any MCP app that signs in with OAuth">
+              <code>{links.sellerMcp}</code>
             </div>
             <p>
               Your agent can now check orders, refund, add tracking, invoice custom orders, change prices and stock, plan made-to-order work, and propose
-              rules. Anything over your limits waits for you on your phone, and the agent is told so. Revoke the key in Agents and the URL stops working
-              at once.
+              rules. Anything over your limits waits for you on your phone, and the agent is told so. Revoke its key in Agents and it stops working at
+              once.
             </p>
             <p>
               Your dashboard&apos;s <b>Overview</b> shows the week against the one before (revenue, orders, average order, refund rate), what your agents

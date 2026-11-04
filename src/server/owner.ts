@@ -46,3 +46,6 @@ export const signedInSeller = cache(async () => {
     }
   );
 });
+
+/** Signs a rules draft between drafting it and saving it (POST /api/owner/rules/draft, then /api/owner/rules). */
+export const RULES_DRAFT = 'rules-draft';

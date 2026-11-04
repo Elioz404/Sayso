@@ -2,7 +2,7 @@
 // agent may do here and what only the owner can, and where shoppers' assistants find the shop.
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
-import { CopyField } from '@/app/_components/client-ui.tsx';
+import { CopyField, RefreshWhenBack } from '@/app/_components/client-ui.tsx';
 import { ConnectAgent, RevokeKey } from '@/app/_components/owner-actions.tsx';
 import { Ago, When } from '@/app/_components/time.tsx';
 import type { AgentKey } from '@/core/access.ts';
@@ -56,6 +56,7 @@ export default async function Agents() {
 
   return (
     <>
+      <RefreshWhenBack />
       <div className="view-head">
         <div>
           <h1>Agents</h1>
@@ -81,7 +82,7 @@ export default async function Agents() {
           ) : (
             <div className="agents-empty">
               <b>No agent connected yet</b>
-              <span className="small soft">Connect ChatGPT or any MCP app, and it can look after orders, stock and refunds for you.</span>
+              <span className="small soft">Connect ChatGPT, Claude or any MCP app, and it can look after orders, stock and refunds for you.</span>
               {!demo && <ConnectAgent endpoint={links.sellerMcp} quiet />}
             </div>
           )}

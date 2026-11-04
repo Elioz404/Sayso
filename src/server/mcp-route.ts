@@ -1,14 +1,16 @@
 // Streamable HTTP transport for the MCP server: every POST carries one JSON-RPC message and gets one
 // JSON response (or 202 for notifications). Stateless, so it scales and survives restarts.
 //
-// Keys travel as `Authorization: Bearer ...` or, for clients whose connector screens take only a URL
-// (as in ChatGPT), inside a personal URL: /api/mcp/<sk_agent_...> or /api/shopping/mcp/<sk_wallet_...>.
+// Keys travel as `Authorization: Bearer ...` or, for clients whose connector screens take only a URL,
+// inside a personal URL: /api/mcp/<sk_agent_...> or /api/shopping/mcp/<sk_wallet_...>. Apps that sign in
+// with OAuth (ChatGPT, Claude) get their key that way: a 401 here points them to the metadata (core/oauth.ts).
 // Cookies are never read here, so an agent can't ride the owner's session.
 
 import 'server-only';
 import { handleMcp } from '@/core/mcp.ts';
+import { challengeHeader } from '@/core/oauth.ts';
 import type { ToolContext } from '@/core/tools/registry.ts';
-import { ready } from './context.ts';
+import { ready, siteLinks } from './context.ts';
 import { channelOf, handle, readJson } from './http.ts';
 import { clientAddress, costlyCalls, mcpRequests } from './rate-limit.ts';
 
@@ -16,6 +18,7 @@ const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, Mcp-Protocol-Version, Mcp-Session-Id, X-Sayso-Channel',
+  'Access-Control-Expose-Headers': 'WWW-Authenticate',
 };
 
 export interface McpEndpoint {
@@ -40,9 +43,10 @@ export async function mcpPost(request: Request, endpoint: McpEndpoint = {}): Pro
     const agentKey = bearer(request, 'sk_agent_') ?? (pathKey?.startsWith('sk_agent_') ? pathKey : undefined);
     const key = agentKey ? await access.agentFromHeader(`Bearer ${agentKey}`) : undefined;
     if (!shopSlug && !marketplace && !key) {
+      const sent = Boolean(agentKey || request.headers.get('authorization'));
       return Response.json(
-        { jsonrpc: '2.0', id: null, error: { code: -32001, message: 'Missing or revoked agent key. Use your personal MCP URL from the owner dashboard (Agents).' } },
-        { status: 401, headers: { 'WWW-Authenticate': 'Bearer realm="sayso"' } },
+        { jsonrpc: '2.0', id: null, error: { code: -32001, message: 'Missing or revoked agent key. Connect from the owner dashboard (Agents).' } },
+        { status: 401, headers: { 'WWW-Authenticate': challengeHeader(siteLinks(), sent) } },
       );
     }
 

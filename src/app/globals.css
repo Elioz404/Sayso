@@ -1095,7 +1095,9 @@ span.sell-qty { border-color: transparent; background: transparent; padding: 0; 
 .rules-more summary { cursor: pointer; color: var(--ink-3); }
 .rules-more .copy-field { margin-top: var(--s2); }
 @media (max-width: 1080px) { .rules-grid { grid-template-columns: minmax(0, 1fr); } }
-@media (max-width: 640px) {
+/* The table reads down instead of across wherever it is narrow: on a phone, or in the editor's column. */
+.rules-panel { container-type: inline-size; }
+@container (max-width: 520px) {
   .rules-th { display: none; }
   .rules-tr { grid-template-columns: minmax(0, 1fr); gap: var(--s2); padding: var(--s4) 0; }
   .rules-tr:nth-child(2) { border-top: 0; padding-top: 0; }
@@ -1103,3 +1105,17 @@ span.sell-qty { border-color: transparent; background: transparent; padding: 0; 
   .rules-tr > [data-label]::before { content: attr(data-label); color: var(--ink-3); }
   .rules-tr > [data-label] > span { grid-column: 2; }
 }
+.rules-unclear { margin: var(--s1) 0 0; padding-left: 1.1em; color: var(--ink-2); }
+.rules-draft { padding-top: var(--s2); }
+.rules-more > p { margin-top: var(--s2); }
+/* ---------- an AI app asks to run the shop (OAuth consent) ---------- */
+.consent { display: flex; flex-direction: column; gap: var(--s5); margin-top: var(--s6); }
+.consent-title { font-size: var(--t-xl); text-wrap: balance; }
+.consent-lines { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: var(--s3); margin: 0; padding-top: var(--s4); border-top: 1px solid var(--rule); font-size: var(--t-sm); }
+.consent-lines dt { color: var(--ink-3); }
+.consent-lines dd { margin: 0; }
+@media (max-width: 480px) { .consent-lines { grid-template-columns: minmax(0, 1fr); gap: 2px; } .consent-lines dd + dt { margin-top: var(--s2); } }
+.connect-choices { display: flex; flex-direction: column; gap: var(--s2); }
+.connect-choice { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; padding: var(--s3) var(--s4); border: 1px solid var(--rule-strong); border-radius: var(--radius); background: var(--sheet); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.connect-choice:hover, .connect-choice:focus-visible { border-color: var(--ink-3); background: var(--paper-2); }
+.connect-open { align-self: flex-start; margin-top: var(--s1); }

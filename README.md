@@ -123,7 +123,7 @@ The demo shop is **Maya Ceramics**, a one-person studio selling mugs, bowls and 
 3. Tick the box confirming you trust the connector and press **Create**.
 4. In a new chat: *"Use Sayso to find me a handmade mug under $40."* It searches every shop, builds the cart with the shop's prices and shows it as a card with a **Pay with PayPal** button.
 
-The owner's agent connects the same way with the personal URL from **Agents** (`/api/mcp/<sk_agent_...>`, key in the path, so no authentication).
+The owner's agent connects with OAuth: in **Agents → Connect an agent**, pick ChatGPT or Claude and add `https://sayso-ovph.onrender.com/api/mcp` as a custom connector. The app sends the owner to Sayso to allow it and gets an agent key of its own, listed (and revocable) under Agents. Other MCP apps, scripts and the CLI can use a key the owner copies once instead.
 
 ## How it uses PayPal
 
@@ -183,11 +183,11 @@ The skill in [`skills/sayso/SKILL.md`](skills/sayso/SKILL.md) teaches an agent t
 |---|---|---|
 | `POST /api/shopping/mcp` | none | Every published shop: `list_shops`, `search_products`, `create_cart`, `update_cart`, `get_cart`, `request_refund`, `connect_paypal`, `wallet_status`, `pay_with_paypal` |
 | `POST /api/shops/<slug>/mcp` | none | One shop's buyer tools |
-| `POST /api/mcp` | `Bearer sk_agent_...` | `shop_overview`, `list_products`, `update_variant`, `price_check`, `production_board`, `plan_job`, `finish_job`, `list_orders`, `get_order`, `refund_order`, `add_tracking`, `send_invoice`, `list_invoices`, `list_approvals`, `get_say_so`, `get_policy`, `propose_policy`, `rule_suggestions`, `propose_rule_suggestion`, `audit_log` |
+| `POST /api/mcp` | `Bearer sk_agent_...` (OAuth or a copied key) | `shop_overview`, `list_products`, `update_variant`, `price_check`, `production_board`, `plan_job`, `finish_job`, `list_orders`, `get_order`, `refund_order`, `add_tracking`, `send_invoice`, `list_invoices`, `list_approvals`, `get_say_so`, `get_policy`, `propose_policy`, `rule_suggestions`, `propose_rule_suggestion`, `audit_log` |
 
 **A cart card instead of a link.** `create_cart` and `update_cart` declare an MCP Apps UI (`ui://sayso/cart-v1.html`, served by `resources/read`). Hosts that render MCP Apps, ChatGPT included, show the shop's items and totals with a **Pay with PayPal** button that opens the approval; other clients still get `approval_url` in the result. The card is self-contained and makes no requests of its own. In Sayso's own **Ask AI to shop** panel and in its cart, the cart gets PayPal's official checkout button (JS SDK), so the buyer approves without leaving the page; once paid it turns into a receipt, and a paid cart is never offered again (if it was paid through the link in another tab, the panel asks the shop).
 
-Streamable HTTP with stateless JSON responses (protocol `2025-11-25`, `2025-06-18`, `2025-03-26`). Connector screens that take only a URL get a **personal URL** with the key in the path: `/api/mcp/<sk_agent_...>` for the owner's agent, `/api/shopping/mcp/<sk_wallet_...>` for a buyer with saved PayPal. Revoking the key kills the URL.
+Streamable HTTP with stateless JSON responses (protocol `2025-11-25`, `2025-06-18`, `2025-03-26`). **Signing agents in.** `/api/mcp` answers a call without a key with `401` and a `WWW-Authenticate` pointer to its protected resource metadata (RFC 9728); Sayso is the authorization server (RFC 8414 metadata, dynamic client registration, authorization code with PKCE S256). The owner allows the app on a consent page, and the code becomes an agent key named after the app. Registrations and codes are signed values, so nothing extra is stored; codes work once, for five minutes. Connector screens that take only a URL can still use a **personal URL** with the key in the path: `/api/mcp/<sk_agent_...>` for the owner's agent, `/api/shopping/mcp/<sk_wallet_...>` for a buyer with saved PayPal. Revoking the key kills the URL.
 
 **Saved PayPal.** The assistant calls `connect_paypal`; the buyer picks a per-order and a daily limit on Sayso's page and approves once in PayPal. After that `pay_with_paypal` goes through the **buyer's own Guard**: inside the limits PayPal authorizes at once and the shop's Guard captures as usual; over a limit nothing is charged and the buyer gets a normal approval link for that one order. In this demo every shop is paid into one sandbox merchant account; with shops on their own PayPal accounts this would use PayPal's multiparty vaulting.
 

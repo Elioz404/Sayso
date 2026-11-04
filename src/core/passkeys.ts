@@ -93,7 +93,7 @@ export interface ApprovalSignature {
 }
 
 /** What a confirmation is for. Each one is signed over its own subject, so it can't be reused for another. */
-export type Confirmation = 'add-passkey' | `remove-passkey:${string}` | `adopt-rule:${string}` | 'phone-link';
+export type Confirmation = 'add-passkey' | `remove-passkey:${string}` | `adopt-rule:${string}` | `rules:${string}` | 'phone-link';
 
 type Purpose = 'approve' | 'confirm' | 'register';
 

@@ -5,9 +5,11 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
+import type { ActionRules } from '@/core/guard/rules-by-action.ts';
 import { callApi } from './api.ts';
 import { CopyField } from './client-ui.tsx';
 import { signChallenge, usePasskeyChallenge } from './passkey-client.ts';
+import { RulesTable } from './rules-table.tsx';
 import { Icon } from './ui.tsx';
 import { useAction } from './use-action.ts';
 
@@ -374,18 +376,37 @@ interface IssuedKey {
   cli_login: string;
 }
 
+type AppChoice = 'chatgpt' | 'claude';
+
+/** Where each app adds a connector by URL; it then signs in with Sayso (OAuth) and gets its own key. */
+const APPS: Record<AppChoice, { name: string; open: string; where: string }> = {
+  chatgpt: {
+    name: 'ChatGPT',
+    open: 'https://chatgpt.com/',
+    where: 'In ChatGPT, open Plugins (Settings, then Apps, on some plans) and add a custom MCP server. Paste the address and pick OAuth.',
+  },
+  claude: {
+    name: 'Claude',
+    open: 'https://claude.ai/customize/connectors',
+    where: 'In Claude, open Customize, then Connectors, and choose Add custom connector. Paste the address and click Add.',
+  },
+};
+
 /**
- * "Connect an agent", in a modal: name it, then copy its key once, as the personal URL an MCP app takes,
- * a terminal login, or a bearer token for clients that send headers (`endpoint`).
+ * "Connect an agent", in a modal. ChatGPT or Claude: paste one public address in the app, which then sends
+ * the owner here to allow it and gets a key of its own (no secret to copy). Anything else: name it and copy
+ * its key once, as the personal URL an MCP app takes, a terminal login, or a bearer header (`endpoint`).
  */
 export function ConnectAgent({ endpoint, quiet = false }: { endpoint: string; quiet?: boolean }) {
   const router = useRouter();
   const dialog = useRef<HTMLDialogElement>(null);
+  const [step, setStep] = useState<'choose' | AppChoice | 'other'>('choose');
   const [name, setName] = useState('');
   const [issued, setIssued] = useState<IssuedKey>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const close = () => dialog.current?.close();
+  const app = step === 'chatgpt' || step === 'claude' ? APPS[step] : undefined;
 
   return (
     <>
@@ -393,6 +414,7 @@ export function ConnectAgent({ endpoint, quiet = false }: { endpoint: string; qu
         type="button"
         className={`btn${quiet ? '' : ' btn-primary'}`}
         onClick={() => {
+          setStep('choose');
           setIssued(undefined);
           setName('');
           setError(undefined);
@@ -405,14 +427,71 @@ export function ConnectAgent({ endpoint, quiet = false }: { endpoint: string; qu
         ref={dialog}
         className="modal"
         aria-labelledby="connect-title"
-        // The backdrop closes it, except while the key is on screen: it is shown only once.
+        // The backdrop closes it, except while a key is on screen: it is shown only once.
         onClick={(e) => e.target === dialog.current && !issued && close()}
+        // An app allowed meanwhile (in another tab) shows in the list once this closes.
+        onClose={() => router.refresh()}
       >
         <div className="modal-body">
           <button type="button" className="modal-close" aria-label="Close" onClick={close}>
             ×
           </button>
-          {issued ? (
+          {step === 'choose' ? (
+            <div className="connect">
+              <div className="stack" style={{ gap: 4 }}>
+                <h2 id="connect-title" className="h3">
+                  Connect an agent
+                </h2>
+                <p className="small soft">Each agent gets its own key, so you see what it did and can cut it off alone.</p>
+              </div>
+              <div className="connect-choices">
+                {(Object.keys(APPS) as AppChoice[]).map((id) => (
+                  <button key={id} type="button" className="connect-choice" onClick={() => setStep(id)}>
+                    <b>{APPS[id].name}</b>
+                    <span className="small soft">Signs in with Sayso. No key to copy.</span>
+                  </button>
+                ))}
+                <button type="button" className="connect-choice" onClick={() => setStep('other')}>
+                  <b>Another app or a terminal</b>
+                  <span className="small soft">Any MCP app, a script or the Sayso CLI, with a key you copy.</span>
+                </button>
+              </div>
+            </div>
+          ) : app ? (
+            <div className="connect">
+              <div className="stack" style={{ gap: 4 }}>
+                <h2 id="connect-title" className="h3">
+                  Connect {app.name}
+                </h2>
+                <p className="small soft">{app.name} needs a plan that allows custom connectors.</p>
+              </div>
+              <ol className="connect-steps">
+                <li>
+                  <b>Copy this address</b>
+                  <CopyField value={endpoint} />
+                </li>
+                <li>
+                  <b>Add it in {app.name}</b>
+                  <span className="small soft">{app.where}</span>
+                  <a className="btn btn-small connect-open" href={app.open} target="_blank" rel="noopener noreferrer">
+                    Open {app.name} ↗
+                  </a>
+                </li>
+                <li>
+                  <b>Allow it here</b>
+                  <span className="small soft">{app.name} sends you to Sayso to say yes. It then shows under Connected agents.</span>
+                </li>
+              </ol>
+              <div className="connect-actions">
+                <button type="button" className="btn btn-quiet" onClick={() => setStep('choose')}>
+                  Back
+                </button>
+                <button type="button" className="btn btn-primary" onClick={close}>
+                  Done
+                </button>
+              </div>
+            </div>
+          ) : issued ? (
             <div className="connect">
               <div className="stack" style={{ gap: 4 }}>
                 <h2 id="connect-title" className="h3">
@@ -422,7 +501,7 @@ export function ConnectAgent({ endpoint, quiet = false }: { endpoint: string; qu
               </div>
               <ol className="connect-steps">
                 <li>
-                  <b>In ChatGPT or any MCP app</b>
+                  <b>In an MCP app</b>
                   <span className="small soft">Add a custom connector and paste this URL.</span>
                   <CopyField value={issued.mcp_url} secret />
                 </li>
@@ -461,18 +540,18 @@ export function ConnectAgent({ endpoint, quiet = false }: { endpoint: string; qu
             >
               <div className="stack" style={{ gap: 4 }}>
                 <h2 id="connect-title" className="h3">
-                  Connect an agent
+                  Another app or a terminal
                 </h2>
-                <p className="small soft">Each agent gets its own key, so you see what it did and can cut it off alone.</p>
+                <p className="small soft">Name it so you can tell it apart later.</p>
               </div>
               <div className="field">
                 <label htmlFor="agent-name">Name</label>
-                <input id="agent-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="ChatGPT, my laptop…" maxLength={60} autoComplete="off" />
+                <input id="agent-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="My laptop, a script…" maxLength={60} autoComplete="off" />
               </div>
               {error && <p className="error small">{error}</p>}
               <div className="connect-actions">
-                <button type="button" className="btn btn-quiet" onClick={close}>
-                  Cancel
+                <button type="button" className="btn btn-quiet" onClick={() => setStep('choose')}>
+                  Back
                 </button>
                 <button className="btn btn-primary" disabled={busy}>
                   {busy ? 'Creating the key…' : 'Create key'}
@@ -518,6 +597,105 @@ export function RevokeKey({ id, label }: { id: string; label: string }) {
       </button>
       {error && <span className="error small">{error}</span>}
     </span>
+  );
+}
+
+interface RulesDraft {
+  token: string;
+  version: string;
+  rows: ActionRules[];
+  unclear: string[];
+}
+
+/**
+ * The owner changes the rules in their own words: Sayso drafts them, shows them per action, and nothing
+ * changes until the owner saves (with their passkey, once the shop has one).
+ */
+export function RulesEditor({ passkey = false, example }: { passkey?: boolean; example: string }) {
+  const router = useRouter();
+  const [text, setText] = useState('');
+  const [draft, setDraft] = useState<RulesDraft>();
+  const [saved, setSaved] = useState(false);
+  const { busy, error, run } = useAction();
+  const confirm = usePasskeyChallenge(passkey && draft ? { purpose: 'confirm', what: `rules:${draft.version}` } : undefined);
+
+  if (draft) {
+    return (
+      <div className="stack rules-draft" style={{ gap: 'var(--s4)' }}>
+        <div className="stack" style={{ gap: 4 }}>
+          <b>Your new rules</b>
+          <span className="small soft">&ldquo;{text.trim()}&rdquo;</span>
+        </div>
+        <RulesTable rows={draft.rows} label="Your new rules, per action" />
+        {draft.unclear.length > 0 && (
+          <div className="small">
+            <b>Not turned into a rule</b>
+            <ul className="rules-unclear">
+              {draft.unclear.map((u) => (
+                <li key={u}>{u}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <p className="small soft">These replace your current rules.</p>
+        <div className="connect-actions">
+          <button type="button" className="btn btn-quiet" disabled={Boolean(busy)} onClick={() => setDraft(undefined)}>
+            Edit
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={Boolean(busy)}
+            onClick={() =>
+              void run(async () => {
+                let proof;
+                if (passkey) {
+                  if (!confirm.challenge) throw new Error(confirm.error ?? 'Getting the passkey ready, try again in a second');
+                  proof = await signChallenge(confirm.challenge);
+                }
+                await callApi('/api/owner/rules', 'POST', { token: draft.token, passkey: proof });
+                setDraft(undefined);
+                setText('');
+                setSaved(true);
+                router.refresh();
+              }, 'save')
+            }
+          >
+            {busy === 'save' ? (passkey ? 'Waiting for your passkey…' : 'Saving…') : 'Save these rules'}
+          </button>
+        </div>
+        {error && <p className="error small">{error}</p>}
+      </div>
+    );
+  }
+
+  return (
+    <form
+      className="stack"
+      style={{ gap: 'var(--s3)' }}
+      onSubmit={(e) => {
+        e.preventDefault();
+        setSaved(false);
+        void run(async () => setDraft(await callApi<RulesDraft>('/api/owner/rules/draft', 'POST', { text })), 'draft');
+      }}
+    >
+      <div className="field">
+        <label htmlFor="rules-text">Write your rules</label>
+        <textarea id="rules-text" rows={4} maxLength={2000} value={text} onChange={(e) => setText(e.target.value)} placeholder={example} />
+      </div>
+      <div className="connect-actions">
+        {!text && (
+          <button type="button" className="btn btn-quiet" onClick={() => setText(example)}>
+            Use the example
+          </button>
+        )}
+        <button className="btn btn-primary" disabled={Boolean(busy) || text.trim().length < 3}>
+          {busy === 'draft' ? 'Drafting…' : 'Draft rules'}
+        </button>
+      </div>
+      {saved && <p className="small ok-text">Saved. Your agents follow the new rules from now on.</p>}
+      {error && <p className="error small">{error}</p>}
+    </form>
   );
 }
 

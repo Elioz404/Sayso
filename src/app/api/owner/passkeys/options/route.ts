@@ -2,7 +2,8 @@
 //   { "purpose": "register" }                               make a passkey on this device
 //   { "purpose": "approve", "record": "<say-so id>" }       sign the decision on one request
 //   { "purpose": "confirm", "what": "<confirmation>" }      confirm one change: "add-passkey",
-//                                                           "remove-passkey:<id>", "adopt-rule:<id>", "phone-link"
+//                                                           "remove-passkey:<id>", "adopt-rule:<id>", "rules:<version>",
+//                                                           "phone-link"
 // The answer carries a signed, single-use token to send back with the passkey's reply.
 import { HttpError } from '@/core/errors.ts';
 import type { Confirmation } from '@/core/passkeys.ts';
@@ -14,7 +15,7 @@ const ASK = {
   properties: {
     purpose: { type: 'string', enum: ['register', 'approve', 'confirm'] },
     record: { type: 'string', maxLength: 40 },
-    what: { type: 'string', maxLength: 120, pattern: '^(add-passkey|phone-link|remove-passkey:[A-Za-z0-9_-]{1,1400}|adopt-rule:[A-Za-z0-9_.:-]{1,100})$' },
+    what: { type: 'string', maxLength: 120, pattern: '^(add-passkey|phone-link|remove-passkey:[A-Za-z0-9_-]{1,1400}|adopt-rule:[A-Za-z0-9_.:-]{1,100}|rules:[a-f0-9]{16})$' },
   },
   required: ['purpose'],
 } as const;

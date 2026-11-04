@@ -3,7 +3,8 @@
 // own decisions have earned.
 import type { Metadata } from 'next';
 import { CopyField } from '@/app/_components/client-ui.tsx';
-import { AdoptRule } from '@/app/_components/owner-actions.tsx';
+import { AdoptRule, RulesEditor } from '@/app/_components/owner-actions.tsx';
+import { RulesTable } from '@/app/_components/rules-table.tsx';
 import { APPROVALS_NEEDED } from '@/core/guard/autonomy.ts';
 import { rulesByAction } from '@/core/guard/rules-by-action.ts';
 import { ACTIONS } from '@/core/guard/types.ts';
@@ -63,28 +64,7 @@ export default async function Rules() {
           <h2 id="current" className="h3">
             What your agents may do
           </h2>
-          <div className="rules-table" role="table" aria-label="Your rules, per action">
-            <div className="rules-tr rules-th" role="row">
-              <span role="columnheader">Action</span>
-              <span role="columnheader">On its own</span>
-              <span role="columnheader">Needs your OK</span>
-              <span role="columnheader">Blocked</span>
-            </div>
-            {rows.map((r) => (
-              <div className="rules-tr" role="row" key={r.kind}>
-                <b role="rowheader">{r.label}</b>
-                <span role="cell" data-label="On its own">
-                  {r.alone}
-                </span>
-                <span role="cell" data-label="Needs your OK" className="rules-ask">
-                  {r.ask.length ? r.ask.map((c) => <span key={c}>{c}</span>) : <span className="muted">Nothing</span>}
-                </span>
-                <span role="cell" data-label="Blocked" className="rules-block">
-                  {r.block.length ? r.block.map((c) => <span key={c}>{c}</span>) : <span className="muted">Nothing</span>}
-                </span>
-              </div>
-            ))}
-          </div>
+          <RulesTable rows={rows} />
           {policy.source && (
             <p className="small soft rules-source">
               {policy.source.startsWith('Default:') ? 'The rules every new shop starts with.' : <>In your words: &ldquo;{policy.source}&rdquo;</>}
@@ -100,20 +80,14 @@ export default async function Rules() {
             <p className="small soft">The shared demo keeps its rules, so everyone sees the same shop. Open your own shop from For Judges to change yours.</p>
           ) : (
             <>
-              <p className="small soft">Tell your agent in plain words. It drafts the new rules and sends them to you: nothing changes until you say OK.</p>
-              <div className="field">
-                <span className="field-label">For example</span>
-                <CopyField value={EXAMPLE} />
-              </div>
-              {agents ? (
+              <p className="small soft">In your own words. Sayso drafts the rules and shows them to you; nothing changes until you save.</p>
+              <RulesEditor passkey={passkey} example={EXAMPLE} />
+              {agents && (
                 <details className="rules-more">
-                  <summary className="small">From a terminal</summary>
+                  <summary className="small">Or ask your agent</summary>
+                  <p className="small soft">It sends the new rules to you to approve. From a terminal:</p>
                   <CopyField value={`sayso policy propose "${EXAMPLE}"`} />
                 </details>
-              ) : (
-                <p className="small">
-                  No agent yet? <a href="/owner/agents">Connect one</a>.
-                </p>
               )}
             </>
           )}
