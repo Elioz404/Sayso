@@ -70,10 +70,13 @@ export default async function Home() {
         <div className="ways">
           <div>
             <h3>
-              <Icon name="bag" size={20} /> Shoppers&apos; assistants
+              <Icon name="bag" size={20} /> Shoppers and their assistants
             </h3>
-            <p className="soft">They get exact prices, shipping and tax, fix stock problems on their own, and the buyer pays in PayPal.</p>
-            <span className="via">PayPal merchant-cart API · MCP</span>
+            <p className="soft">
+              Browse the shops and pay with PayPal&apos;s button, ask Sayso&apos;s assistant, or shop from ChatGPT or any MCP client. Prices, shipping and
+              tax always come from the shop.
+            </p>
+            <span className="via">Shops · Ask AI · MCP · PayPal merchant-cart API</span>
           </div>
           <div>
             <h3>
@@ -87,10 +90,10 @@ export default async function Home() {
               <Icon name="shield" size={20} /> You
             </h3>
             <p className="soft">
-              Sign in and get paid with your own PayPal. Refunds, charges and rule changes that cross your limits wait for you, and the yeses you keep
-              giving become rules your agent earns.
+              Sign in and get paid with your own PayPal, and see your week at a glance. Refunds, charges and rule changes that cross your limits wait
+              for you, and the yeses you keep giving become rules your agent earns.
             </p>
-            <span className="via">Sign in with PayPal · phone approvals</span>
+            <span className="via">Sign in with PayPal · dashboard · phone approvals</span>
           </div>
         </div>
       </section>

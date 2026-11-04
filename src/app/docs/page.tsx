@@ -9,10 +9,11 @@ import { developerPortalBuilt, paypalLoginEnabled, siteLinks } from '@/server/co
 
 export const metadata: Metadata = {
   title: 'Docs',
-  description: 'Connect Sayso to ChatGPT or any MCP client, let your assistant pay inside your limits, and run a shop with your own agent.',
+  description: 'Shop on Sayso or from ChatGPT or any MCP client, let your assistant pay inside your limits, and run a shop with your own agent.',
 };
 
 const SECTIONS = [
+  { id: 'buy', title: 'Shop on Sayso' },
   { id: 'shop', title: 'Shop from your assistant' },
   { id: 'pay', title: 'Pay without a link each time' },
   { id: 'run', title: 'Run your shop with your agent' },
@@ -62,11 +63,42 @@ export default async function Docs() {
           <header className="stack" style={{ gap: 'var(--s3)' }}>
             <h1>Sayso docs</h1>
             <p className="lede">
-              Sayso connects small shops to AI assistants through PayPal. Shoppers&apos; assistants buy, the shop owner&apos;s own agent runs the shop, and
-              money only moves inside the rules each person set.
+              Sayso connects small shops to shoppers and their AI assistants through PayPal. Shoppers buy on the site or from their own assistant, the
+              shop owner&apos;s own agent runs the shop, and money only moves inside the rules each person set.
             </p>
             <p className="small muted">This demo runs on the PayPal sandbox. No real money moves.</p>
           </header>
+
+          <section id="buy" className="doc-section">
+            <h2>Shop on Sayso</h2>
+            <p>No account and nothing to install: PayPal knows who you are when you pay.</p>
+            <ol className="steps">
+              <li>
+                <span>
+                  Open <a href="/shops">Shops</a> and pick one, or tap <b>Ask AI to shop</b> at the bottom right. Sayso&apos;s assistant searches every
+                  shop and shows what it finds with photos and links; it only shops at Sayso.
+                </span>
+              </li>
+              <li>
+                <span>
+                  Add pieces to the cart, or let the assistant build it. Each shop has its own cart, because each shop prices it (shipping and tax
+                  included) and is paid on its own.
+                </span>
+              </li>
+              <li>
+                <span>
+                  Pay with PayPal&apos;s button, right in the cart or the chat. Nothing is charged until you approve, and you can cancel a cart the
+                  assistant made.
+                </span>
+              </li>
+              <li>
+                <span>
+                  Your receipt stays in this browser. Ask the assistant &ldquo;where is my order?&rdquo; or for a refund any time; refunds go to the shop
+                  owner, who decides.
+                </span>
+              </li>
+            </ol>
+          </section>
 
           <section id="shop" className="doc-section">
             <h2>Shop from your assistant</h2>
@@ -83,7 +115,10 @@ export default async function Docs() {
                 <span>Ask for what you want, for example &ldquo;a green hand-thrown mug, shipped to Austin&rdquo;.</span>
               </li>
               <li>
-                <span>Your assistant builds the cart with the shop&apos;s real prices, shipping and tax, and gives you a PayPal link. You approve there.</span>
+                <span>
+                  Your assistant builds the cart with the shop&apos;s real prices, shipping and tax. ChatGPT shows it as a card with a <b>Pay with PayPal</b>{' '}
+                  button; other clients give you a PayPal link. You approve in PayPal.
+                </span>
               </li>
               <li>
                 <span>
@@ -118,13 +153,13 @@ export default async function Docs() {
               <li>
                 <span>
                   In a new chat, ask it to use Sayso: &ldquo;Use Sayso to find me a handmade mug under $40.&rdquo; It searches every shop, builds the cart
-                  and gives you a PayPal link.
+                  and shows it with a <b>Pay with PayPal</b> button.
                 </span>
               </li>
             </ol>
             <p className="small soft">
               Shop owners connect their own agent the same way, with the personal MCP URL from <b>Agents</b> in their dashboard (the key is in the URL, so
-              again no authentication). Rather not set anything up? <a href="/assistant">Shop with the assistant on this site</a>.
+              again no authentication). Rather not set anything up? <a href="/assistant">Shop on this site</a>, with a cart or Sayso&apos;s assistant.
             </p>
           </section>
 
@@ -189,8 +224,14 @@ export default async function Docs() {
               <code>{links.sellerMcpFor('sk_agent_...')}</code>
             </div>
             <p>
-              Your agent can now check orders, refund, add tracking, invoice custom orders, change prices and stock, and propose rules. Anything over your limits waits for you on
-              your phone, and the agent is told so. Revoke the key in Agents and the URL stops working at once.
+              Your agent can now check orders, refund, add tracking, invoice custom orders, change prices and stock, plan made-to-order work, and propose
+              rules. Anything over your limits waits for you on your phone, and the agent is told so. Revoke the key in Agents and the URL stops working
+              at once.
+            </p>
+            <p>
+              Your dashboard&apos;s <b>Overview</b> shows the week against the one before (revenue, orders, average order, refund rate), what your agents
+              did with your money, the latest orders and where they came from, and an in-depth report of every request, sale and money move, each
+              checked against PayPal. <b>Orders</b>, <b>Catalog</b>, <b>Making</b> and <b>Activity</b> hold the rest.
             </p>
           </section>
 
@@ -324,7 +365,7 @@ export default async function Docs() {
                   <tr>
                     <td className="mono">/api/mcp/&lt;agent key&gt;</td>
                     <td>The owner&apos;s agent</td>
-                    <td className="small">shop_overview, list_products, update_variant, list_orders, get_order, refund_order, add_tracking, send_invoice, list_invoices, list_approvals, get_say_so, get_policy, propose_policy, rule_suggestions, propose_rule_suggestion, audit_log</td>
+                    <td className="small">shop_overview, list_products, update_variant, price_check, production_board, plan_job, finish_job, list_orders, get_order, refund_order, add_tracking, send_invoice, list_invoices, list_approvals, get_say_so, get_policy, propose_policy, rule_suggestions, propose_rule_suggestion, audit_log</td>
                   </tr>
                 </tbody>
               </table>

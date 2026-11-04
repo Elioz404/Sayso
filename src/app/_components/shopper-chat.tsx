@@ -145,26 +145,33 @@ export function ShopperChat({ paypalClientId, request, compact = false }: { payp
   const [error, setError] = useState<string>();
   const log = useRef<HTMLDivElement>(null);
   const [paid, setPaid] = useState<Record<string, PaidCart>>({});
+  // Carts the person cancelled before paying (nothing is held or charged until PayPal approval), and the
+  // ones the assistant hasn't been told about yet: it hears on the next message.
+  const [cancelled, setCancelled] = useState<string[]>([]);
+  const [untold, setUntold] = useState<string[]>([]);
   const onPaidFor = useRef(new Map<string, (p: Paid) => void>());
   const loaded = useRef(false);
-  // Keep the conversation and what was paid in this browser. Declared before the load below, so the first
-  // pass doesn't save an empty chat over the saved one. A turn still waiting for its answer isn't saved.
+  // Keep the conversation, what was paid and what was cancelled in this browser. Declared before the load
+  // below, so the first pass doesn't save an empty chat over the saved one. A turn still waiting for its
+  // answer isn't saved.
   useEffect(() => {
     if (!loaded.current) return;
     try {
-      localStorage.setItem(SAVED, JSON.stringify({ history, turns: turns.filter((t) => t.steps.length), paid }));
+      localStorage.setItem(SAVED, JSON.stringify({ history, turns: turns.filter((t) => t.steps.length), paid, cancelled, untold }));
     } catch {
       // full or off: the conversation still works in this tab
     }
-  }, [history, turns, paid]);
+  }, [history, turns, paid, cancelled, untold]);
   // Pick the conversation back up (after paying in PayPal, a reload, another page); storage may be off.
   useEffect(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem(SAVED) ?? 'null') as { history: unknown[]; turns: Turn[]; paid?: Record<string, PaidCart> } | null;
+      const saved = JSON.parse(localStorage.getItem(SAVED) ?? 'null') as { history: unknown[]; turns: Turn[]; paid?: Record<string, PaidCart>; cancelled?: string[]; untold?: string[] } | null;
       if (saved?.turns?.length) {
         setHistory(saved.history);
         setTurns(saved.turns);
         setPaid(saved.paid ?? {});
+        setCancelled(saved.cancelled ?? []);
+        setUntold(saved.untold ?? []);
       }
     } catch {
       // nothing saved, or storage is off: start fresh
@@ -180,6 +187,8 @@ export function ShopperChat({ paypalClientId, request, compact = false }: { payp
     setHistory([]);
     setTurns([]);
     setPaid({});
+    setCancelled([]);
+    setUntold([]);
     setError(undefined);
     try {
       localStorage.removeItem(SAVED);
@@ -199,8 +208,12 @@ export function ShopperChat({ paypalClientId, request, compact = false }: { payp
     setError(undefined);
     if (!hidden) setText('');
     setTurns((t) => [...t, { user: said, steps: [], ...(hidden ? { hidden } : {}) }]);
+    // The assistant hears about carts cancelled since its last turn, ahead of what the person says.
+    const told = untold;
+    const note = told.length ? `(I cancelled ${told.length === 1 ? 'the cart' : 'the carts'} ${told.join(', ')} before paying; don't offer ${told.length === 1 ? 'it' : 'them'} again unless I ask.) ` : '';
     try {
-      const reply = await callApi<{ messages: unknown[]; steps: Step[] }>('/api/shopper', 'POST', { messages: history, text: said });
+      const reply = await callApi<{ messages: unknown[]; steps: Step[] }>('/api/shopper', 'POST', { messages: history, text: (note + said).slice(0, 600) });
+      if (told.length) setUntold((u) => u.filter((id) => !told.includes(id)));
       setHistory(reply.messages);
       setTurns((t) => [...t.slice(0, -1), { user: said, steps: reply.steps, ...(hidden ? { hidden } : {}) }]);
     } catch (err) {
@@ -290,8 +303,36 @@ export function ShopperChat({ paypalClientId, request, compact = false }: { payp
     if (done) return <PurchaseCard key={key} state="paid" data={purchaseOf(cart, done)} />;
     const payable = payableCart(step);
     if (!payable || payable.orderId !== latestOrder) return null;
+    const id = cart.cart_id;
+    if (cancelled.includes(id)) {
+      return (
+        <div key={key} className="purchase-cancelled small">
+          <span>
+            <b>Cancelled.</b> Nothing was charged.
+          </span>
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => {
+              setCancelled((c) => c.filter((x) => x !== id));
+              setUntold((u) => u.filter((x) => x !== id));
+            }}
+          >
+            Undo
+          </button>
+        </div>
+      );
+    }
     return (
-      <PurchaseCard key={key} state="ready" data={purchaseOf(cart)}>
+      <PurchaseCard
+        key={key}
+        state="ready"
+        data={purchaseOf(cart)}
+        onCancel={() => {
+          setCancelled((c) => [...c, id]);
+          setUntold((u) => [...u, id]);
+        }}
+      >
         {paypalClientId ? (
           <PayPalCheckout clientId={paypalClientId} {...payable} onPaid={onPaid(payable.cartId)} />
         ) : (
@@ -331,7 +372,7 @@ export function ShopperChat({ paypalClientId, request, compact = false }: { payp
         {turns.length === 0 && (
           <div className="shopper-empty">
             <b>Ask for something to buy.</b>
-            <span className="small soft">The assistant searches every Sayso shop, builds a cart the shop prices, and hands you a PayPal link. You pay in the PayPal sandbox; nothing real moves.</span>
+            <span className="small soft">The assistant searches every Sayso shop, builds a cart the shop prices, and you pay with PayPal&apos;s button right here. It&apos;s the PayPal sandbox: nothing real moves.</span>
             <div className="row" style={{ flexWrap: 'wrap', gap: 'var(--s2)' }}>
               {SUGGESTIONS.map((s) => (
                 <button key={s} type="button" className="btn btn-small" onClick={() => void send(s)}>

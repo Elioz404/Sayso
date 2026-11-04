@@ -41,7 +41,8 @@ export function splitName(name: string): { name: string; detail?: string } {
   return at > 0 ? { name: name.slice(0, at), detail: name.slice(at + 3) } : { name };
 }
 
-export function PurchaseCard({ data, state, children, onDismiss }: { data: Purchase; state: 'ready' | 'paid'; children?: ReactNode; onDismiss?: () => void }) {
+/** `onCancel`: a cart not paid yet can be dropped. `onDismiss`: a receipt can be put away. */
+export function PurchaseCard({ data, state, children, onCancel, onDismiss }: { data: Purchase; state: 'ready' | 'paid'; children?: ReactNode; onCancel?: () => void; onDismiss?: () => void }) {
   const paid = state === 'paid';
   return (
     <section className={`purchase purchase-${state}`} aria-label={paid ? `Receipt${data.order ? ` for order ${data.order}` : ''}` : 'Cart ready to pay'}>
@@ -53,6 +54,11 @@ export function PurchaseCard({ data, state, children, onDismiss }: { data: Purch
           {data.order && <span className="mono">{data.order}</span>}
           {paid && data.paidAt && <span>{new Date(data.paidAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>}
         </span>
+        {onCancel && !paid && (
+          <button type="button" className="purchase-cancel" onClick={onCancel} title="Nothing is charged until you approve in PayPal">
+            Cancel
+          </button>
+        )}
         {onDismiss && (
           <button type="button" className="purchase-close" onClick={onDismiss} aria-label="Hide this receipt">
             ×

@@ -20,6 +20,7 @@ export function llmsText(links: Links, shops: readonly Catalog[]): string {
     '',
     '## Buy from any shop',
     '',
+    `- [All shops](${links.base}/shops): every shop and its pieces; people buy with a cart or Sayso's own assistant and pay with PayPal's button`,
     `- [Shopping MCP server](${links.shoppingMcp}): every shop, for any MCP client (list_shops, search_products, create_cart, update_cart, get_cart, pay_with_paypal, request_refund)`,
     `- [Shops API (OpenAPI)](${links.openApi}): the same as REST, with PayPal's merchant-cart spec per shop`,
     `- [Developer portal](${links.developers}): guides, SDKs and a console for the API`,
