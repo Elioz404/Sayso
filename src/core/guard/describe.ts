@@ -18,5 +18,6 @@ export function actionTitle(action: Pick<ProposedAction, 'kind' | 'amount' | 'cu
 /** Who asked, in a few words: "Your agent", "A buyer's assistant". */
 export function askerOf(action: Pick<ProposedAction, 'actor'>): string {
   if (action.actor.type !== 'agent') return 'You';
+  if (action.actor.id === 'buyer-agent:sayso-order') return 'The buyer';
   return action.actor.side === 'buyer' ? 'A buyer’s assistant' : 'Your agent';
 }

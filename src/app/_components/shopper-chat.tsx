@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatMoney, toMinor } from '@/core/money.ts';
 import { callApi } from './api.ts';
+import { ordersInThisBrowser } from './browser-orders.tsx';
 import { PayPalCheckout, type Paid } from './paypal-checkout.tsx';
 import { PurchaseCard, paymentWords, splitName, type Purchase } from './purchase-card.tsx';
 
@@ -212,7 +213,7 @@ export function ShopperChat({ paypalClientId, request, compact = false }: { payp
     const told = untold;
     const note = told.length ? `(I cancelled ${told.length === 1 ? 'the cart' : 'the carts'} ${told.join(', ')} before paying; don't offer ${told.length === 1 ? 'it' : 'them'} again unless I ask.) ` : '';
     try {
-      const reply = await callApi<{ messages: unknown[]; steps: Step[] }>('/api/shopper', 'POST', { messages: history, text: (note + said).slice(0, 600) });
+      const reply = await callApi<{ messages: unknown[]; steps: Step[] }>('/api/shopper', 'POST', { messages: history, text: (note + said).slice(0, 600), orders: ordersInThisBrowser().slice(0, 10) });
       if (told.length) setUntold((u) => u.filter((id) => !told.includes(id)));
       setHistory(reply.messages);
       setTurns((t) => [...t.slice(0, -1), { user: said, steps: reply.steps, ...(hidden ? { hidden } : {}) }]);
@@ -279,6 +280,7 @@ export function ShopperChat({ paypalClientId, request, compact = false }: { payp
       total: show(done?.total ?? cart.totals?.total),
       status: done ? [told?.order?.payment ?? paymentWords(done.status), tracking, refunded].filter(Boolean).join(' ') : 'Priced by the shop, with shipping and tax.',
       ...(done?.at ? { paidAt: done.at } : {}),
+      ...(done && cart.cart_id ? { cartId: cart.cart_id } : {}),
     };
   }
 
@@ -416,7 +418,7 @@ export function ShopperChat({ paypalClientId, request, compact = false }: { payp
       {error && <p className="error">{error}</p>}
       {turns.length > 0 && (
         <p className="small muted shopper-note">
-          Kept in this browser, so you can come back after paying to track the order or ask for a refund.{' '}
+          Kept in this browser. Your orders are also in <a href="/orders">My orders</a>, from any browser with PayPal.{' '}
           <button type="button" className="link-button" onClick={startOver} disabled={!!busy}>
             Start over
           </button>

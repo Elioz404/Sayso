@@ -93,8 +93,14 @@ export default async function Docs() {
               </li>
               <li>
                 <span>
-                  Your receipt stays in this browser. Ask the assistant &ldquo;where is my order?&rdquo; or for a refund any time; refunds go to the shop
-                  owner, who decides.
+                  Every order gets its own page: where it is (paid, preparing, shipped, with the parcel&apos;s tracking), refunds, and a way to ask for
+                  one; the shop owner decides. Your receipt links to it, and the assistant can tell you too.
+                </span>
+              </li>
+              <li>
+                <span>
+                  On another phone or computer, open <a href="/orders">My orders</a> and sign in with the PayPal account you paid with. There&apos;s no
+                  Sayso account: PayPal tells Sayso who you are, and you see every order that account paid for, in every shop.
                 </span>
               </li>
             </ol>

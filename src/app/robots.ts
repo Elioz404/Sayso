@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 export default function robots(): MetadataRoute.Robots {
   const { base } = siteLinks();
   return {
-    rules: { userAgent: '*', allow: '/', disallow: ['/owner', '/approve/', '/wallet/', '/pay/', '/api/owner/', '/api/guard/', '/api/mcp', '/api/wallets/', '/api/tour', '/api/internal/'] },
+    rules: { userAgent: '*', allow: '/', disallow: ['/owner', '/approve/', '/wallet/', '/pay/', '/order/', '/orders', '/api/orders/', '/api/owner/', '/api/guard/', '/api/mcp', '/api/wallets/', '/api/tour', '/api/internal/'] },
     sitemap: `${base}/sitemap.xml`,
   };
 }

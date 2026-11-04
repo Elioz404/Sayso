@@ -110,7 +110,7 @@ export class Commerce {
       const authorized = await authorizeOrder(this.deps.paypal, token, `${stored.id}-authorize`);
       const authorization = authorized.purchase_units[0]?.payments?.authorizations?.[0];
       if (!authorization) throw new HttpError(502, 'PayPal returned no authorization');
-      return this.settle(stored, authorization, order.payer?.email_address, input.payment_method?.payer_id);
+      return this.settle(stored, authorization, order.payer?.email_address, order.payer?.payer_id ?? input.payment_method?.payer_id);
     });
   }
 
@@ -197,6 +197,7 @@ export class Commerce {
     stored.reserved = lines;
     stored.makeDays = makeDays;
     stored.payerEmail = payerEmail?.toLowerCase();
+    if (payerId) stored.payerId = payerId;
 
     const record = await this.deps.guard.submit(
       {

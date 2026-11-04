@@ -19,6 +19,8 @@ export interface StoredCart {
   paidAt?: string;
   /** Who paid, as PayPal reports it. Trust decisions use this, never the email typed into the cart. */
   payerEmail?: string;
+  /** The PayPal account that paid (PayPal's payer id): how a buyer who signs in with PayPal finds their orders. */
+  payerId?: string;
   /** Made-to-order lead time of each cart line when the order was placed (null: from stock). */
   makeDays?: (number | null)[];
   guardRecordId?: string;
@@ -50,6 +52,21 @@ export interface CartStore {
   byNumber(shopId: string, number: string): Promise<StoredCart | undefined>;
   /** Has this PayPal account (by email) paid the shop for an order before? */
   paidBy(shopId: string, email: string): Promise<boolean>;
+  /** Orders a PayPal account paid for, in every shop, newest first: by its payer id, or by its email for orders saved without one. */
+  listByPayer(payer: PayerRef, limit?: number): Promise<StoredCart[]>;
+}
+
+/** A PayPal account as PayPal itself reported it (never an email someone typed). */
+export interface PayerRef {
+  payerId?: string;
+  email?: string;
+}
+
+/** Whether `cart` was paid by `payer`. */
+export function paidByPayer(cart: StoredCart, payer: PayerRef): boolean {
+  if (cart.cart.status !== 'COMPLETED' || !cart.merchantOrderNumber) return false;
+  if (payer.payerId && cart.payerId) return cart.payerId === payer.payerId;
+  return Boolean(payer.email && cart.payerEmail && cart.payerEmail.toLowerCase() === payer.email.toLowerCase());
 }
 
 export interface CatalogStore {
@@ -93,6 +110,13 @@ export class MemoryCartStore implements CartStore {
   }
   async paidBy(shopId: string, email: string) {
     return this.ofShop(shopId).some((c) => c.captureId && c.payerEmail?.toLowerCase() === email.toLowerCase());
+  }
+  async listByPayer(payer: PayerRef, limit = 50) {
+    return [...this.carts.values()]
+      .filter((c) => paidByPayer(c, payer))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, limit)
+      .map((c) => structuredClone(c));
   }
   private ofShop(shopId: string): StoredCart[] {
     return [...this.carts.values()].filter((c) => c.shopId === shopId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));

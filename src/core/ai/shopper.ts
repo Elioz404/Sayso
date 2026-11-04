@@ -63,13 +63,15 @@ export function cleanHistory(raw: unknown): ChatMessage[] {
 }
 
 /** One shopper turn: the model calls tools until it has an answer (or runs out of rounds). */
-export async function shopperTurn(deps: { model: ChatModel; tools: ShopperTool[]; run: RunTool }, history: ChatMessage[], text: string) {
+/** `context`: what the site knows for this turn only (the shopper's own orders), never kept in the history. */
+export async function shopperTurn(deps: { model: ChatModel; tools: ShopperTool[]; run: RunTool }, history: ChatMessage[], text: string, context?: string) {
   if (!deps.model.chat) throw new Error(`${deps.model.name} can't use tools`);
   const messages: ChatMessage[] = [...history, { role: 'user', content: text.slice(0, SHOPPER_LIMITS.userChars) }];
   const steps: ShopperStep[] = [];
   const tools = deps.tools.map((t) => ({ name: t.name, description: t.description, parameters: t.inputSchema }));
   for (let round = 0; round < SHOPPER_LIMITS.rounds; round++) {
-    const reply = await deps.model.chat({ messages: [{ role: 'system', content: SHOPPER_PROMPT }, ...messages], tools });
+    const system: ChatMessage[] = [{ role: 'system', content: SHOPPER_PROMPT }, ...(context ? [{ role: 'system' as const, content: context }] : [])];
+    const reply = await deps.model.chat({ messages: [...system, ...messages], tools });
     messages.push({ role: 'assistant', content: reply.content || null, ...(reply.toolCalls.length ? { tool_calls: reply.toolCalls } : {}) });
     if (reply.content) steps.push({ text: reply.content });
     if (reply.toolCalls.length === 0) return { messages, steps };

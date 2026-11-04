@@ -48,7 +48,15 @@ export default async function PayReturn({ searchParams }: { searchParams: Promis
               </li>
             ))}
           </ul>
-          <p className="small soft">You can close this tab and go back to your assistant.</p>
+          <div className="row" style={{ gap: 'var(--s3)', flexWrap: 'wrap' }}>
+            <a className="btn btn-primary" href={`/order/${cart}`}>
+              Track this order
+            </a>
+            <a className="btn" href="/orders">
+              My orders
+            </a>
+          </div>
+          <p className="small soft">Keep the order&apos;s link to come back to it, or go back to your assistant: it can tell you where it is too.</p>
         </article>
       </main>
     );

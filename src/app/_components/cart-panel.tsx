@@ -92,6 +92,9 @@ export function CartPanel({ paypalClientId, onAskAi }: { paypalClientId?: string
         />
       ))}
       {shops.length > 0 && paid}
+      <a className="small cart-orders" href="/orders">
+        My orders →
+      </a>
     </div>
   );
 }
@@ -129,6 +132,7 @@ function ShopCartView({ slug, cart, paypalClientId, onPaid }: { slug: string; ca
   /** The receipt for this cart as it was paid: its lines, the shop's totals, PayPal's word on the payment. */
   const receiptOf = (paid: Paid): Receipt => ({
     id: paid.order ?? quote?.id ?? String(Date.now()),
+    ...(quote?.id ? { cartId: quote.id } : {}),
     shop: cart.name,
     ...(paid.order ? { order: paid.order } : {}),
     lines: cart.lines.map((l) => ({ name: l.name, ...(l.variant ? { detail: l.variant } : {}), qty: l.qty, amount: formatMoney(l.price * l.qty, l.currency), ...(l.image ? { image: l.image } : {}) })),
@@ -136,7 +140,7 @@ function ShopCartView({ slug, cart, paypalClientId, onPaid }: { slug: string; ca
     shipping: show(quote?.totals?.shipping),
     tax: show(quote?.totals?.tax),
     total: show(paid.total ?? quote?.totals?.total),
-    status: `${paymentWords(paid.status)} Shipping to ${address.city}. Ask the assistant any time where it is.`,
+    status: `${paymentWords(paid.status)} Shipping to ${address.city}.`,
     paidAt: new Date().toISOString(),
   });
 

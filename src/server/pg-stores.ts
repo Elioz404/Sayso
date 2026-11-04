@@ -4,6 +4,7 @@
 
 import 'server-only';
 import pg from 'pg';
+import { paidByPayer, type PayerRef } from '@/core/stores.ts';
 import type { AccessStore, AgentKey } from '@/core/access.ts';
 import type { Catalog } from '@/core/catalog.ts';
 import type { Policy } from '@/core/guard/policy.ts';
@@ -37,6 +38,9 @@ create index if not exists sayso_docs_hash on sayso_docs (kind, hash) where hash
 create index if not exists sayso_guard_status on sayso_docs (owner, (data->>'status'), created_at desc) where kind = 'guard';
 create index if not exists sayso_guard_cart on sayso_docs ((data->'action'->'params'->>'cartId')) where kind = 'guard';
 create index if not exists sayso_guard_kind on sayso_docs (owner, (data->'action'->>'kind'), created_at desc) where kind = 'guard';
+-- A buyer's orders across shops, by the PayPal account that paid.
+create index if not exists sayso_cart_payer on sayso_docs ((data->>'payerId')) where kind = 'cart';
+create index if not exists sayso_cart_payer_email on sayso_docs (lower(data->>'payerEmail')) where kind = 'cart';
 `;
 
 type Kind = 'catalog' | 'cart' | 'guard' | 'owner' | 'key' | 'policy' | 'wallet' | 'wallet-key' | 'jobs' | 'tour' | 'seller' | 'media' | 'passkey' | 'push' | 'epoch' | 'once' | 'ai-spend';
@@ -201,6 +205,16 @@ export class PgCartStore implements CartStore {
       limit: 1,
     });
     return found.length > 0;
+  }
+  async listByPayer(payer: PayerRef, limit = 50) {
+    if (!payer.payerId && !payer.email) return [];
+    // Candidates by either key; the same rule as in memory picks the ones that are really this payer's.
+    const found = await this.db.list<StoredCart>('cart', null, {
+      where: ["data->'cart'->>'status' = 'COMPLETED'", "(data->>'payerId' = $3 or lower(data->>'payerEmail') = $4)"],
+      params: [payer.payerId ?? '', (payer.email ?? '').toLowerCase()],
+      limit,
+    });
+    return found.filter((c) => paidByPayer(c, payer));
   }
 }
 

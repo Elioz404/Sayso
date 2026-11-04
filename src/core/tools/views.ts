@@ -77,7 +77,7 @@ export function cartForAgent(cart: PayPalCart) {
   };
 }
 
-const PAYMENT_FOR_BUYER: Record<string, string> = {
+export const PAYMENT_FOR_BUYER: Record<string, string> = {
   paid: 'Charged. The shop is preparing the order.',
   awaiting_owner: 'Authorized in PayPal. The shop confirms it before charging.',
   released: 'Cancelled by the shop. The buyer was not charged and the PayPal hold was released.',

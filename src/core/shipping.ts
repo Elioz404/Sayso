@@ -35,3 +35,25 @@ export function trackingNumber(value: unknown): string | undefined {
   const number = value.replace(/[\s-]/g, '').toUpperCase();
   return /^[A-Z0-9]{8,40}$/.test(number) ? number : undefined;
 }
+
+/** The carrier's own tracking page for a parcel, when Sayso knows it. */
+export function trackingLink(carrier: string, number: string): string | undefined {
+  const n = encodeURIComponent(number);
+  switch (carrier) {
+    case 'USPS':
+      return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${n}`;
+    case 'UPS':
+      return `https://www.ups.com/track?tracknum=${n}`;
+    case 'FEDEX':
+      return `https://www.fedex.com/fedextrack/?trknbr=${n}`;
+    case 'DHL':
+      return `https://www.dhl.com/global-en/home/tracking/tracking-express.html?submit=1&tracking-id=${n}`;
+    default:
+      return undefined;
+  }
+}
+
+/** A carrier's name as people know it ("FedEx" for FEDEX). */
+export function carrierName(code: string): string {
+  return CARRIERS.find(([c]) => c === code)?.[1] ?? code;
+}

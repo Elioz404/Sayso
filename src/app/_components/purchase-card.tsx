@@ -1,8 +1,12 @@
+'use client';
+
 // A purchase, set apart from the conversation around it: a cart the shop priced and that is ready to pay
 // (PayPal's button goes inside), or, once paid, its receipt. The chat and the cart both use it, so an
 // order always looks like an order and never like one more chat message.
 
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import type { BuyerOrder } from '@/core/buyer-orders.ts';
+import { callApi } from './api.ts';
 
 export interface PurchaseLine {
   name: string;
@@ -26,6 +30,26 @@ export interface Purchase {
   status?: string;
   /** When it was paid (ISO). */
   paidAt?: string;
+  /** The order's link (/order/<cartId>) once paid; its status there is the live one. */
+  cartId?: string;
+}
+
+const BADGE: Record<BuyerOrder['state'], string> = { paid: 'Paid with PayPal', shipped: 'Shipped', waiting: 'Authorized in PayPal', refunded: 'Refunded', cancelled: 'Cancelled, not charged' };
+
+/** Where a paid order stands now, from the shop (shipped, refunded...), once the card is shown. */
+function useLiveOrder(cartId?: string): BuyerOrder | undefined {
+  const [order, setOrder] = useState<BuyerOrder>();
+  useEffect(() => {
+    if (!cartId) return;
+    let gone = false;
+    callApi<BuyerOrder>(`/api/orders/${cartId}`, 'GET')
+      .then((o) => !gone && setOrder(o))
+      .catch(() => undefined); // offline or not found: the receipt keeps what it knew
+    return () => {
+      gone = true;
+    };
+  }, [cartId]);
+  return order;
 }
 
 /** What PayPal's payment status means for the buyer, in the words the assistant uses too. */
@@ -42,13 +66,23 @@ export function splitName(name: string): { name: string; detail?: string } {
 }
 
 /** `onCancel`: a cart not paid yet can be dropped. `onDismiss`: a receipt can be put away. */
-export function PurchaseCard({ data, state, children, onCancel, onDismiss }: { data: Purchase; state: 'ready' | 'paid'; children?: ReactNode; onCancel?: () => void; onDismiss?: () => void }) {
+export function PurchaseCard({ data: given, state, children, onCancel, onDismiss }: { data: Purchase; state: 'ready' | 'paid'; children?: ReactNode; onCancel?: () => void; onDismiss?: () => void }) {
   const paid = state === 'paid';
+  const live = useLiveOrder(paid ? given.cartId : undefined);
+  const data: Purchase = live
+    ? {
+        ...given,
+        order: live.number,
+        status: [live.status, live.tracking ? `Tracking: ${live.tracking.carrier} ${live.tracking.number}.` : '', live.refunded && live.state !== 'refunded' ? `Refunded ${live.refunded}.` : '']
+          .filter(Boolean)
+          .join(' '),
+      }
+    : given;
   return (
     <section className={`purchase purchase-${state}`} aria-label={paid ? `Receipt${data.order ? ` for order ${data.order}` : ''}` : 'Cart ready to pay'}>
       <header className="purchase-head">
         <span className="purchase-badge">
-          <span aria-hidden="true">{paid ? '✓' : '●'}</span> {paid ? 'Paid with PayPal' : 'Ready to pay'}
+          <span aria-hidden="true">{paid ? '✓' : '●'}</span> {paid ? (live ? BADGE[live.state] : 'Paid with PayPal') : 'Ready to pay'}
         </span>
         <span className="purchase-meta">
           {data.order && <span className="mono">{data.order}</span>}
@@ -103,6 +137,11 @@ export function PurchaseCard({ data, state, children, onCancel, onDismiss }: { d
           <dd className="purchase-total">{data.total}</dd>
         </dl>
         {data.status && <p className="purchase-status small">{data.status}</p>}
+        {paid && data.cartId && (
+          <a className="purchase-track" href={`/order/${data.cartId}`}>
+            Track this order →
+          </a>
+        )}
         {children}
       </div>
     </section>
