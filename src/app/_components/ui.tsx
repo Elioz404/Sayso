@@ -68,6 +68,7 @@ const PATHS: Record<string, ReactNode> = {
     </>
   ),
   activity: <path d="M3 12h4l3-7 4 14 3-7h4" />,
+  chart: <path d="M4 20V11M10 20V5M16 20v-6M3 20h18" />,
   calendar: (
     <>
       <rect x="4" y="5" width="16" height="15" rx="2" />
