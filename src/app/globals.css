@@ -736,3 +736,12 @@ body:has(.owner) .site-header, body:has(.owner) .site-footer { display: none; }
   .dock { top: auto; width: 100vw; height: 88dvh; border-left: 0; border-top: 1px solid var(--rule); border-radius: 18px 18px 0 0; transform: translateY(100%); }
   html.dock-open { overflow: hidden; }
 }
+
+/* Products the assistant found: photo, shop, price, a link to the product */
+.pcards { display: flex; gap: var(--s2); overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x mandatory; max-width: 100%; }
+.pcard { flex: 0 0 150px; scroll-snap-align: start; display: flex; flex-direction: column; background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius-sm); overflow: hidden; color: inherit; text-decoration: none; }
+.pcard:hover { border-color: var(--rule-strong); }
+.pcard-photo { aspect-ratio: 1 / 1; background: var(--paper-2); }
+.pcard-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pcard-body { display: flex; flex-direction: column; gap: 2px; padding: var(--s2) var(--s3) var(--s3); min-width: 0; }
+.pcard-body b { font-size: var(--t-sm); line-height: 1.3; }

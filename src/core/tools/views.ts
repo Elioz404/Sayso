@@ -3,6 +3,7 @@
 
 import { actionAmount } from '../guard/describe.ts';
 import type { Catalog } from '../catalog.ts';
+import type { Links } from '../links.ts';
 import type { PayPalCart } from '../cart/spec.ts';
 import type { GuardRecord, RecordStatus } from '../guard/types.ts';
 import { DEFAULT_CURRENCY, formatMoney } from '../money.ts';
@@ -45,10 +46,15 @@ export function priceReferenceView(ref: PriceReference) {
   };
 }
 
-/** What one shop offers for a search: matching products, shipping and returns. */
-export function shopOffer(catalog: Catalog, query: ProductQuery) {
+/** What one shop offers for a search: matching products (with their page and photo, to show the buyer), shipping and returns. */
+export function shopOffer(catalog: Catalog, query: ProductQuery, links: Pick<Links, 'productPage' | 'asset'>) {
   const view = catalogView(catalog);
-  return { shop: view.shop, products: searchCatalog(catalog, query), shipping: view.shipping, returns: `${catalog.shop.returnPolicy.days} days` };
+  const photos = new Map(catalog.products.map((p) => [p.id, p.imageUrl]));
+  const products = searchCatalog(catalog, query).map((p) => {
+    const photo = photos.get(p.id);
+    return { ...p, url: links.productPage(catalog.shop.slug, p.id), ...(photo ? { image: links.asset(photo) } : {}) };
+  });
+  return { shop: view.shop, products, shipping: view.shipping, returns: `${catalog.shop.returnPolicy.days} days` };
 }
 
 export function cartForAgent(cart: PayPalCart) {

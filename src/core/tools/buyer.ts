@@ -24,7 +24,7 @@ export const buyerTools: Tool[] = [
     name: 'search_products',
     title: 'Search products',
     description:
-      'Search for products. On a shop endpoint it searches that shop; on the all-shops endpoint it searches every shop (or one, with `shop`) and groups results by shop. Use the variant_id and shop in create_cart.',
+      'Search for products. On a shop endpoint it searches that shop; on the all-shops endpoint it searches every shop (or one, with `shop`) and groups results by shop. Each product has `url` (its page) and, when it has one, `image` (its photo) to show the buyer. Use the variant_id and shop in create_cart.',
     side: 'buyer',
     annotations: { readOnlyHint: true },
     inputSchema: {
@@ -40,12 +40,12 @@ export const buyerTools: Tool[] = [
       if (ctx.shopSlug) {
         const catalog = await liveCatalog(ctx);
         if (input.shop && shopSlugOf(input.shop) !== catalog.shop.slug) throw new ToolError(`This endpoint only sells ${catalog.shop.name}; drop the shop argument.`);
-        return shopOffer(catalog, productQuery(catalog, input));
+        return shopOffer(catalog, productQuery(catalog, input), ctx.services.links);
       }
       const live = (await ctx.services.catalogs.listLive()).filter((c) => !input.shop || c.shop.slug === shopSlugOf(input.shop));
       if (input.shop && live.length === 0) throw new ToolError(`No open shop called ${input.shop}. Use list_shops.`);
       const results = live
-        .map((catalog) => shopOffer(catalog, productQuery(catalog, input)))
+        .map((catalog) => shopOffer(catalog, productQuery(catalog, input), ctx.services.links))
         .filter((offer) => offer.products.length > 0)
         .slice(0, 10)
         .map(({ shop, products, shipping, returns }) => ({ shop: shop.slug, name: shop.name, ships_from: shop.ships_from, products: products.slice(0, 10), shipping, returns }));

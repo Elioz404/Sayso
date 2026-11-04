@@ -97,7 +97,7 @@ The wrap-up lists what happened, the PayPal ids to look up in the sandbox, and w
 
 The demo shop is **Maya Ceramics**, a one-person studio selling mugs, bowls and made-to-order vases. Pay with a PayPal sandbox **personal** account.
 
-1. **Shop as a buyer's assistant.** Add `https://<host>/api/shopping/mcp` as a connector in ChatGPT ([how](#add-sayso-to-chatgpt)) or any MCP client and ask it to buy two speckled mugs. No connector? Use **Shop with AI** at `https://<host>/assistant`, the same tools in the browser. There's only one in stock: the cart comes back with resolution options the assistant applies on its own, then a PayPal link.
+1. **Shop as a buyer's assistant.** Add `https://<host>/api/shopping/mcp` as a connector in ChatGPT ([how](#add-sayso-to-chatgpt)) or any MCP client and ask it to buy two speckled mugs. No connector? Open **Shop with AI**, the side panel on the site's pages (or `https://<host>/assistant`): the same tools in the browser, and it only shops at Sayso. There's only one in stock: the cart comes back with resolution options the assistant applies on its own, then a PayPal link.
 2. **Be the owner.** Open `https://<host>/owner` and press **Open the demo shop**. The order is there; the catalog is an editable grid; **Making** shows made-to-order work gated by PayPal payments.
 3. **Run the shop as the owner's agent.**
    ```bash
@@ -174,7 +174,7 @@ The skill in [`skills/sayso/SKILL.md`](skills/sayso/SKILL.md) teaches an agent t
 | `POST /api/shops/<slug>/mcp` | none | One shop's buyer tools |
 | `POST /api/mcp` | `Bearer sk_agent_...` | `shop_overview`, `list_products`, `update_variant`, `price_check`, `production_board`, `plan_job`, `list_orders`, `get_order`, `refund_order`, `add_tracking`, `send_invoice`, `list_invoices`, `list_approvals`, `get_say_so`, `get_policy`, `propose_policy`, `rule_suggestions`, `propose_rule_suggestion`, `audit_log` |
 
-**A cart card instead of a link.** `create_cart` and `update_cart` declare an MCP Apps UI (`ui://sayso/cart-v1.html`, served by `resources/read`). Hosts that render MCP Apps, ChatGPT included, show the shop's items and totals with a **Pay with PayPal** button that opens the approval; other clients still get `approval_url` in the result. The card is self-contained and makes no requests of its own. On Sayso's own **Shop with AI** page the cart gets PayPal's official checkout button (JS SDK), so the buyer approves without leaving the chat.
+**A cart card instead of a link.** `create_cart` and `update_cart` declare an MCP Apps UI (`ui://sayso/cart-v1.html`, served by `resources/read`). Hosts that render MCP Apps, ChatGPT included, show the shop's items and totals with a **Pay with PayPal** button that opens the approval; other clients still get `approval_url` in the result. The card is self-contained and makes no requests of its own. In Sayso's own **Shop with AI** panel the cart gets PayPal's official checkout button (JS SDK), so the buyer approves without leaving the chat.
 
 Streamable HTTP with stateless JSON responses (protocol `2025-11-25`, `2025-06-18`, `2025-03-26`). Connector screens that take only a URL get a **personal URL** with the key in the path: `/api/mcp/<sk_agent_...>` for the owner's agent, `/api/shopping/mcp/<sk_wallet_...>` for a buyer with saved PayPal. Revoking the key kills the URL.
 

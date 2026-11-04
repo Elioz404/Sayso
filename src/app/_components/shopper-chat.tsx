@@ -80,6 +80,47 @@ function PayPalCheckout({ clientId, cartId, orderId, currency, approvalUrl, onPa
   );
 }
 
+type Found = { name: string; url: string; image?: string; shop: string; from: string; note?: string };
+
+/** The products a search step found, to show as cards (photo, shop, price, link to the product). */
+function foundProducts(step: Step): Found[] {
+  if (!('tool' in step) || step.isError || step.tool !== 'search_products') return [];
+  const r = (step.result ?? {}) as { results?: { name?: string; products?: any[] }[]; shop?: { name?: string }; products?: any[] };
+  const groups = r.results ?? [{ name: r.shop?.name, products: r.products }];
+  return groups
+    .flatMap((g) =>
+      (g.products ?? []).map((p) => {
+        const variants = (p.variants ?? []) as { price: string; in_stock: number | string }[];
+        const prices = variants.map((v) => v.price);
+        const cheapest = prices.sort((a, b) => parseFloat(a.replace(/[^0-9.]/g, '')) - parseFloat(b.replace(/[^0-9.]/g, '')))[0];
+        const madeToOrder = variants.some((v) => typeof v.in_stock === 'string');
+        return { name: p.name, url: p.url, image: p.image, shop: g.name ?? '', from: cheapest ?? '', note: madeToOrder ? 'Made to order' : undefined };
+      }),
+    )
+    .filter((p) => p.url)
+    .slice(0, 6);
+}
+
+function ProductCards({ items }: { items: Found[] }) {
+  return (
+    <div className="pcards" role="list">
+      {items.map((p) => (
+        <a key={p.url} className="pcard" href={p.url} role="listitem">
+          <span className="pcard-photo">{p.image && <img src={p.image} alt="" loading="lazy" />}</span>
+          <span className="pcard-body">
+            <b>{p.name}</b>
+            <span className="small muted">{p.shop}</span>
+            <span className="small">
+              {p.from && `from ${p.from}`}
+              {p.note ? ` · ${p.note}` : ''}
+            </span>
+          </span>
+        </a>
+      ))}
+    </div>
+  );
+}
+
 /** The cart a tool step returned, if it is ready to pay. */
 function payableCart(step: Step): { cartId: string; orderId: string; currency: string; approvalUrl: string } | undefined {
   if (!('tool' in step) || step.isError || !['create_cart', 'update_cart'].includes(step.tool)) return undefined;
@@ -144,11 +185,8 @@ function Rich({ text }: { text: string }) {
   );
 }
 
-/**
- * `ask`: a request from a "Buy with AI" link that opened this page; it starts a fresh conversation.
- * `request`: one sent from elsewhere on the page (the side panel); it continues the conversation.
- */
-export function ShopperChat({ paypalClientId, ask, request, compact = false }: { paypalClientId?: string; ask?: string; request?: { text: string; id: number }; compact?: boolean }) {
+/** `request`: a message sent from elsewhere on the page ("Buy with AI"); it continues the conversation. */
+export function ShopperChat({ paypalClientId, request, compact = false }: { paypalClientId?: string; request?: { text: string; id: number }; compact?: boolean }) {
   const [history, setHistory] = useState<unknown[]>([]);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [text, setText] = useState('');
@@ -157,16 +195,8 @@ export function ShopperChat({ paypalClientId, ask, request, compact = false }: {
   const log = useRef<HTMLDivElement>(null);
   const [paid, setPaid] = useState<Record<string, Paid>>({});
   const onPaidFor = useRef(new Map<string, (p: Paid) => void>());
-  // Pick the conversation back up (after paying in PayPal, or a reload); storage may be unavailable. A
-  // request from a shop's "Buy with AI" link starts a fresh conversation with it, once.
-  const asked = useRef(false);
+  // Pick the conversation back up (after paying in PayPal, a reload, another page); storage may be off.
   useEffect(() => {
-    if (ask && !asked.current) {
-      asked.current = true;
-      window.history.replaceState(null, '', '/assistant');
-      void send(ask, [], []);
-      return;
-    }
     try {
       const saved = JSON.parse(localStorage.getItem(SAVED) ?? 'null') as { history: unknown[]; turns: Turn[] } | null;
       if (saved?.turns?.length) {
@@ -176,8 +206,6 @@ export function ShopperChat({ paypalClientId, ask, request, compact = false }: {
     } catch {
       // nothing saved, or storage is off: start fresh
     }
-    // Runs once on arrival; `send` is this render's.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
     if (request) void send(request.text);
@@ -206,7 +234,7 @@ export function ShopperChat({ paypalClientId, ask, request, compact = false }: {
     if (log.current) log.current.scrollTo({ top: log.current.scrollHeight, behavior: 'smooth' });
   }, [turns, busy]);
 
-  async function send(message: string, fromHistory = history, fromTurns = turns) {
+  async function send(message: string) {
     const said = message.trim();
     if (!said || busy) return;
     setBusy(true);
@@ -214,8 +242,8 @@ export function ShopperChat({ paypalClientId, ask, request, compact = false }: {
     setText('');
     setTurns((t) => [...t, { user: said, steps: [] }]);
     try {
-      const reply = await callApi<{ messages: unknown[]; steps: Step[] }>('/api/shopper', 'POST', { messages: fromHistory, text: said });
-      const nextTurns = [...fromTurns, { user: said, steps: reply.steps }];
+      const reply = await callApi<{ messages: unknown[]; steps: Step[] }>('/api/shopper', 'POST', { messages: history, text: said });
+      const nextTurns = [...turns, { user: said, steps: reply.steps }];
       setHistory(reply.messages);
       setTurns(nextTurns);
       remember(reply.messages, nextTurns);
@@ -273,6 +301,7 @@ export function ShopperChat({ paypalClientId, ask, request, compact = false }: {
                   <div className={`shopper-tool${s.isError ? ' shopper-tool-warn' : ''}`}>
                     <span aria-hidden="true">{s.isError ? '!' : '✓'}</span> Sayso <code>{s.tool}</code> <span className="muted">{summary(s.tool, s.result, s.isError)}</span>
                   </div>
+                  {foundProducts(s).length > 0 && <ProductCards items={foundProducts(s)} />}
                 </div>
               ) : (
                 <div key={k} className="shopper-bot">

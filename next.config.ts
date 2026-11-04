@@ -46,13 +46,11 @@ const nextConfig: NextConfig = {
   },
   async headers() {
     return [
-      // Everything but the generated developer portal (it brings its own scripts and styles) and the
-      // Making board, whose scheduler component (Bryntum) compiles code at runtime, and the buyer's pages
-      // (the shopping assistant, the shops), which load PayPal's checkout button.
-      { source: '/((?!developers|owner/production|assistant|shops|shop/).*)', headers: securityHeaders() },
-      { source: '/assistant', headers: securityHeaders(dev, true) },
-      { source: '/shops', headers: securityHeaders(dev, true) },
-      { source: '/shop/:path*', headers: securityHeaders(dev, true) },
+      // Public pages may load PayPal's checkout button (the Shop with AI panel). The owner's, approval and
+      // checkout pages don't; the Making board's scheduler (Bryntum) compiles code at runtime; the
+      // generated developer portal brings its own scripts and styles.
+      { source: '/((?!developers|owner|approve|handoff|wallet|pay/).*)', headers: securityHeaders(dev, true) },
+      { source: '/((?:owner|approve|handoff|wallet|pay/)(?!/production).*)', headers: securityHeaders() },
       { source: '/owner/production', headers: securityHeaders(true) },
       { source: '/developers/:path*', headers: securityHeaders().filter((h) => h.key !== 'Content-Security-Policy') },
       // The service worker must always be fresh, or a fix to it would wait for the cache to expire.

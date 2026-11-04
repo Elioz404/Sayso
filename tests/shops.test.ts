@@ -30,3 +30,12 @@ test('assistants may name a shop the way people write it', async () => {
   assert.equal(shopSlugOf(' Maya Ceramics '), 'maya-ceramics');
   assert.equal(shopSlugOf('maya-ceramics'), 'maya-ceramics');
 });
+
+test('search results carry each product page and photo, so a buyer can see and open them', async () => {
+  const { stack } = await import('./stack.ts');
+  const s = await stack();
+  const { data } = await s.call('search_products', { query: 'mug' }, { marketplace: true });
+  const mug = data.results[0].products[0];
+  assert.match(mug.url, /\/shop\/maya-ceramics\//);
+  assert.ok(!mug.image || /^https?:\/\//.test(mug.image), 'photos are absolute URLs');
+});
