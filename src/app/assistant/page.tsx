@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: 'Shop with an AI assistant' };
 
 export default async function AssistantPage() {
   await connection();
-  const { links } = await ready();
+  const { links, paypal } = await ready();
   return (
     <main className="wrap page shopper-page">
       <div className="stack" style={{ gap: 'var(--s5)', minWidth: 0 }}>
@@ -21,7 +21,7 @@ export default async function AssistantPage() {
             shop, not the AI, prices every cart.
           </p>
         </div>
-        <ShopperChat />
+        <ShopperChat paypalClientId={paypal.clientId} />
       </div>
       <aside className="panel stack shopper-side">
         <h2>Use your own assistant</h2>

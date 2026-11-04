@@ -9,6 +9,86 @@
 import { useEffect, useRef, useState } from 'react';
 import { callApi } from './api.ts';
 
+declare global {
+  interface Window {
+    paypal?: { Buttons(options: Record<string, unknown>): { render(el: HTMLElement): Promise<void> } };
+  }
+}
+
+/** PayPal's JS SDK, loaded once per page (and currency). */
+const sdk = new Map<string, Promise<void>>();
+function loadPayPal(clientId: string, currency: string): Promise<void> {
+  const src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(clientId)}&currency=${encodeURIComponent(currency)}&intent=authorize&components=buttons`;
+  if (!sdk.has(src)) {
+    sdk.set(
+      src,
+      new Promise((resolve, reject) => {
+        const tag = document.createElement('script');
+        tag.src = src;
+        tag.onload = () => resolve();
+        tag.onerror = () => reject(new Error("PayPal's button didn't load. Use the link in the message instead."));
+        document.head.appendChild(tag);
+      }),
+    );
+  }
+  return sdk.get(src)!;
+}
+
+type Paid = { order?: string; status?: string; total?: { value: string; currency_code: string } };
+
+/**
+ * PayPal's own button for the cart's PayPal order: the buyer approves in PayPal's window without leaving
+ * the chat, then Sayso completes the order exactly as the return page would (stock, Guard, capture).
+ */
+function PayPalCheckout({ clientId, cartId, orderId, currency, approvalUrl, onPaid }: { clientId: string; cartId: string; orderId: string; currency: string; approvalUrl: string; onPaid: (paid: Paid) => void }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState<string>();
+  useEffect(() => {
+    let gone = false;
+    loadPayPal(clientId, currency)
+      .then(() => {
+        if (gone || !box.current || !window.paypal) return;
+        box.current.innerHTML = '';
+        return window.paypal
+          .Buttons({
+            style: { layout: 'vertical', shape: 'pill', color: 'gold', label: 'pay', height: 44 },
+            createOrder: () => orderId,
+            onApprove: async (data: { orderID: string }) => {
+              try {
+                onPaid(await callApi<Paid>('/api/pay/complete', 'POST', { cart: cartId, token: data.orderID }));
+              } catch (err) {
+                setError((err as Error).message);
+              }
+            },
+            onError: () => setError('PayPal could not open this payment. Use the link in the message instead.'),
+          })
+          .render(box.current);
+      })
+      .catch((err: Error) => setError(err.message));
+    return () => {
+      gone = true;
+    };
+  }, [clientId, cartId, orderId, currency, onPaid]);
+  return (
+    <div className="shopper-checkout">
+      <div ref={box} />
+      {error && <p className="small error">{error}</p>}
+      <a className="small muted" href={approvalUrl} target="_blank" rel="noopener noreferrer">
+        Or open PayPal in a new tab
+      </a>
+    </div>
+  );
+}
+
+/** The cart a tool step returned, if it is ready to pay. */
+function payableCart(step: Step): { cartId: string; orderId: string; currency: string; approvalUrl: string } | undefined {
+  if (!('tool' in step) || step.isError || !['create_cart', 'update_cart'].includes(step.tool)) return undefined;
+  const r = (step.result ?? {}) as { cart_id?: string; status?: string; approval_url?: string; totals?: { total?: { currency_code?: string } } };
+  const orderId = r.approval_url ? new URL(r.approval_url).searchParams.get('token') : null;
+  if (!r.cart_id || !orderId || r.status === 'COMPLETED') return undefined;
+  return { cartId: r.cart_id, orderId, currency: r.totals?.total?.currency_code ?? 'USD', approvalUrl: r.approval_url! };
+}
+
 type Step = { tool: string; args: unknown; result: unknown; isError: boolean } | { text: string };
 type Turn = { user: string; steps: Step[] };
 
@@ -52,8 +132,8 @@ function Rich({ text }: { text: string }) {
         if (link) {
           const pay = /paypal\.com/.test(link[2]);
           return (
-            <a key={i} href={link[2]} target="_blank" rel="noopener noreferrer" className={pay ? 'btn btn-paypal btn-small shopper-pay' : undefined}>
-              {link[1]}
+            <a key={i} href={link[2]} target="_blank" rel="noopener noreferrer" title={pay ? 'Opens PayPal in a new tab' : undefined}>
+              {pay ? 'open PayPal in a new tab' : link[1]}
             </a>
           );
         }
@@ -64,13 +144,15 @@ function Rich({ text }: { text: string }) {
   );
 }
 
-export function ShopperChat() {
+export function ShopperChat({ paypalClientId }: { paypalClientId?: string }) {
   const [history, setHistory] = useState<unknown[]>([]);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const log = useRef<HTMLDivElement>(null);
+  const [paid, setPaid] = useState<Record<string, Paid>>({});
+  const onPaidFor = useRef(new Map<string, (p: Paid) => void>());
   // Pick the conversation back up (after paying in PayPal, or a reload); storage may be unavailable.
   useEffect(() => {
     try {
@@ -127,6 +209,26 @@ export function ShopperChat() {
     }
   }
 
+  // Only the newest priced cart gets the button: an older one may have been changed since.
+  const latestOrder = turns.flatMap((t) => t.steps).map(payableCart).filter(Boolean).at(-1)?.orderId;
+  /** After PayPal: mark the cart paid and let the assistant confirm the order with the shop. */
+  function onPaid(cartId: string) {
+    if (!onPaidFor.current.has(cartId)) {
+      onPaidFor.current.set(cartId, (p: Paid) => {
+        setPaid((all) => ({ ...all, [cartId]: p }));
+        void send("I've approved the payment in PayPal.");
+      });
+    }
+    return onPaidFor.current.get(cartId)!;
+  }
+  function checkoutFor(step: Step) {
+    const cart = payableCart(step);
+    if (!cart || cart.orderId !== latestOrder) return null;
+    const done = paid[cart.cartId];
+    if (done) return <div className="shopper-paid">✓ Paid with PayPal{done.order ? ` · order ${done.order}` : ''}</div>;
+    return paypalClientId ? <PayPalCheckout clientId={paypalClientId} {...cart} onPaid={onPaid(cart.cartId)} /> : null;
+  }
+
   return (
     <div className="shopper">
       <div className="shopper-log" aria-live="polite" ref={log}>
@@ -148,8 +250,11 @@ export function ShopperChat() {
             <div className="shopper-user">{t.user}</div>
             {t.steps.map((s, k) =>
               'tool' in s ? (
-                <div key={k} className={`shopper-tool${s.isError ? ' shopper-tool-warn' : ''}`}>
-                  <span aria-hidden="true">{s.isError ? '!' : '✓'}</span> Sayso <code>{s.tool}</code> <span className="muted">{summary(s.tool, s.result, s.isError)}</span>
+                <div key={k} className="stack" style={{ gap: 'var(--s2)' }}>
+                  <div className={`shopper-tool${s.isError ? ' shopper-tool-warn' : ''}`}>
+                    <span aria-hidden="true">{s.isError ? '!' : '✓'}</span> Sayso <code>{s.tool}</code> <span className="muted">{summary(s.tool, s.result, s.isError)}</span>
+                  </div>
+                  {checkoutFor(s)}
                 </div>
               ) : (
                 <div key={k} className="shopper-bot">
