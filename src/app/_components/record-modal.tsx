@@ -34,14 +34,14 @@ export function RecordModal({ id, onClose }: { id: string; onClose: () => void }
   return (
     <dialog
       ref={dialog}
-      className="receipt-dialog"
+      className="modal"
       aria-label="Activity record"
       onClose={onClose}
       // A click on the dimmed backdrop (the dialog itself, outside its content) closes it.
       onClick={(e) => e.target === dialog.current && dialog.current.close()}
     >
-      <div className="receipt-dialog-body">
-        <button type="button" className="receipt-close" aria-label="Close" onClick={() => dialog.current?.close()}>
+      <div className="modal-body">
+        <button type="button" className="modal-close" aria-label="Close" onClick={() => dialog.current?.close()}>
           ×
         </button>
         {data ? (

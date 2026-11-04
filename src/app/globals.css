@@ -1032,14 +1032,62 @@ span.sell-qty { border-color: transparent; background: transparent; padding: 0; 
 .receipt-bad { color: var(--stop); }
 .receipt-page { background: var(--sheet); border: 1px solid var(--rule); border-radius: 20px; box-shadow: var(--shadow); padding: var(--s5); position: relative; }
 .receipt-page .receipt-head { padding-right: 0; }
-.receipt-dialog { width: min(520px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; border: 1px solid var(--rule); border-radius: 20px; background: var(--sheet); color: var(--ink); box-shadow: var(--shadow); overflow: auto; }
-.receipt-dialog::backdrop { background: rgb(20 16 13 / 0.45); }
-.receipt-dialog-body { position: relative; padding: var(--s5); }
-.receipt-close { position: absolute; top: var(--s3); right: var(--s3); width: 32px; height: 32px; border: 0; border-radius: 50%; background: var(--paper-2); color: var(--ink-2); font-size: 1.25rem; line-height: 1; cursor: pointer; }
-.receipt-close:hover { color: var(--ink); }
+.modal { width: min(520px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; border: 1px solid var(--rule); border-radius: 20px; background: var(--sheet); color: var(--ink); box-shadow: var(--shadow); overflow: auto; }
+.modal::backdrop { background: rgb(20 16 13 / 0.45); }
+.modal-body { position: relative; padding: var(--s5); }
+.modal-close { position: absolute; top: var(--s3); right: var(--s3); width: 32px; height: 32px; border: 0; border-radius: 50%; background: var(--paper-2); color: var(--ink-2); font-size: 1.25rem; line-height: 1; cursor: pointer; }
+.modal-close:hover { color: var(--ink); }
 .receipt-loading { display: flex; flex-direction: column; gap: var(--s3); padding-block: var(--s2); }
 .receipt-loading span { height: 14px; border-radius: 6px; background: var(--paper-2); }
 .receipt-loading span:nth-child(2) { height: 40px; width: 50%; }
 .receipt-loading span:nth-child(3) { width: 80%; }
 .cell-stopped { color: var(--ink-3); text-decoration: line-through; }
-@media (max-width: 480px) { .receipt-lines { grid-template-columns: minmax(0, 1fr); gap: 2px var(--s3); } .receipt-lines dd + dt { margin-top: var(--s2); } .receipt-dialog-body, .receipt-page { padding: var(--s4); } }
+@media (max-width: 480px) { .receipt-lines { grid-template-columns: minmax(0, 1fr); gap: 2px var(--s3); } .receipt-lines dd + dt { margin-top: var(--s2); } .modal-body, .receipt-page { padding: var(--s4); } }
+/* ---------- Agents: who is connected, what any agent may do, where shoppers' AI finds the shop ---------- */
+.agents-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: var(--s5); align-items: start; }
+.agents-panel { display: flex; flex-direction: column; gap: var(--s4); min-width: 0; }
+.agent-list { list-style: none; margin: 0; padding: 0; }
+.agent-row { display: grid; grid-template-columns: 40px minmax(0, 1fr) minmax(0, 210px) auto; gap: var(--s4); align-items: center; padding: var(--s3) 0; }
+.agent-row + .agent-row { border-top: 1px solid var(--rule); }
+.agent-row-off { opacity: 0.6; }
+.agent-avatar { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--agent-soft); color: var(--agent); flex: none; }
+.agent-row-off .agent-avatar { background: var(--paper-2); color: var(--ink-3); }
+.agent-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.agent-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-use { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.agent-waiting { color: var(--hold); font-weight: 600; text-decoration: none; }
+.agent-waiting:hover { text-decoration: underline; }
+.agent-end { justify-self: end; }
+.agents-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--s2); padding: var(--s6) var(--s4); border: 1px dashed var(--rule-strong); border-radius: var(--radius); }
+.agents-empty .btn { margin-top: var(--s2); }
+.agents-revoked summary { cursor: pointer; color: var(--ink-3); }
+.agents-revoked .agent-list { margin-top: var(--s2); }
+.agent-can { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s4); }
+.agent-can li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: var(--s3); align-items: start; }
+.agent-can li > span:last-child { display: flex; flex-direction: column; gap: 2px; }
+.can-mark { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; }
+.can-ok { background: var(--ok-soft); color: var(--ok); }
+.can-hold { background: var(--hold-soft); color: var(--hold); }
+.can-stop { background: var(--stop-soft); color: var(--stop); }
+.agents-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s4); }
+.connect { display: flex; flex-direction: column; gap: var(--s4); }
+.connect-badge { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; background: var(--agent-soft); color: var(--agent); }
+.connect-badge-ok { background: var(--ok-soft); color: var(--ok); }
+.connect-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s4); counter-reset: connect; }
+.connect-steps li { display: flex; flex-direction: column; gap: var(--s1); padding-left: 32px; position: relative; counter-increment: connect; }
+.connect-steps li::before { content: counter(connect); position: absolute; left: 0; top: 0; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--paper-2); font-size: var(--t-xs); font-weight: 700; color: var(--ink-2); }
+.connect-steps .copy-field { margin-top: var(--s1); }
+.connect-more summary { cursor: pointer; color: var(--ink-3); }
+.connect-more > div { margin-top: var(--s2); }
+.connect-actions { display: flex; justify-content: flex-end; gap: var(--s2); }
+@media (max-width: 1080px) { .agents-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) {
+  .agent-row { grid-template-columns: 40px minmax(0, 1fr) auto; row-gap: var(--s1); align-items: start; }
+  .agent-name { grid-column: 2; grid-row: 1; }
+  .agent-end { grid-column: 3; grid-row: 1; }
+  .agent-use { grid-column: 2 / 4; grid-row: 2; flex-direction: row; flex-wrap: wrap; gap: 0 var(--s2); }
+  .agent-use > * + *::before { content: '· '; color: var(--ink-3); }
+  /* Asking "Revoke now?" needs the whole width. */
+  .agent-row:has(.agent-end .btn-danger) .agent-end { grid-column: 2 / 4; grid-row: 3; }
+  .agents-links { grid-template-columns: minmax(0, 1fr); }
+}

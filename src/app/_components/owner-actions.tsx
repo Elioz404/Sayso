@@ -367,51 +367,128 @@ export function PublishButton() {
 }
 
 /** Issues an agent key and shows it as a personal MCP URL (what assistant connector screens take). */
-export function NewKey() {
+interface IssuedKey {
+  label: string;
+  key: string;
+  mcp_url: string;
+  cli_login: string;
+}
+
+/**
+ * "Connect an agent", in a modal: name it, then copy its key once, as the personal URL an MCP app takes,
+ * a terminal login, or a bearer token for clients that send headers (`endpoint`).
+ */
+export function ConnectAgent({ endpoint, quiet = false }: { endpoint: string; quiet?: boolean }) {
   const router = useRouter();
-  const [issued, setIssued] = useState<{ mcp_url: string; cli_login: string }>();
-  const [label, setLabel] = useState('');
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [name, setName] = useState('');
+  const [issued, setIssued] = useState<IssuedKey>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const close = () => dialog.current?.close();
+
   return (
-    <div className="stack">
-      <form
-        className="row"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          setBusy(true);
+    <>
+      <button
+        type="button"
+        className={`btn${quiet ? '' : ' btn-primary'}`}
+        onClick={() => {
+          setIssued(undefined);
+          setName('');
           setError(undefined);
-          try {
-            setIssued(await callApi<{ mcp_url: string; cli_login: string }>('/api/owner/keys', 'POST', { label: label || 'my agent' }));
-            setLabel('');
-            router.refresh();
-          } catch (err) {
-            setError((err as Error).message);
-          }
-          setBusy(false);
+          dialog.current?.showModal();
         }}
       >
-        <label htmlFor="key-label" className="sr-only">Key label</label>
-        <input id="key-label" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Which agent? e.g. ChatGPT, my laptop" maxLength={60} style={{ flex: 1, minWidth: 180 }} />
-        <button className="btn btn-primary" disabled={busy}>
-          {busy ? 'Connecting...' : 'Connect an agent'}
-        </button>
-      </form>
-      {issued && (
-        <div className="stack" style={{ gap: 'var(--s3)' }}>
-          <div className="field">
-            <span className="field-label">Personal MCP URL: paste it as a connector in ChatGPT or any MCP client</span>
-            <CopyField value={issued.mcp_url} secret />
-          </div>
-          <div className="field">
-            <span className="field-label">Or from a terminal</span>
-            <CopyField value={issued.cli_login} secret />
-          </div>
-          <span className="small soft">Shown only now. Treat it like a password; revoke it here if it leaks.</span>
+        <Icon name="plus" size={16} /> Connect an agent
+      </button>
+      <dialog
+        ref={dialog}
+        className="modal"
+        aria-labelledby="connect-title"
+        // The backdrop closes it, except while the key is on screen: it is shown only once.
+        onClick={(e) => e.target === dialog.current && !issued && close()}
+      >
+        <div className="modal-body">
+          <button type="button" className="modal-close" aria-label="Close" onClick={close}>
+            ×
+          </button>
+          {issued ? (
+            <div className="connect">
+              <span className="connect-badge connect-badge-ok" aria-hidden="true">
+                <Icon name="check" size={20} />
+              </span>
+              <div className="stack" style={{ gap: 4 }}>
+                <h2 id="connect-title" className="h3">
+                  {issued.label} has its key
+                </h2>
+                <p className="small soft">Copy it now. Sayso shows it only once.</p>
+              </div>
+              <ol className="connect-steps">
+                <li>
+                  <b>In ChatGPT or any MCP app</b>
+                  <span className="small soft">Add a custom connector and paste this URL.</span>
+                  <CopyField value={issued.mcp_url} secret />
+                </li>
+                <li>
+                  <b>Or in a terminal</b>
+                  <CopyField value={issued.cli_login} secret />
+                </li>
+              </ol>
+              <details className="connect-more">
+                <summary className="small">Clients that send headers</summary>
+                <div className="stack" style={{ gap: 'var(--s2)' }}>
+                  <CopyField value={endpoint} />
+                  <CopyField value={`Authorization: Bearer ${issued.key}`} secret />
+                </div>
+              </details>
+              <p className="small muted">It works like a password. If it leaks, revoke it here.</p>
+              <button type="button" className="btn btn-primary" onClick={close}>
+                Done
+              </button>
+            </div>
+          ) : (
+            <form
+              className="connect"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setBusy(true);
+                setError(undefined);
+                try {
+                  setIssued(await callApi<IssuedKey>('/api/owner/keys', 'POST', { label: name.trim() || 'My agent' }));
+                  router.refresh();
+                } catch (err) {
+                  setError((err as Error).message);
+                }
+                setBusy(false);
+              }}
+            >
+              <span className="connect-badge" aria-hidden="true">
+                <Icon name="agent" size={20} />
+              </span>
+              <div className="stack" style={{ gap: 4 }}>
+                <h2 id="connect-title" className="h3">
+                  Connect an agent
+                </h2>
+                <p className="small soft">Each agent gets its own key, so you see what it did and can cut it off alone.</p>
+              </div>
+              <div className="field">
+                <label htmlFor="agent-name">Name</label>
+                <input id="agent-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="ChatGPT, my laptop…" maxLength={60} autoComplete="off" />
+              </div>
+              {error && <p className="error small">{error}</p>}
+              <div className="connect-actions">
+                <button type="button" className="btn btn-quiet" onClick={close}>
+                  Cancel
+                </button>
+                <button className="btn btn-primary" disabled={busy}>
+                  {busy ? 'Creating the key…' : 'Create key'}
+                </button>
+              </div>
+            </form>
+          )}
         </div>
-      )}
-      {error && <p className="error small">{error}</p>}
-    </div>
+      </dialog>
+    </>
   );
 }
 
