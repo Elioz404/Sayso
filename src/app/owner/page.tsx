@@ -1,5 +1,6 @@
-// Overview: the one job first (what's waiting for the owner), then a single row of figures and the
-// latest orders. Everything else lives in its own view.
+// Overview: the one job first (what's waiting for the owner), then what Sayso noticed, a short setup
+// checklist while the shop isn't fully set up, a single row of figures and the latest orders. Everything
+// else lives in its own view.
 import { actionAmount } from '@/core/guard/describe.ts';
 import { ConnectPayouts, Decision, KeepPrice, PublishButton } from '@/app/_components/owner-actions.tsx';
 import { actionLabel, Icon, Status, Who } from '@/app/_components/ui.tsx';
@@ -31,6 +32,50 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const refunded = orders.reduce((sum, o) => sum + o.refundedMinor, 0);
   const low = catalog.products.flatMap((p) => p.variants).filter((v) => v.madeToOrderDays === undefined && v.inventory <= 1).length;
   const recent = orders.filter((o) => o.number).slice(0, 5);
+  const isDraft = (shop.status ?? 'live') === 'draft';
+
+  // Setting up is one short checklist, not a stack of notices. Done steps stay ticked until all are done.
+  const setup: { key: string; title: string; note: string; done: boolean; action?: React.ReactNode }[] = [];
+  if (!demo) {
+    setup.push({
+      key: 'publish',
+      title: isDraft ? 'Publish your shop' : 'Your shop is live',
+      note: isDraft ? (unconfirmed.length ? 'Confirm the prices below, then publish so AI shoppers can buy.' : 'Publishing registers it with PayPal and opens it to AI shoppers.') : 'AI shoppers can find and buy from it.',
+      done: !isDraft,
+      action: <PublishButton />,
+    });
+    if (drafts > 0)
+      setup.push({
+        key: 'drafts',
+        title: `Price ${drafts} product${drafts === 1 ? '' : 's'} from your photos`,
+        note: 'Buyers don’t see them until you set a price.',
+        done: false,
+        action: (
+          <a className="btn btn-small" href="/owner/catalog/new">
+            Set prices
+          </a>
+        ),
+      });
+    if (payouts.enabled && !onTour)
+      setup.push({
+        key: 'payouts',
+        title: shop.payout ? 'Sales go straight into your PayPal' : 'Get paid into your own PayPal',
+        note: shop.payout ? `PayPal account ${shop.payout.merchantId.slice(-4).padStart(8, '•')}. Sayso never holds your money.` : 'Sales go to the sandbox account until you connect yours. You allow taking payments and refunds, nothing else.',
+        done: Boolean(shop.payout),
+        action: <ConnectPayouts />,
+      });
+    setup.push({
+      key: 'phone',
+      title: passkey && devices.length > 0 ? 'Approvals are on your phone' : 'Approve from your phone',
+      note: passkey && devices.length > 0 ? 'A ping when an agent needs you; your fingerprint or face says OK.' : 'Get a ping when an agent needs you, and say OK with your fingerprint or face.',
+      done: Boolean(passkey && devices.length > 0),
+      action: (
+        <a className="btn btn-small" href="/owner/phone">
+          Set it up
+        </a>
+      ),
+    });
+  }
 
   return (
     <>
@@ -41,108 +86,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         </div>
       </div>
 
-      {!demo && (!passkey || devices.length === 0) && (
-        <div className="callout callout-phone">
-          <Icon name="phone" size={22} />
-          <div className="stack" style={{ gap: 2 }}>
-            <b>Take your shop to your phone</b>
-            <span className="small soft">
-              {passkey ? 'Turn on notifications so you know the moment an agent needs you.' : 'Get a ping when an agent needs you, and approve with your fingerprint or face, so no one else can say OK for you.'}
-            </span>
-          </div>
-          <a className="btn btn-small" href="/owner/phone">
-            Set it up
-          </a>
-        </div>
-      )}
-
-      {drafts > 0 && (
-        <div className="callout">
-          <span className="small">
-            <b>
-              {drafts} product{drafts === 1 ? '' : 's'} from your photos {drafts === 1 ? 'is' : 'are'} waiting for a price.
-            </b>{' '}
-            Buyers don’t see {drafts === 1 ? 'it' : 'them'} yet.
-          </span>
-          <a className="btn btn-small" href="/owner/catalog/new">
-            Set prices
-          </a>
-        </div>
-      )}
-
-      {(shop.status ?? 'live') === 'draft' && (
-        <div className="callout">
-          <div className="stack" style={{ gap: 2 }}>
-            <b>Your shop is a draft</b>
-            <span className="small soft">
-              {unconfirmed.length
-                ? 'Confirm the prices below, check the catalog, then publish to register it with PayPal and let AI shoppers buy.'
-                : 'Check the catalog, then publish to register it with PayPal and let AI shoppers buy.'}
-            </span>
-          </div>
-          <PublishButton />
-        </div>
-      )}
-
-      {unconfirmed.length > 0 && (
-        <section className="block" aria-labelledby="confirm">
-          <div className="block-head">
-            <h2 id="confirm">Prices to confirm</h2>
-            <a className="note" href="/owner/catalog">
-              Set your own in Catalog
-            </a>
-          </div>
-          <ul className="list">
-            {unconfirmed.map(({ product, variant }) => {
-              const s = variant.priceToConfirm?.suggested;
-              return (
-                <li key={variant.id} className="spread confirm-row">
-                  <span className="stack" style={{ gap: 2, minWidth: 0 }}>
-                    <b>
-                      {product.name}
-                      {variant.title !== 'Default' ? ` (${variant.title})` : ''}
-                    </b>
-                    <span className="small soft">
-                      {s
-                        ? `Similar items sell for ${money(s.low)} to ${money(s.high)} (${s.listings} listings).`
-                        : 'No price yet, and too few similar items to suggest one. Set it in Catalog.'}
-                    </span>
-                  </span>
-                  {s && <KeepPrice variantId={variant.id} price={toMoney(variant.price, shop.currency).value} label={`Keep ${money(variant.price)}`} />}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
-
       {outcome && <div className={`callout small ${shop.payout ? 'callout-say' : ''}`}>{outcome}</div>}
-
-      {payouts.enabled && !demo && !onTour && (
-        <div className={`panel payouts ${shop.payout ? 'payouts-on' : ''}`}>
-          <div className="stack" style={{ gap: 4, minWidth: 0 }}>
-            <b>{shop.payout ? 'Sales are paid straight into your PayPal' : 'Get paid into your own PayPal'}</b>
-            <span className="small soft">
-              {shop.payout
-                ? `PayPal account ${shop.payout.merchantId.slice(-4).padStart(8, '•')}. Refunds come out of it too, only with your rules or your OK. Sayso never holds your money.`
-                : "Right now sales go to Sayso's sandbox account. Connect your PayPal and every sale lands in it directly; you allow Sayso to take payments and refund them for you, nothing else."}
-            </span>
-          </div>
-          <ConnectPayouts again={Boolean(shop.payout)} />
-        </div>
-      )}
-
-      {suggestions.length > 0 && (
-        <div className="callout callout-say">
-          <div className="stack" style={{ gap: 2 }}>
-            <b>{suggestions[0].title}?</b>
-            <span className="small soft">{suggestions[0].evidence}</span>
-          </div>
-          <a className="btn btn-small" href="/owner/rules#earned">
-            Review
-          </a>
-        </div>
-      )}
 
       <section className="block" aria-labelledby="waiting">
         <div className="block-head">
@@ -183,6 +127,74 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           </ul>
         )}
       </section>
+
+      {suggestions.length > 0 && (
+        <a className="nudge" href="/owner/rules#earned">
+          <span className="stack" style={{ gap: 2, minWidth: 0 }}>
+            <span className="small nudge-label">Sayso noticed</span>
+            <b>{suggestions[0].title}?</b>
+            <span className="small soft">{suggestions[0].evidence}</span>
+          </span>
+          <span className="btn btn-small">Review</span>
+        </a>
+      )}
+
+      {setup.some((step) => !step.done) && (
+        <section className="block" aria-labelledby="setup">
+          <div className="block-head">
+            <h2 id="setup">Finish setting up</h2>
+            <span className="note">
+              {setup.filter((step) => step.done).length} of {setup.length} done
+            </span>
+          </div>
+          <ol className="list setup">
+            {setup.map((step, i) => (
+              <li key={step.key} className={step.done ? 'setup-done' : undefined}>
+                <span className="setup-mark" aria-hidden="true">
+                  {step.done ? <Icon name="check" size={14} /> : i + 1}
+                </span>
+                <span className="stack" style={{ gap: 2, minWidth: 0 }}>
+                  <b>{step.title}</b>
+                  <span className="small soft">{step.note}</span>
+                </span>
+                {!step.done && step.action}
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+
+      {unconfirmed.length > 0 && (
+        <section className="block" aria-labelledby="confirm">
+          <div className="block-head">
+            <h2 id="confirm">Prices to confirm</h2>
+            <a className="note" href="/owner/catalog">
+              Set your own in Catalog
+            </a>
+          </div>
+          <ul className="list">
+            {unconfirmed.map(({ product, variant }) => {
+              const s = variant.priceToConfirm?.suggested;
+              return (
+                <li key={variant.id} className="spread confirm-row">
+                  <span className="stack" style={{ gap: 2, minWidth: 0 }}>
+                    <b>
+                      {product.name}
+                      {variant.title !== 'Default' ? ` (${variant.title})` : ''}
+                    </b>
+                    <span className="small soft">
+                      {s
+                        ? `Similar items sell for ${money(s.low)} to ${money(s.high)} (${s.listings} listings).`
+                        : 'No price yet, and too few similar items to suggest one. Set it in Catalog.'}
+                    </span>
+                  </span>
+                  {s && <KeepPrice variantId={variant.id} price={toMoney(variant.price, shop.currency).value} label={`Keep ${money(variant.price)}`} />}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
 
       <section className="block" aria-labelledby="figures">
         <h2 id="figures" className="sr-only">
