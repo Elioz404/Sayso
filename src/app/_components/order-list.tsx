@@ -37,7 +37,8 @@ export function ordersInThisBrowser(): string[] {
  * `pageSize`: how many show before "Show more". `active`: look again whenever it becomes true (the tab
  * opening), so a status that changed shows up. `signIn`: offer Log in with PayPal when not signed in.
  */
-export function OrderList({ pageSize, active = true, signIn = false }: { pageSize: number; active?: boolean; signIn?: boolean }) {
+/** `more`: "button" shows the next page here; "link" (the panel) points to My orders instead. */
+export function OrderList({ pageSize, active = true, signIn = false, more = 'button' }: { pageSize: number; active?: boolean; signIn?: boolean; more?: 'button' | 'link' }) {
   const [listed, setListed] = useState<Listed>();
   const [failed, setFailed] = useState(false);
   const [view, setView] = useState<(typeof VIEWS)[number]['id']>('all');
@@ -61,15 +62,14 @@ export function OrderList({ pageSize, active = true, signIn = false }: { pageSiz
     <div className="olist">
       {signIn && !listed.signedIn && listed.canSignIn && (
         <div className="orders-signin">
-          <span className="small">See every order you paid with PayPal, from any browser, and ask for refunds.</span>
+          <span className="small">Your orders on any device.</span>
           <a className="btn btn-paypal btn-small" href="/api/orders/signin">
             Log in with PayPal
           </a>
         </div>
       )}
-      {signIn && listed.signedIn && <span className="small muted">Signed in with PayPal{listed.who ? ` as ${listed.who}` : ''}</span>}
       {listed.orders.length === 0 ? (
-        <p className="small muted">No orders yet. What you buy on Sayso shows up here.</p>
+        <p className="small muted">No orders yet.</p>
       ) : (
         <>
           {listed.orders.length > 1 && (
@@ -97,11 +97,16 @@ export function OrderList({ pageSize, active = true, signIn = false }: { pageSiz
               <OrderRow key={o.id} order={o} />
             ))}
           </ul>
-          {orders.length > shown && (
-            <button type="button" className="btn btn-small olist-more" onClick={() => setShown((n) => n + pageSize)}>
-              Show {Math.min(pageSize, orders.length - shown)} more of {orders.length - shown}
-            </button>
-          )}
+          {orders.length > shown &&
+            (more === 'link' ? (
+              <a className="small olist-more" href="/orders">
+                See all {orders.length} →
+              </a>
+            ) : (
+              <button type="button" className="btn btn-small olist-more" onClick={() => setShown((n) => n + pageSize)}>
+                Show {Math.min(pageSize, orders.length - shown)} more
+              </button>
+            ))}
         </>
       )}
     </div>

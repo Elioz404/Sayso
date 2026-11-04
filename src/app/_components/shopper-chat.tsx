@@ -144,7 +144,8 @@ function ordersInView(): string[] {
 }
 
 /** `request`: a message sent from elsewhere on the page ("Buy with AI"); it continues the conversation. */
-export function ShopperChat({ paypalClientId, request, compact = false }: { paypalClientId?: string; request?: { text: string; id: number }; compact?: boolean }) {
+/** `onTurns`: whether there is a conversation (the panel shows "New chat" then). `reset`: a new value starts over. */
+export function ShopperChat({ paypalClientId, request, compact = false, onTurns, reset }: { paypalClientId?: string; request?: { text: string; id: number }; compact?: boolean; onTurns?: (has: boolean) => void; reset?: number }) {
   const [history, setHistory] = useState<unknown[]>([]);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [text, setText] = useState('');
@@ -190,6 +191,12 @@ export function ShopperChat({ paypalClientId, request, compact = false }: { payp
     // A new request is a new id; `send` is this render's.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request?.id]);
+  useEffect(() => onTurns?.(turns.length > 0), [turns.length, onTurns]);
+  useEffect(() => {
+    if (reset) startOver();
+    // Only a new `reset` starts over.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reset]);
   function startOver() {
     setHistory([]);
     setTurns([]);
@@ -284,7 +291,7 @@ export function ShopperChat({ paypalClientId, request, compact = false }: { payp
       shipping: show(cart.totals?.shipping),
       tax: show(cart.totals?.tax),
       total: show(done?.total ?? cart.totals?.total),
-      status: done ? [told?.order?.payment ?? paymentWords(done.status), tracking, refunded].filter(Boolean).join(' ') : 'Priced by the shop, with shipping and tax.',
+      ...(done ? { status: [told?.order?.payment ?? paymentWords(done.status), tracking, refunded].filter(Boolean).join(' ') } : {}),
       ...(done?.at ? { paidAt: done.at } : {}),
       ...(done && cart.cart_id ? { cartId: cart.cart_id } : {}),
     };
@@ -380,7 +387,7 @@ export function ShopperChat({ paypalClientId, request, compact = false }: { payp
         {turns.length === 0 && (
           <div className="shopper-empty">
             <b>Ask for something to buy.</b>
-            <span className="small soft">The assistant searches every Sayso shop, builds a cart the shop prices, and you pay with PayPal&apos;s button right here. It&apos;s the PayPal sandbox: nothing real moves.</span>
+            <span className="small soft">It searches every Sayso shop, and you pay with PayPal right here.</span>
             <div className="row" style={{ flexWrap: 'wrap', gap: 'var(--s2)' }}>
               {SUGGESTIONS.map((s) => (
                 <button key={s} type="button" className="btn btn-small" onClick={() => void send(s)}>
@@ -388,6 +395,9 @@ export function ShopperChat({ paypalClientId, request, compact = false }: { payp
                 </button>
               ))}
             </div>
+            <a className="small" href="/docs#chatgpt">
+              Or use your own assistant →
+            </a>
           </div>
         )}
         {turns.map((t, i) => {
@@ -422,14 +432,6 @@ export function ShopperChat({ paypalClientId, request, compact = false }: { payp
         {busy && <div className="shopper-tool shopper-thinking">{busy === 'confirming' ? 'Confirming your order with the shop…' : "Using Sayso's tools…"}</div>}
       </div>
       {error && <p className="error">{error}</p>}
-      {turns.length > 0 && (
-        <p className="small muted shopper-note">
-          Kept in this browser. Your orders are also in <a href="/orders">My orders</a>, from any browser with PayPal.{' '}
-          <button type="button" className="link-button" onClick={startOver} disabled={!!busy}>
-            Start over
-          </button>
-        </p>
-      )}
       <form
         className="shopper-box"
         onSubmit={(e) => {

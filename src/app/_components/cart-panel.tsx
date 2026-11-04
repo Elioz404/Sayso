@@ -73,7 +73,6 @@ export function CartPanel({ paypalClientId, onAskAi }: { paypalClientId?: string
       {shops.length === 0 && (
         <div className="cart-empty">
           <b>Your cart is empty.</b>
-          <span className="small soft">Add pieces from any shop, or let the assistant find something for you.</span>
           <button type="button" className="btn btn-small" onClick={onAskAi}>
             Ask AI to shop
           </button>
@@ -150,10 +149,7 @@ function ShopCartView({ slug, cart, paypalClientId, onPaid }: { slug: string; ca
 
   return (
     <section className="cart-shop" aria-label={`Cart from ${cart.name}`}>
-      <header className="spread">
-        <b>{cart.name}</b>
-        <span className="small muted">One cart per shop</span>
-      </header>
+      <b>{cart.name}</b>
       <ul className="cart-lines">
         {cart.lines.map((l) => (
           <li key={l.variantId}>
@@ -197,7 +193,7 @@ function ShopCartView({ slug, cart, paypalClientId, onPaid }: { slug: string; ca
             void price();
           }}
         >
-          <p className="small soft">Where should it go? A sandbox test address is filled in; change it if you like.</p>
+          <p className="small soft">A sandbox test address is filled in.</p>
           {field('name', 'Name', { autoComplete: 'name', required: true })}
           {field('email', 'Email', { type: 'email', autoComplete: 'email', required: true })}
           {field('line1', 'Address', { autoComplete: 'address-line1', required: true })}
@@ -234,7 +230,6 @@ function ShopCartView({ slug, cart, paypalClientId, onPaid }: { slug: string; ca
             <dt className="cart-total">Total</dt>
             <dd className="cart-total">{show(quote.totals?.total)}</dd>
           </dl>
-          <p className="small muted">Priced by {cart.name}, with shipping to {address.city}.</p>
           {orderId && quote.payment_method?.approval_url && paypalClientId ? (
             <PayPalCheckout clientId={paypalClientId} cartId={quote.id} orderId={orderId} currency={quote.totals?.total?.currency_code ?? currency} approvalUrl={quote.payment_method.approval_url} onPaid={(paid: Paid) => onPaid(receiptOf(paid))} />
           ) : (

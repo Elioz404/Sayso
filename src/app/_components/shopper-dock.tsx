@@ -23,6 +23,8 @@ export function ShopperDock({ paypalClientId }: { paypalClientId?: string }) {
   const [open, setOpen] = useState(false);
   const [request, setRequest] = useState<{ text: string; id: number }>();
   const [tab, setTab] = useState<'ai' | 'cart' | 'orders'>('ai');
+  const [chatting, setChatting] = useState(false);
+  const [reset, setReset] = useState(0);
   const items = itemCount(useCarts());
   const panel = useRef<HTMLElement>(null);
   const opener = useRef<HTMLElement | null>(null);
@@ -134,29 +136,29 @@ export function ShopperDock({ paypalClientId }: { paypalClientId?: string }) {
               Orders
             </button>
           </div>
-          <button type="button" className="btn btn-quiet btn-small" onClick={() => setOpen(false)} aria-label="Close">
-            ✕
-          </button>
+          <span className="dock-head-end">
+            {tab === 'ai' && chatting && (
+              <button type="button" className="btn btn-quiet btn-small" onClick={() => setReset(Date.now())}>
+                New chat
+              </button>
+            )}
+            <button type="button" className="btn btn-quiet btn-small" onClick={() => setOpen(false)} aria-label="Close">
+              ✕
+            </button>
+          </span>
         </header>
         {/* Both stay mounted, so the conversation and a half-done checkout survive switching tabs. */}
         <div className="dock-body" role="tabpanel" hidden={tab !== 'ai'}>
-          <ShopperChat paypalClientId={paypalClientId} request={request} compact />
+          <ShopperChat paypalClientId={paypalClientId} request={request} compact onTurns={setChatting} reset={reset} />
         </div>
         <div className="dock-body dock-scroll" role="tabpanel" hidden={tab !== 'cart'}>
           <CartPanel paypalClientId={paypalClientId} onAskAi={() => setTab('ai')} />
         </div>
         <div className="dock-body dock-scroll" role="tabpanel" hidden={tab !== 'orders'}>
           <div className="orders-panel">
-            <OrderList pageSize={5} active={open && tab === 'orders'} signIn />
-            <a className="small cart-orders" href="/orders">
-              See them all on My orders →
-            </a>
+            <OrderList pageSize={5} active={open && tab === 'orders'} signIn more="link" />
           </div>
         </div>
-        <footer className="dock-foot small">
-          <span className="muted">{tab === 'ai' ? 'Only shopping at Sayso shops.' : tab === 'cart' ? 'Each shop prices its cart; you pay with PayPal.' : 'Your PayPal is your account here.'}</span>
-          <a href="/docs#chatgpt">Use your own assistant</a>
-        </footer>
       </aside>
     </>
   );
