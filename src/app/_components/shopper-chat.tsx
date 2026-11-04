@@ -1,8 +1,10 @@
 'use client';
 
 // The shopping assistant: the person types what they want, the assistant uses Sayso's buyer tools (the
-// same ones any assistant gets over MCP) and each tool call shows as it happened. The conversation lives
-// in this tab only; the server checks and caps it on every turn.
+// same ones any assistant gets over MCP) and each tool call shows as it happened. No account: PayPal
+// knows the buyer when they pay, and the conversation (with its cart and order) is kept in this browser,
+// so they can come back after paying and ask where the order is or for a refund. The server checks and
+// caps the conversation on every turn.
 
 import { useEffect, useRef, useState } from 'react';
 import { callApi } from './api.ts';
@@ -10,6 +12,7 @@ import { callApi } from './api.ts';
 type Step = { tool: string; args: unknown; result: unknown; isError: boolean } | { text: string };
 type Turn = { user: string; steps: Step[] };
 
+const SAVED = 'sayso-shopper-v1';
 const SUGGESTIONS = ['A handmade mug under $40, as a gift', 'Something for a ramen lover', 'What shops can I buy from?'];
 
 /** A short line about what a tool returned, for the person watching. */
@@ -68,6 +71,35 @@ export function ShopperChat() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const log = useRef<HTMLDivElement>(null);
+  // Pick the conversation back up (after paying in PayPal, or a reload); storage may be unavailable.
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SAVED) ?? 'null') as { history: unknown[]; turns: Turn[] } | null;
+      if (saved?.turns?.length) {
+        setHistory(saved.history);
+        setTurns(saved.turns);
+      }
+    } catch {
+      // nothing saved, or storage is off: start fresh
+    }
+  }, []);
+  function remember(nextHistory: unknown[], nextTurns: Turn[]) {
+    try {
+      localStorage.setItem(SAVED, JSON.stringify({ history: nextHistory, turns: nextTurns }));
+    } catch {
+      // full or off: the conversation still works in this tab
+    }
+  }
+  function startOver() {
+    setHistory([]);
+    setTurns([]);
+    setError(undefined);
+    try {
+      localStorage.removeItem(SAVED);
+    } catch {
+      // nothing to clear
+    }
+  }
   // Follow the conversation inside its own box; the page itself stays where the person left it.
   useEffect(() => {
     if (log.current) log.current.scrollTo({ top: log.current.scrollHeight, behavior: 'smooth' });
@@ -82,8 +114,10 @@ export function ShopperChat() {
     setTurns((t) => [...t, { user: said, steps: [] }]);
     try {
       const reply = await callApi<{ messages: unknown[]; steps: Step[] }>('/api/shopper', 'POST', { messages: history, text: said });
+      const nextTurns = [...turns, { user: said, steps: reply.steps }];
       setHistory(reply.messages);
-      setTurns((t) => [...t.slice(0, -1), { user: said, steps: reply.steps }]);
+      setTurns(nextTurns);
+      remember(reply.messages, nextTurns);
     } catch (err) {
       setError((err as Error).message);
       setTurns((t) => t.slice(0, -1));
@@ -132,6 +166,14 @@ export function ShopperChat() {
         {busy && <div className="shopper-tool shopper-thinking">Using Sayso's tools…</div>}
       </div>
       {error && <p className="error">{error}</p>}
+      {turns.length > 0 && (
+        <p className="small muted shopper-note">
+          Kept in this browser, so you can come back after paying to track the order or ask for a refund.{' '}
+          <button type="button" className="link-button" onClick={startOver} disabled={busy}>
+            Start over
+          </button>
+        </p>
+      )}
       <form
         className="shopper-box"
         onSubmit={(e) => {
