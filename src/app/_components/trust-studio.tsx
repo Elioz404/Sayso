@@ -125,6 +125,35 @@ const title = (text: string) => ({ title: { enabled: true, text } });
 const kpi = (field: string, label: string) => ({ type: 'value', dataMapping: { value: [{ id: field, aggregation: 'sum' }] }, format: title(label) });
 const at = (x: number, y: number, w: number, h: number) => ({ xTrack: x, yTrack: y, xSpan: w, ySpan: h });
 
+type Track = ReturnType<typeof at>;
+
+/** A phone can't show the 24-column canvas: stack the widgets, figures two to a row, everything else full width. */
+function stacked(state: AgReportState): AgReportState {
+  const pages = (state as unknown as { pages: { widgetLayout: Record<string, Track> }[] }).pages.map((page) => {
+    const order = Object.entries(page.widgetLayout).sort(([, a], [, b]) => a.yTrack - b.yTrack || a.xTrack - b.xTrack);
+    const layout: Record<string, Track> = {};
+    let x = 0;
+    let y = 0;
+    for (const [id, t] of order) {
+      if (t.xSpan <= 6) {
+        layout[id] = at(x, y, 12, 6);
+        if (x) y += 6;
+        x = x ? 0 : 12;
+        continue;
+      }
+      if (x) {
+        x = 0;
+        y += 6;
+      }
+      const h = Math.max(t.ySpan, 12);
+      layout[id] = at(0, y, 24, h);
+      y += h;
+    }
+    return { ...page, widgetLayout: layout };
+  });
+  return { ...state, pages } as unknown as AgReportState;
+}
+
 const PAGES = [
   { id: 'sayso', label: 'Agents & say-so' },
   { id: 'sales', label: 'Where sales come from' },
@@ -310,6 +339,12 @@ export default function TrustStudio({ data, licenseKey }: { data: TrustReport; l
   const [page, setPage] = useState<PageId>('sayso');
   const [key, setKey] = useState(0);
   const [dark, setDark] = useState(false);
+  const phone = useMemo(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches, []);
+  const themed = useMemo(() => {
+    if (typeof document === 'undefined') return theme;
+    const font = getComputedStyle(document.body).fontFamily;
+    return theme.withParams({ fontFamily: font, studioCanvasFontFamily: font, studioWidgetTitleFontFamily: font, chartFontFamily: font, ...(phone ? { studioCanvasMinWidth: 0 } : {}) } as Record<string, unknown>);
+  }, [phone]);
   useEffect(() => {
     const query = window.matchMedia('(prefers-color-scheme: dark)');
     const sync = () => setDark(document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : query.matches);
@@ -321,6 +356,7 @@ export default function TrustStudio({ data, licenseKey }: { data: TrustReport; l
   // The owner's own arrangement, if they rearranged it in this browser, opened on the chosen page.
   const initialState = useMemo(() => {
     let state = report(data);
+    if (phone) return { ...stacked(state), selectedPageId: page } as AgReportState;
     try {
       const saved = localStorage.getItem(LAYOUT_KEY);
       if (saved) state = JSON.parse(saved) as AgReportState;
@@ -330,16 +366,20 @@ export default function TrustStudio({ data, licenseKey }: { data: TrustReport; l
     return { ...state, selectedPageId: page } as AgReportState;
     // `key` remounts Studio when the page or a reset changes the starting state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, page, key]);
+  }, [data, page, key, phone]);
 
+  // A page with nothing to show says what would fill it, instead of a canvas of empty charts.
+  const empty = page === 'sayso' ? data.decisions.length === 0 : data.sales.length === 0;
   const studio = (
     <AgStudio
       key={`${page}-${key}`}
       style={{ height: '100%', width: '100%' }}
       data={dataSources}
       mode={mode}
-      theme={theme}
+      theme={themed}
       initialState={initialState}
+      // No filters panel while reading (the report has none); it would only take width from the charts.
+      panels={{ view: { right: [] } }}
       onStateUpdated={(e: { state?: AgReportState }) => {
         if (mode !== 'edit' || !e.state) return;
         try {
@@ -361,9 +401,11 @@ export default function TrustStudio({ data, licenseKey }: { data: TrustReport; l
           ))}
         </div>
         <span style={{ flex: 1 }} />
-        <button type="button" className="btn btn-small" onClick={() => setMode(mode === 'view' ? 'edit' : 'view')}>
-          {mode === 'view' ? 'Rearrange' : 'Done'}
-        </button>
+        {!phone && (
+          <button type="button" className="btn btn-small" onClick={() => setMode(mode === 'view' ? 'edit' : 'view')}>
+            {mode === 'view' ? 'Rearrange' : 'Done'}
+          </button>
+        )}
         {mode === 'edit' && (
           <button
             type="button"
@@ -381,9 +423,23 @@ export default function TrustStudio({ data, licenseKey }: { data: TrustReport; l
           </button>
         )}
       </div>
-      <div className="trust-canvas ag-theme-mode" data-ag-theme-mode={dark ? 'dark' : 'light'}>
-        {licenseKey ? <AgStudioProvider licenseKey={licenseKey}>{studio}</AgStudioProvider> : studio}
-      </div>
+      {empty ? (
+        <div className="trust-empty">
+          <b>{page === 'sayso' ? 'No agent has asked for anything yet.' : 'No orders yet.'}</b>
+          <span className="soft">
+            {page === 'sayso'
+              ? 'When your agent or a buyer\'s assistant asks to refund, charge, invoice or change your rules, every request lands here with what Guard did about it.'
+              : 'Orders from assistants, Shop with AI and the cart land here by channel, each with its money trail.'}
+          </span>
+          <span className="small muted">
+            To see it full, take <a href="/tour">the judges&apos; tour</a>: you get your own copy of this shop, the agents shop and ask, and this report fills up.
+          </span>
+        </div>
+      ) : (
+        <div className="trust-canvas ag-theme-mode" data-ag-theme-mode={dark ? 'dark' : 'light'}>
+          {licenseKey ? <AgStudioProvider licenseKey={licenseKey}>{studio}</AgStudioProvider> : studio}
+        </div>
+      )}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { actionAmount } from '@/core/guard/describe.ts';
 import type { Metadata } from 'next';
 import { AuditGrid, type AuditRow } from '@/app/_components/grids.tsx';
 import { actionLabel, actorName } from '@/app/_components/ui.tsx';
+import { outcomeOf } from '@/core/trust-report.ts';
 import { ownerView } from '@/server/owner.ts';
 
 export const metadata: Metadata = { title: 'Activity' };
@@ -25,6 +26,8 @@ export default async function Activity() {
       status: r.status,
       why: redact(r.decision?.hits.map((h) => h.message).join(' ') || r.action.reason),
       tampered: !r.chainIntact,
+      outcome: outcomeOf(r),
+      ...(r.verification ? { readBack: r.verification.ok } : {}),
     };
   });
 

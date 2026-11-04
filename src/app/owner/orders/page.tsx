@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { OrdersGrid, type OrderRow } from '@/app/_components/grids.tsx';
 import { Status } from '@/app/_components/ui.tsx';
+import { findVariant } from '@/core/catalog.ts';
 import { ownerView } from '@/server/owner.ts';
 
 export const metadata: Metadata = { title: 'Orders' };
@@ -8,7 +9,7 @@ export const metadata: Metadata = { title: 'Orders' };
 export default async function Orders() {
   const view = await ownerView();
   if (!view) return null;
-  const { shopId, orders: shopOrders, invoicing, redact } = view;
+  const { shopId, orders: shopOrders, invoicing, redact, catalog } = view;
   const [orders, invoices] = await Promise.all([shopOrders.list(shopId), invoicing.list(shopId)]);
   const placed = orders.filter((o) => o.number);
   const open = orders.length - placed.length;
@@ -21,8 +22,15 @@ export default async function Orders() {
     total: o.total ?? '-',
     totalMinor: o.totalMinor ?? 0,
     refunded: o.refunded ?? '-',
-    items: o.items.map((i) => `${i.quantity}x ${i.name ?? i.variant_id}`).join(', '),
-    via: o.channel ?? 'unknown',
+    refundedMinor: o.refundedMinor,
+    items: o.items.map((i) => `${i.quantity}× ${i.name ?? i.variant_id}`).join(', '),
+    via: o.channel ?? '',
+    ...(o.buyer ? { buyer: redact(o.buyer) } : {}),
+    ...(() => {
+      const photo = o.items[0]?.variant_id ? findVariant(catalog, o.items[0].variant_id)?.product.imageUrl : undefined;
+      return photo ? { image: photo } : {};
+    })(),
+    ...(o.tracking ? { shipping: `${o.tracking.carrier} · ${o.tracking.number}` } : {}),
   }));
 
   return (

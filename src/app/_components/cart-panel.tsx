@@ -89,7 +89,8 @@ function ShopCartView({ slug, cart, paypalClientId, onPaid }: { slug: string; ca
         shipping_address: { address_line_1: address.line1, admin_area_2: address.city, admin_area_1: address.state, postal_code: address.zip, country_code: address.country.toUpperCase() },
         customer: { email_address: address.email, name: { given_name: address.name.split(' ')[0], surname: address.name.split(' ').slice(1).join(' ') || undefined } },
       };
-      setPriced({ cart: await callApi<Priced>(`/api/shops/${slug}/merchant-cart`, 'POST', body), key });
+      // Tagged so the owner sees where the order came from.
+      setPriced({ cart: await callApi<Priced>(`/api/shops/${slug}/merchant-cart`, 'POST', body, { 'X-Sayso-Channel': 'sayso-cart' }), key });
     } catch (err) {
       setError((err as Error).message);
     }

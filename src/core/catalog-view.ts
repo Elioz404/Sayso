@@ -16,6 +16,12 @@ export interface VariantRow {
   madeToOrderDays?: number;
   /** The price is a draft's suggestion the owner hasn't confirmed; the shop can't be published yet. */
   toConfirm: boolean;
+  /** The product's photo (a path on this site or a full URL). */
+  image?: string;
+  /** Registered in PayPal's catalog (Catalog Products API). */
+  inPayPal: boolean;
+  /** Units sold in the last 14 days, when the page knows (the owner's catalog view adds it). */
+  sold?: number;
 }
 
 export function variantRows(catalog: Catalog): VariantRow[] {
@@ -28,7 +34,8 @@ export function variantRow(catalog: Catalog, variantId: string): VariantRow | un
 }
 
 function toRow(catalog: Catalog, product: string, siblings: number, variantId: string): VariantRow | undefined {
-  const variant = findVariant(catalog, variantId)?.variant;
+  const found = findVariant(catalog, variantId);
+  const variant = found?.variant;
   if (!variant) return undefined;
   return {
     id: variant.id,
@@ -39,5 +46,17 @@ function toRow(catalog: Catalog, product: string, siblings: number, variantId: s
     stock: variant.madeToOrderDays === undefined ? variant.inventory : null,
     madeToOrderDays: variant.madeToOrderDays,
     toConfirm: Boolean(variant.priceToConfirm),
+    ...(found.product.imageUrl ? { image: found.product.imageUrl } : {}),
+    inPayPal: Boolean(found.product.paypalProductId),
   };
+}
+
+/** Units of each variant sold since `since`, from the shop's orders (cancelled ones don't count). */
+export function soldSince(orders: { status: string; number?: string; createdAt: string; items: { variant_id?: string; quantity: number }[] }[], since: Date): Map<string, number> {
+  const sold = new Map<string, number>();
+  for (const o of orders) {
+    if (!o.number || o.status === 'released' || Date.parse(o.createdAt) < since.getTime()) continue;
+    for (const i of o.items) if (i.variant_id) sold.set(i.variant_id, (sold.get(i.variant_id) ?? 0) + i.quantity);
+  }
+  return sold;
 }

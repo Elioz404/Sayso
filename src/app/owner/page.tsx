@@ -1,12 +1,21 @@
-// Overview: the one job first (what's waiting for the owner), then what Sayso noticed, a short setup
-// checklist while the shop isn't fully set up, a single row of figures and the latest orders. Everything
-// else lives in its own view.
+// Overview: the one job first (what's waiting for the owner), then what Sayso noticed and a short setup
+// checklist while the shop isn't fully set up. Then the week: four headline numbers against the week
+// before, what the shop's agents did with its money, the latest orders and revenue by day, and the whole
+// story in depth (AG Studio): every request and what Guard did, sales by channel, each order's money trail.
 import { actionAmount } from '@/core/guard/describe.ts';
 import { ConnectPayouts, Decision, KeepPrice, PublishButton, ShopName } from '@/app/_components/owner-actions.tsx';
 import { actionLabel, Icon, Status, Who } from '@/app/_components/ui.tsx';
 import { Ago } from '@/app/_components/time.tsx';
 import { pricesToConfirm } from '@/core/catalog.ts';
 import { formatMoney, toMoney } from '@/core/money.ts';
+import { ChannelBadge, Thumb } from '@/app/_components/owner-bits.tsx';
+import { KpiCard, SaysoBar } from '@/app/_components/metrics.tsx';
+import { RevenueChart } from '@/app/_components/revenue-chart.tsx';
+import { TrustReportView } from '@/app/_components/trust-report-view.tsx';
+import { findVariant } from '@/core/catalog.ts';
+import { decimalsFor } from '@/core/money.ts';
+import { shopMetrics } from '@/core/shop-metrics.ts';
+import { trustReport } from '@/core/trust-report.ts';
 import { ownerView, pendingFor } from '@/server/owner.ts';
 
 /** What PayPal's payout onboarding came back with, as /owner?payouts=... */
@@ -23,13 +32,28 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const { shop, shopId, orders: shopOrders, catalog, redact, saySo, payouts, demo } = view;
   const outcome = PAYOUT_OUTCOMES[(await searchParams).payouts ?? ''];
   const onTour = shop.visibility === 'private';
-  const [approvals, orders, { suggestions }, passkey, devices] = await Promise.all([pendingFor(shopId), shopOrders.list(shopId), saySo.autonomy(shopId), view.passkeys.required(shopId), view.push.list(shopId)]);
+  const [approvals, orders, { suggestions }, passkey, devices, records, policy] = await Promise.all([
+    pendingFor(shopId),
+    shopOrders.list(shopId),
+    saySo.autonomy(shopId),
+    view.passkeys.required(shopId),
+    view.push.list(shopId),
+    saySo.audit(shopId, 2000),
+    saySo.policy(shopId),
+  ]);
+  const refundRule = policy.rules.find((r) => r.type === 'max_amount' && r.kinds.includes('refund.create'));
+  const report = trustReport(records, orders, shop.currency, refundRule?.type === 'max_amount' ? refundRule.limit : undefined);
+  const minorPerUnit = 10 ** decimalsFor(shop.currency);
+  const week = shopMetrics(orders, report.decisions, minorPerUnit);
+  // The shared demo shows people's details masked, as everywhere else in it.
+  const inDepth = { ...report, decisions: report.decisions.map((d) => ({ ...d, why: redact(d.why) })), trail: report.trail.map((t) => ({ ...t, buyer: redact(t.buyer) })) };
+  const pictureOf = (variantId?: string) => {
+    const found = variantId ? findVariant(catalog, variantId) : undefined;
+    return found?.product.imageUrl;
+  };
   const drafts = catalog.drafts?.length ?? 0;
   const money = (minor: number) => formatMoney(minor, shop.currency);
   const unconfirmed = pricesToConfirm(catalog);
-  const paid = orders.filter((o) => o.status === 'paid');
-  const charged = paid.reduce((sum, o) => sum + (o.totalMinor ?? 0), 0);
-  const refunded = orders.reduce((sum, o) => sum + o.refundedMinor, 0);
   const low = catalog.products.flatMap((p) => p.variants).filter((v) => v.madeToOrderDays === undefined && v.inventory <= 1).length;
   const recent = orders.filter((o) => o.number).slice(0, 5);
   const isDraft = (shop.status ?? 'live') === 'draft';
@@ -196,62 +220,82 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         </section>
       )}
 
-      <section className="block" aria-labelledby="figures">
-        <h2 id="figures" className="sr-only">
-          Figures
-        </h2>
-        <dl className="tally">
-          <div>
-            <dt>Paid orders</dt>
-            <dd>{paid.length}</dd>
-          </div>
-          <div>
-            <dt>Charged</dt>
-            <dd>{money(charged)}</dd>
-          </div>
-          <div>
-            <dt>Refunded</dt>
-            <dd>{money(refunded)}</dd>
-          </div>
-          <div className={low ? 'hold' : undefined}>
-            <dt>Low on stock</dt>
-            <dd>{low ? `${low} item${low === 1 ? '' : 's'}` : 'None'}</dd>
-          </div>
-        </dl>
+      <section className="block" aria-labelledby="week">
+        <div className="block-head">
+          <h2 id="week">This week</h2>
+          <span className="note">The last {week.days} days, against the {week.days} before{low ? ` · ${low} item${low === 1 ? '' : 's'} low on stock` : ''}</span>
+        </div>
+        <div className="kpis">
+          <KpiCard label="Revenue" value={money(week.revenue.now)} kpi={week.revenue} days={week.days} />
+          <KpiCard label="Orders" value={String(week.orders.now)} kpi={week.orders} days={week.days} />
+          <KpiCard label="Average order" value={money(week.average.now)} kpi={week.average} days={week.days} />
+          <KpiCard label="Refund rate" value={`${(week.refundRate.now / 100).toFixed(1)}%`} kpi={week.refundRate} upIsGood={false} days={week.days} />
+        </div>
       </section>
 
-      <section className="block" aria-labelledby="recent">
-        <div className="block-head">
-          <h2 id="recent">Latest orders</h2>
-          {recent.length > 0 && <a href="/owner/orders">All orders</a>}
+      <section className="sayso-card" aria-labelledby="agents-week">
+        <div className="sayso-card-head">
+          <h2 id="agents-week">Your agents this week</h2>
+          <span className="small muted">
+            {week.sayso.requests
+              ? `${week.sayso.requests} request${week.sayso.requests === 1 ? '' : 's'} for your money. Guard decided each one before PayPal moved anything.`
+              : 'No agent has asked to move money this week.'}
+          </span>
         </div>
-        {recent.length === 0 ? (
-          <div className="empty">
-            <b>No orders yet.</b>
-            <span className="small">
-              Share your shop&apos;s MCP link with an AI assistant, or send buyers to <a href={`/shop/${shop.slug}`}>your shop page</a>.
-            </span>
+        <SaysoBar sayso={week.sayso} format={money} />
+      </section>
+
+      <div className="overview-split">
+        <section className="panel-card" aria-labelledby="recent">
+          <div className="panel-card-head">
+            <h2 id="recent">Latest orders</h2>
+            {recent.length > 0 && <a className="small" href="/owner/orders">All orders</a>}
           </div>
-        ) : (
-          <ul className="list">
-            {recent.map((o) => (
-              <li key={o.id}>
-                <a className="list-link" href={`/owner/orders/${o.id}`}>
-                  <span className="stack" style={{ gap: 2, minWidth: 0 }}>
-                    <b>{o.number}</b>
-                    <span className="small soft" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {o.items.map((i) => `${i.quantity}x ${i.name ?? i.variant_id}`).join(', ')}
+          {recent.length === 0 ? (
+            <div className="empty">
+              <b>No orders yet.</b>
+              <span className="small">
+                Share your shop&apos;s MCP link with an AI assistant, or send buyers to <a href={`/shop/${shop.slug}`}>your shop page</a>.
+              </span>
+            </div>
+          ) : (
+            <ul className="order-list">
+              {recent.map((o) => (
+                <li key={o.id}>
+                  <a href={`/owner/orders/${o.id}`}>
+                    <Thumb src={pictureOf(o.items[0]?.variant_id)} />
+                    <span className="stack" style={{ gap: 2, minWidth: 0 }}>
+                      <span className="row" style={{ gap: 'var(--s2)', flexWrap: 'nowrap', minWidth: 0 }}>
+                        <b className="mono order-no">{o.number}</b>
+                        <ChannelBadge channel={o.channel} />
+                      </span>
+                      <span className="small soft order-items">{o.items.map((i) => `${i.quantity}× ${i.name ?? i.variant_id}`).join(', ')}</span>
                     </span>
-                  </span>
-                  <span className="stack" style={{ gap: 4, alignItems: 'flex-end' }}>
-                    <span className="num" style={{ fontWeight: 650 }}>{o.total}</span>
-                    <Status value={o.status} />
-                  </span>
-                </a>
-              </li>
-            ))}
-          </ul>
-        )}
+                    <span className="stack order-right">
+                      <span className="num" style={{ fontWeight: 650 }}>{o.total}</span>
+                      <Status value={o.status} />
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+        <section className="panel-card" aria-labelledby="revenue">
+          <div className="panel-card-head">
+            <h2 id="revenue">Revenue, day by day</h2>
+            <span className="small muted">Last {week.days * 2} days</span>
+          </div>
+          <RevenueChart daily={week.daily} currency={shop.currency} minorPerUnit={minorPerUnit} />
+        </section>
+      </div>
+
+      <section className="block" aria-labelledby="depth">
+        <div className="block-head">
+          <h2 id="depth">In depth</h2>
+          <span className="note">Every request, every sale, every money move, checked against PayPal · AG Studio</span>
+        </div>
+        <TrustReportView data={inDepth} licenseKey={process.env.AG_STUDIO_LICENSE_KEY || undefined} />
       </section>
     </>
   );

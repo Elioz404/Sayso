@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { CatalogGrid } from '@/app/_components/grids.tsx';
 import { Icon } from '@/app/_components/ui.tsx';
-import { variantRows } from '@/core/catalog-view.ts';
+import { soldSince, variantRows } from '@/core/catalog-view.ts';
 import { formatMoney } from '@/core/money.ts';
 import { ownerView } from '@/server/owner.ts';
 
@@ -14,6 +14,9 @@ export default async function Catalog({ searchParams }: { searchParams: Promise<
   const money = (minor: number) => formatMoney(minor, shop.currency);
   const variants = catalog.products.reduce((n, p) => n + p.variants.length, 0);
   const { added } = await searchParams;
+  // What sold in the last two weeks, next to each variant: what to restock, what to reprice.
+  const sold = soldSince(await view.orders.list(view.shopId), new Date(Date.now() - 14 * 86_400_000));
+  const rows = variantRows(catalog).map((r) => ({ ...r, sold: sold.get(r.id) ?? 0 }));
 
   return (
     <>
@@ -42,7 +45,7 @@ export default async function Catalog({ searchParams }: { searchParams: Promise<
         <h2 id="products" className="sr-only">
           Products
         </h2>
-        <CatalogGrid rows={variantRows(catalog)} market={Boolean(view.market)} readOnly={view.demo} />
+        <CatalogGrid rows={rows} market={Boolean(view.market)} readOnly={view.demo} />
       </section>
 
       <section className="block" aria-labelledby="shipping">

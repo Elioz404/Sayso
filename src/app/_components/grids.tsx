@@ -29,6 +29,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { VariantRow } from '@/core/catalog-view.ts';
 import { formatMoney, parseAmount, toMoney } from '@/core/money.ts';
 import { callApi } from './api.ts';
+import { ChannelBadge, Thumb } from './owner-bits.tsx';
 import { formatWhen } from './time.tsx';
 import { Status } from './ui.tsx';
 
@@ -108,15 +109,33 @@ export interface OrderRow {
   total: string;
   totalMinor: number;
   refunded: string;
+  refundedMinor: number;
   items: string;
+  /** The order's channel id (mcp, sayso-assistant, sayso-cart, owner-agent...). */
   via: string;
+  buyer?: string;
+  /** The first piece's photo. */
+  image?: string;
+  /** Carrier and tracking number once shipped. */
+  shipping?: string;
 }
+
+/** The quick views over the orders: what usually needs doing first. */
+const ORDER_VIEWS = [
+  { id: 'all', label: 'All', test: () => true },
+  { id: 'ship', label: 'To ship', test: (r: OrderRow) => r.status === 'paid' && !r.shipping },
+  { id: 'waiting', label: 'Waiting for you', test: (r: OrderRow) => r.status === 'awaiting_owner' },
+  { id: 'refunded', label: 'Refunded', test: (r: OrderRow) => r.refundedMinor > 0 },
+] as const;
 
 function OrderCell({ data }: ICellRendererParams<OrderRow>) {
   return (
-    <span className="cell-two">
-      <b>{data?.number}</b>
-      <small>{data && formatWhen(data.placed)}</small>
+    <span className="cell-media">
+      <Thumb src={data?.image} />
+      <span className="cell-two">
+        <b className="mono">{data?.number}</b>
+        <small>{data && formatWhen(data.placed)}</small>
+      </span>
     </span>
   );
 }
@@ -125,9 +144,23 @@ function ItemsCell({ data }: ICellRendererParams<OrderRow>) {
   return (
     <span className="cell-two">
       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{data?.items}</span>
-      <small>via {data?.via}</small>
+      {data?.buyer && <small>{data.buyer}</small>}
     </span>
   );
+}
+
+function ChannelCell({ data }: ICellRendererParams<OrderRow>) {
+  return <ChannelBadge channel={data?.via} />;
+}
+
+function ShippingCell({ data }: ICellRendererParams<OrderRow>) {
+  if (!data) return null;
+  if (data.shipping) return <span className="small">{data.shipping}</span>;
+  return data.status === 'paid' ? <span className="status status-hold">To ship</span> : <span className="small muted">-</span>;
+}
+
+function RefundCell({ data }: ICellRendererParams<OrderRow>) {
+  return data && data.refundedMinor > 0 ? <span className="num refund">−{data.refunded}</span> : <span className="muted">-</span>;
 }
 
 function StatusCell({ value }: ICellRendererParams) {
@@ -138,18 +171,22 @@ export function OrdersGrid({ rows }: { rows: OrderRow[] }) {
   const router = useRouter();
   const grid = useRef<AgGridReact<OrderRow>>(null);
   const [filter, setFilter] = useState('');
+  const [viewId, setViewId] = useState<(typeof ORDER_VIEWS)[number]['id']>('all');
+  const shown = useMemo(() => rows.filter(ORDER_VIEWS.find((v) => v.id === viewId)!.test), [rows, viewId]);
   const { ref, width } = useGridSize();
   const narrow = width < NARROW;
   const columns = useMemo<ColDef<OrderRow>[]>(
     () => [
-      { field: 'number', headerName: 'Order', cellRenderer: OrderCell, minWidth: 120, flex: 1.2, getQuickFilterText: (p) => `${p.data?.number} ${p.data ? formatWhen(p.data.placed) : ''}` },
-      { field: 'status', cellRenderer: StatusCell, minWidth: 104, flex: 1 },
-      { field: 'items', headerName: 'Items', cellRenderer: ItemsCell, minWidth: 180, flex: 2.2, hide: narrow, getQuickFilterText: (p) => `${p.data?.items} ${p.data?.via}` },
-      { field: 'refunded', headerName: 'Refunded', minWidth: 96, flex: 0.8, hide: narrow, type: 'rightAligned', cellClass: RIGHT },
+      { field: 'number', headerName: 'Order', cellRenderer: OrderCell, minWidth: narrow ? 166 : 190, flex: 1.3, getQuickFilterText: (p) => `${p.data?.number} ${p.data ? formatWhen(p.data.placed) : ''}` },
+      { field: 'items', headerName: 'Items', cellRenderer: ItemsCell, minWidth: 180, flex: 2, hide: narrow, getQuickFilterText: (p) => `${p.data?.items} ${p.data?.buyer ?? ''} ${p.data?.via}` },
+      { field: 'via', headerName: 'Channel', cellRenderer: ChannelCell, minWidth: 140, flex: 1, hide: narrow },
+      { field: 'status', cellRenderer: StatusCell, minWidth: narrow ? 88 : 120, flex: 0.9 },
+      { field: 'shipping', headerName: 'Shipping', cellRenderer: ShippingCell, minWidth: 120, flex: 1, hide: narrow, sortable: false },
+      { field: 'refunded', headerName: 'Refunded', cellRenderer: RefundCell, minWidth: 96, flex: 0.7, hide: narrow, type: 'rightAligned', cellClass: RIGHT, comparator: (_a, _b, x, y) => (x.data?.refundedMinor ?? 0) - (y.data?.refundedMinor ?? 0) },
       {
         field: 'total',
         headerName: 'Total',
-        minWidth: 84,
+        minWidth: 92,
         flex: 0.8,
         type: 'rightAligned',
         cellClass: RIGHT,
@@ -162,12 +199,23 @@ export function OrdersGrid({ rows }: { rows: OrderRow[] }) {
 
   return (
     <div className="stack" style={{ gap: 'var(--s3)' }}>
-      <div className="row">
+      <div className="row grid-toolbar">
+        <div className="dock-tabs" role="tablist" aria-label="Show orders">
+          {ORDER_VIEWS.map((v) => {
+            const n = rows.filter(v.test).length;
+            return (
+              <button key={v.id} type="button" role="tab" aria-selected={viewId === v.id} className="dock-tab" onClick={() => setViewId(v.id)}>
+                {v.label}
+                {v.id !== 'all' && n > 0 && <span className="dock-tab-count">{n}</span>}
+              </button>
+            );
+          })}
+        </div>
         <label htmlFor="order-search" className="sr-only">
           Search orders
         </label>
-        <input id="order-search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Search orders, items or agents" style={{ flex: 1, minWidth: 0 }} />
-        <button className="btn" onClick={() => grid.current?.api.exportDataAsCsv({ fileName: 'sayso-orders.csv', columnKeys: ['number', 'status', 'items', 'refunded', 'total'] })}>
+        <input id="order-search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Search orders, pieces, buyers" style={{ flex: 1, minWidth: 180 }} />
+        <button className="btn" onClick={() => grid.current?.api.exportDataAsCsv({ fileName: 'sayso-orders.csv', columnKeys: ['number', 'items', 'via', 'status', 'shipping', 'refunded', 'total'] })}>
           Export CSV
         </button>
       </div>
@@ -176,8 +224,9 @@ export function OrdersGrid({ rows }: { rows: OrderRow[] }) {
           <AgGridReact<OrderRow>
             ref={grid}
             theme={theme}
-            rowData={rows}
+            rowData={shown}
             columnDefs={columns}
+            rowHeight={64}
             defaultColDef={{ sortable: true, resizable: false, suppressMovable: true }}
             autoSizeStrategy={FIT}
             onGridSizeChanged={(e) => e.api.sizeColumnsToFit()}
@@ -187,6 +236,7 @@ export function OrdersGrid({ rows }: { rows: OrderRow[] }) {
             onRowClicked={(e) => e.data && router.push(`/owner/orders/${e.data.id}`)}
             pagination={rows.length > 20}
             paginationPageSize={20}
+            paginationPageSizeSelector={[20, 50, 100]}
             overlayNoRowsTemplate="No orders match."
           />
         ) : (
@@ -208,7 +258,20 @@ export interface AuditRow {
   status: string;
   why: string;
   tampered: boolean;
+  /** What happened, in the owner's words (Allowed by your rules, You said OK, Waiting for you...). */
+  outcome: string;
+  /** PayPal confirmed the money move by reading it back (undefined: nothing moved). */
+  readBack?: boolean;
 }
+
+const OUTCOME_TONE: Record<string, string> = {
+  'Allowed by your rules': 'ok',
+  'You said OK': 'ok',
+  'Waiting for you': 'hold',
+  'You said no': 'quiet',
+  'Blocked by a rule': 'stop',
+  Failed: 'stop',
+};
 
 function ActionCell({ data }: ICellRendererParams<AuditRow>) {
   return (
@@ -224,7 +287,24 @@ function ByCell({ data }: ICellRendererParams<AuditRow>) {
 }
 
 function AuditStatusCell({ data }: ICellRendererParams<AuditRow>) {
-  return data?.tampered ? <span className="status status-stop">Tampered</span> : <Status value={data?.status ?? ''} />;
+  if (!data) return null;
+  if (data.tampered) return <span className="status status-stop">Edited after the fact</span>;
+  return <span className={`status status-${OUTCOME_TONE[data.outcome] ?? 'quiet'}`}>{data.outcome}</span>;
+}
+
+/** Two checks every money move gets: PayPal read it back, and its record's hash chain still holds. */
+function ChecksCell({ data }: ICellRendererParams<AuditRow>) {
+  if (!data) return null;
+  return (
+    <span className="checks">
+      <span className={data.readBack === undefined ? 'check-none' : data.readBack ? 'check-ok' : 'check-bad'} title={data.readBack === undefined ? 'No money moved' : data.readBack ? 'Read back from PayPal' : 'PayPal did not confirm it'}>
+        PayPal {data.readBack === undefined ? '–' : data.readBack ? '✓' : '!'}
+      </span>
+      <span className={data.tampered ? 'check-bad' : 'check-ok'} title={data.tampered ? 'This record was edited after the fact' : 'Hash chain intact'}>
+        Chain {data.tampered ? '!' : '✓'}
+      </span>
+    </span>
+  );
 }
 
 export function AuditGrid({ rows }: { rows: AuditRow[] }) {
@@ -235,9 +315,10 @@ export function AuditGrid({ rows }: { rows: AuditRow[] }) {
     () => [
       { field: 'action', headerName: 'Action', cellRenderer: ActionCell, minWidth: 124, flex: 1.3 },
       { field: 'amount', headerName: 'Amount', minWidth: 80, flex: 0.7, type: 'rightAligned', cellClass: RIGHT },
-      { field: 'by', headerName: 'Asked by', cellRenderer: ByCell, minWidth: 130, flex: 1, hide: narrow },
-      { field: 'status', headerName: 'Result', cellRenderer: AuditStatusCell, minWidth: 140, flex: 1 },
-      { field: 'why', headerName: 'Why', minWidth: 200, flex: 2.2, hide: narrow, tooltipField: 'why', cellStyle: { color: 'var(--ink-2)' } },
+      { field: 'by', headerName: 'Asked by', cellRenderer: ByCell, minWidth: 180, flex: 1.1, hide: narrow, tooltipField: 'by' },
+      { field: 'outcome', headerName: 'Outcome', cellRenderer: AuditStatusCell, minWidth: 196, flex: 1.1 },
+      { colId: 'checks', headerName: 'Checks', cellRenderer: ChecksCell, minWidth: 168, flex: 0.8, sortable: false, hide: narrow },
+      { field: 'why', headerName: 'Why', minWidth: 200, flex: 2, hide: narrow, tooltipField: 'why', cellStyle: { color: 'var(--ink-2)' } },
     ],
     [narrow],
   );
@@ -257,6 +338,7 @@ export function AuditGrid({ rows }: { rows: AuditRow[] }) {
           onRowClicked={(e) => e.data && router.push(`/approve/${e.data.id}`)}
           pagination={rows.length > 15}
           paginationPageSize={15}
+          paginationPageSizeSelector={[15, 50, 100]}
           overlayNoRowsTemplate="No agent actions yet."
         />
       ) : (
@@ -272,14 +354,21 @@ export function AuditGrid({ rows }: { rows: AuditRow[] }) {
 
 function ProductCell({ data }: ICellRendererParams<VariantRow>) {
   return (
-    <span className="cell-two">
-      <b>
-        {data?.product}
-        {data?.title ? <span className="soft" style={{ fontWeight: 400 }}> · {data.title}</span> : null}
-      </b>
-      <small className="mono">{data?.id}</small>
+    <span className="cell-media">
+      <Thumb src={data?.image} />
+      <span className="cell-two">
+        <b>{data?.product}</b>
+        <small>
+          {data?.title ? `${data.title} · ` : ''}
+          <span className="mono">{data?.id}</span>
+        </small>
+      </span>
     </span>
   );
+}
+
+function PayPalCell({ data }: ICellRendererParams<VariantRow>) {
+  return data?.inPayPal ? <span className="status status-ok" title="Registered in PayPal's catalog">In PayPal</span> : <span className="status status-quiet">Not yet</span>;
 }
 
 function StockStateCell({ data }: ICellRendererParams<VariantRow>) {
@@ -363,11 +452,11 @@ export function CatalogGrid({ rows, market: marketEnabled, readOnly = false }: {
 
   const columns = useMemo<ColDef<VariantRow>[]>(
     () => [
-      { field: 'product', headerName: 'Product', cellRenderer: ProductCell, minWidth: 180, flex: 2, getQuickFilterText: (p) => `${p.data?.product} ${p.data?.title}` },
+      { field: 'product', headerName: 'Product', cellRenderer: ProductCell, minWidth: narrow ? 150 : 180, flex: 2, getQuickFilterText: (p) => `${p.data?.product} ${p.data?.title}` },
       {
         field: 'price',
         headerName: 'Price',
-        minWidth: 104,
+        minWidth: narrow ? 92 : 104,
         flex: 0.9,
         type: 'rightAligned',
         cellClass: readOnly ? RIGHT : [...RIGHT, 'cell-editable'],
@@ -393,7 +482,7 @@ export function CatalogGrid({ rows, market: marketEnabled, readOnly = false }: {
       {
         field: 'stock',
         headerName: 'In stock',
-        minWidth: 96,
+        minWidth: narrow ? 84 : 96,
         flex: 0.8,
         type: 'rightAligned',
         cellClass: (p) => (readOnly || p.data?.stock === null ? RIGHT : [...RIGHT, 'cell-editable']),
@@ -402,7 +491,9 @@ export function CatalogGrid({ rows, market: marketEnabled, readOnly = false }: {
         cellEditorParams: { min: 0, precision: 0, showStepperButtons: false },
         valueFormatter: (p) => (p.value === null ? '-' : String(p.value)),
       },
-      { colId: 'state', headerName: 'Status', cellRenderer: StockStateCell, minWidth: 150, flex: 1, sortable: false, hide: narrow },
+      { colId: 'state', headerName: 'Status', cellRenderer: StockStateCell, minWidth: 196, flex: 1.1, sortable: false, hide: narrow },
+      { field: 'sold', headerName: 'Sold · 14d', headerTooltip: 'Units sold in the last 14 days', minWidth: 104, flex: 0.7, hide: narrow, type: 'rightAligned', cellClass: RIGHT, valueFormatter: (p) => (p.value ? String(p.value) : '-') },
+      { colId: 'paypal', headerName: 'PayPal catalog', cellRenderer: PayPalCell, minWidth: 130, flex: 0.8, sortable: false, hide: narrow },
       { colId: 'market', headerName: 'Market price', cellRenderer: MarketCell, minWidth: 170, flex: 1.2, sortable: false, hide: narrow || !marketEnabled },
     ],
     [narrow, marketEnabled, readOnly],
@@ -415,7 +506,7 @@ export function CatalogGrid({ rows, market: marketEnabled, readOnly = false }: {
     const body = field === 'price' ? { price: toMoney(row.price, row.currency).value } : { stock: row.stock };
     try {
       const saved = await callApi<VariantRow>(`/api/owner/variants/${encodeURIComponent(row.id)}`, 'PATCH', body);
-      e.node.setData(saved);
+      e.node.setData({ ...saved, sold: row.sold });
       const what = field === 'price' ? `price is now ${formatMoney(saved.price, saved.currency)}` : `stock is now ${saved.stock}`;
       setFeedback({ tone: 'ok', text: `Saved. ${row.product}${row.title ? ` (${row.title})` : ''} ${what}.` });
     } catch (err) {
@@ -437,6 +528,7 @@ export function CatalogGrid({ rows, market: marketEnabled, readOnly = false }: {
             theme={theme}
             rowData={rows}
             columnDefs={columns}
+            rowHeight={64}
             context={context}
             getRowId={(p) => p.data.id}
             defaultColDef={{ sortable: true, resizable: false, suppressMovable: true }}
