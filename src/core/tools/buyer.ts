@@ -4,7 +4,7 @@
 import { formatMoney } from '../money.ts';
 import { productQuery, shopSummary } from '../search.ts';
 import { address, customer, items, money, shopArg } from './args.ts';
-import { buyerActor, liveCatalog, ownCart, shopFor, ToolError, walletFrom, type Tool } from './context.ts';
+import { buyerActor, liveCatalog, ownCart, shopFor, shopSlugOf, ToolError, walletFrom, type Tool } from './context.ts';
 import { cartForAgent, orderForBuyer, refundRequestForBuyer, shopOffer } from './views.ts';
 
 export const buyerTools: Tool[] = [
@@ -39,10 +39,10 @@ export const buyerTools: Tool[] = [
     async run(input, ctx) {
       if (ctx.shopSlug) {
         const catalog = await liveCatalog(ctx);
-        if (input.shop && input.shop !== catalog.shop.slug) throw new ToolError(`This endpoint only sells ${catalog.shop.name}; drop the shop argument.`);
+        if (input.shop && shopSlugOf(input.shop) !== catalog.shop.slug) throw new ToolError(`This endpoint only sells ${catalog.shop.name}; drop the shop argument.`);
         return shopOffer(catalog, productQuery(catalog, input));
       }
-      const live = (await ctx.services.catalogs.listLive()).filter((c) => !input.shop || c.shop.slug === input.shop);
+      const live = (await ctx.services.catalogs.listLive()).filter((c) => !input.shop || c.shop.slug === shopSlugOf(input.shop));
       if (input.shop && live.length === 0) throw new ToolError(`No open shop called ${input.shop}. Use list_shops.`);
       const results = live
         .map((catalog) => shopOffer(catalog, productQuery(catalog, input)))

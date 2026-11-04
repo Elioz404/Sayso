@@ -144,7 +144,7 @@ function Rich({ text }: { text: string }) {
   );
 }
 
-export function ShopperChat({ paypalClientId }: { paypalClientId?: string }) {
+export function ShopperChat({ paypalClientId, ask }: { paypalClientId?: string; ask?: string }) {
   const [history, setHistory] = useState<unknown[]>([]);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [text, setText] = useState('');
@@ -153,8 +153,16 @@ export function ShopperChat({ paypalClientId }: { paypalClientId?: string }) {
   const log = useRef<HTMLDivElement>(null);
   const [paid, setPaid] = useState<Record<string, Paid>>({});
   const onPaidFor = useRef(new Map<string, (p: Paid) => void>());
-  // Pick the conversation back up (after paying in PayPal, or a reload); storage may be unavailable.
+  // Pick the conversation back up (after paying in PayPal, or a reload); storage may be unavailable. A
+  // request from a shop's "Buy with AI" link starts a fresh conversation with it, once.
+  const asked = useRef(false);
   useEffect(() => {
+    if (ask && !asked.current) {
+      asked.current = true;
+      window.history.replaceState(null, '', '/assistant');
+      void send(ask, [], []);
+      return;
+    }
     try {
       const saved = JSON.parse(localStorage.getItem(SAVED) ?? 'null') as { history: unknown[]; turns: Turn[] } | null;
       if (saved?.turns?.length) {
@@ -164,6 +172,8 @@ export function ShopperChat({ paypalClientId }: { paypalClientId?: string }) {
     } catch {
       // nothing saved, or storage is off: start fresh
     }
+    // Runs once on arrival; `send` is this render's.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   function remember(nextHistory: unknown[], nextTurns: Turn[]) {
     try {
@@ -187,7 +197,7 @@ export function ShopperChat({ paypalClientId }: { paypalClientId?: string }) {
     if (log.current) log.current.scrollTo({ top: log.current.scrollHeight, behavior: 'smooth' });
   }, [turns, busy]);
 
-  async function send(message: string) {
+  async function send(message: string, fromHistory = history, fromTurns = turns) {
     const said = message.trim();
     if (!said || busy) return;
     setBusy(true);
@@ -195,8 +205,8 @@ export function ShopperChat({ paypalClientId }: { paypalClientId?: string }) {
     setText('');
     setTurns((t) => [...t, { user: said, steps: [] }]);
     try {
-      const reply = await callApi<{ messages: unknown[]; steps: Step[] }>('/api/shopper', 'POST', { messages: history, text: said });
-      const nextTurns = [...turns, { user: said, steps: reply.steps }];
+      const reply = await callApi<{ messages: unknown[]; steps: Step[] }>('/api/shopper', 'POST', { messages: fromHistory, text: said });
+      const nextTurns = [...fromTurns, { user: said, steps: reply.steps }];
       setHistory(reply.messages);
       setTurns(nextTurns);
       remember(reply.messages, nextTurns);

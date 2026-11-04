@@ -109,7 +109,11 @@ export async function walletFrom(ctx: ToolContext, given: unknown): Promise<Keye
 }
 
 /** The shop a new cart is for: the endpoint's own, or the `shop` argument on the all-shops endpoint. */
+/** A shop as an assistant may write it ("Maya Ceramics", "maya_ceramics") in its slug's form. */
+export const shopSlugOf = (given: string): string => given.trim().toLowerCase().replace(/[\s_]+/g, '-');
+
 export function shopFor(ctx: ToolContext, given: string | undefined): string {
+  given = given === undefined ? undefined : shopSlugOf(given);
   if (ctx.shopSlug) {
     if (given && given !== ctx.shopSlug) throw new ToolError(`This endpoint only sells ${ctx.shopSlug}; drop the shop argument.`);
     return ctx.shopSlug;

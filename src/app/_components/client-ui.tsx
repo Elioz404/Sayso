@@ -2,23 +2,22 @@
 
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { ABOUT } from '@/core/about.ts';
 import { Icon } from './ui.tsx';
 
 export function NavLinks() {
   const path = usePathname();
   // `wide`: only where there is room; phones keep the essentials.
-  const links = [
+  const links: { href: string; label: string; wide?: boolean; also?: string }[] = [
     { href: '/tour', label: 'For Judges' },
-    { href: '/assistant', label: 'Shop with AI' },
+    { href: '/shops', label: 'Shops', also: '/shop/' },
+    { href: '/assistant', label: 'Shop with AI', wide: true },
     { href: '/start', label: 'Start selling', wide: true },
-    { href: `/shop/${ABOUT.demoShop}`, label: 'Demo shop', wide: true },
-    { href: '/docs', label: 'Docs' },
+    { href: '/docs', label: 'Docs', wide: true },
   ];
   return (
     <nav className="nav" aria-label="Main">
       {links.map((l) => (
-        <a key={l.href} href={l.href} className={l.wide ? 'nav-link nav-link-wide' : 'nav-link'} aria-current={path.startsWith(l.href) ? 'page' : undefined}>
+        <a key={l.href} href={l.href} className={l.wide ? 'nav-link nav-link-wide' : 'nav-link'} aria-current={path.startsWith(l.href) || Boolean(l.also && path.startsWith(l.also)) ? 'page' : undefined}>
           {l.label}
         </a>
       ))}

@@ -23,3 +23,26 @@ export function assistantPrompt({ shop, products }: Catalog, product?: Product):
   const named = pick.v.title && pick.v.title !== 'Default' ? `${pick.v.title} ${pick.p.name}` : pick.p.name;
   return `Buy a ${named} from ${shop.name} on Sayso and ship it to me.`;
 }
+
+/** Where "buy with AI" goes: the site's shopping assistant, with the request already written. */
+export function assistantLink(request: string): string {
+  return `/assistant?ask=${encodeURIComponent(request)}`;
+}
+
+/** One shop in the directory: its picture, what it sells and for how much. */
+export function shopCard({ shop, products }: Catalog) {
+  const prices = products.flatMap((p) => p.variants.map((v) => v.price));
+  const kinds = [...new Set(products.map((p) => p.category.split('/').at(-1) ?? p.category))].filter(Boolean);
+  return {
+    slug: shop.slug,
+    name: shop.name,
+    demo: Boolean(shop.demo),
+    country: shop.country,
+    currency: shop.currency,
+    kinds: kinds.map((k) => k.charAt(0).toUpperCase() + k.slice(1)).slice(0, 4),
+    products: products.length,
+    from: prices.length ? Math.min(...prices) : undefined,
+    to: prices.length ? Math.max(...prices) : undefined,
+    picture: shop.cover?.url ?? products.find((p) => p.imageUrl)?.imageUrl,
+  };
+}

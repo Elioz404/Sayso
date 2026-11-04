@@ -82,7 +82,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <nav aria-label="Product" className="footer-links">
               <b>Product</b>
               <a href="/start">Start selling</a>
-              <a href={`/shop/${ABOUT.demoShop}`}>Demo shop</a>
+              <a href="/shops">Shops</a>
+              <a href="/assistant">Shop with AI</a>
               <a href="/owner">Owner sign-in</a>
               <a href="/docs">Docs</a>
             </nav>

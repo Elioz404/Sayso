@@ -699,3 +699,22 @@ body:has(.owner) .site-header, body:has(.owner) .site-footer { display: none; }
 .shopper-checkout { width: min(100%, 320px); display: flex; flex-direction: column; gap: var(--s1); }
 .shopper-checkout > div:first-child { color-scheme: light; }
 .shopper-paid { align-self: flex-start; padding: 6px var(--s3); border-radius: var(--radius-sm); background: var(--say-soft); color: var(--say); font-weight: 650; font-size: var(--t-sm); }
+
+/* The shops directory, and the storefront's way back and "Buy with AI" */
+.shops-head { display: flex; justify-content: space-between; align-items: flex-end; gap: var(--s5); flex-wrap: wrap; }
+.shops-head .soft { max-width: 60ch; }
+.shops { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: var(--s5); }
+.shop-card { display: flex; flex-direction: column; height: 100%; background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius); overflow: hidden; color: inherit; text-decoration: none; transition: border-color 0.15s, box-shadow 0.15s; }
+.shop-card:hover { border-color: var(--rule-strong); box-shadow: var(--shadow); }
+.shop-card-photo { position: relative; aspect-ratio: 4 / 3; background: var(--paper-2); }
+.shop-card-body { display: flex; flex-direction: column; gap: var(--s1); padding: var(--s4) var(--s5) var(--s5); }
+.shop-card-name { font-family: var(--font-display); font-size: var(--t-lg); }
+.pill-demo { font-size: var(--t-xs); font-weight: 650; text-transform: uppercase; letter-spacing: 0.05em; color: var(--agent); background: var(--agent-soft); border-radius: 99px; padding: 2px 8px; }
+.back-link { color: var(--ink-3); text-decoration: none; }
+.back-link:hover { color: var(--ink); }
+.buy-via-go { flex: none; justify-self: start; }
+.buy-via-own summary { cursor: pointer; color: var(--ink-2); font-size: var(--t-sm); font-weight: 600; }
+.buy-via-own[open] summary { margin-bottom: var(--s4); }
+.good-body { grid-template-rows: auto 1fr auto; height: 100%; }
+.good { height: 100%; }
+.good-buy { justify-self: start; }

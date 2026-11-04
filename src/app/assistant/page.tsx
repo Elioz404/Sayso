@@ -8,8 +8,9 @@ import { ready } from '@/server/context.ts';
 
 export const metadata: Metadata = { title: 'Shop with an AI assistant' };
 
-export default async function AssistantPage() {
+export default async function AssistantPage({ searchParams }: { searchParams: Promise<{ ask?: string }> }) {
   await connection();
+  const ask = (await searchParams).ask?.slice(0, 300);
   const { links, paypal } = await ready();
   return (
     <main className="wrap page shopper-page">
@@ -21,7 +22,7 @@ export default async function AssistantPage() {
             shop, not the AI, prices every cart.
           </p>
         </div>
-        <ShopperChat paypalClientId={paypal.clientId} />
+        <ShopperChat paypalClientId={paypal.clientId} ask={ask} />
       </div>
       <aside className="panel stack shopper-side">
         <h2>Use your own assistant</h2>

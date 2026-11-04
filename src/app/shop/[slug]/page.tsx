@@ -9,7 +9,7 @@ import { Icon } from '@/app/_components/ui.tsx';
 import { isLive } from '@/core/catalog.ts';
 import { jsonLdScript, shopJsonLd } from '@/core/discovery.ts';
 import { formatMoney } from '@/core/money.ts';
-import { assistantPrompt, stockNote } from '@/core/storefront.ts';
+import { assistantLink, assistantPrompt, stockNote } from '@/core/storefront.ts';
 import { ready } from '@/server/context.ts';
 import { shopBySlug } from '@/server/shops.ts';
 
@@ -42,6 +42,9 @@ export default async function ShopPage({ params }: { params: Promise<{ slug: str
 
       <section className={`wrap shop-intro ${shop.cover ? '' : 'shop-intro-plain'}`}>
         <div className="stack shop-intro-text">
+          <a className="small back-link" href="/shops">
+            ← All shops
+          </a>
           <h1 className="display shop-name">{shop.name}</h1>
           <p className="shop-facts">
             {[
@@ -55,7 +58,15 @@ export default async function ShopPage({ params }: { params: Promise<{ slug: str
           </p>
 
           <div className="buy-via">
-            <h2 className="buy-via-title">Buy through your AI assistant</h2>
+            <div className="stack" style={{ gap: 'var(--s2)' }}>
+              <h2 className="buy-via-title">Buy with an AI assistant</h2>
+              <p className="small soft">Say what you want in your own words. The shop prices the cart and you pay with PayPal.</p>
+            </div>
+            <a className="btn btn-primary btn-big buy-via-go" href={assistantLink(assistantPrompt(catalog))}>
+              Shop here with the assistant
+            </a>
+            <details className="buy-via-own">
+              <summary>Or use your own assistant (ChatGPT, any MCP client)</summary>
             <ol className="buy-via-steps">
               <li>
                 <span>Add Sayso as a connector in ChatGPT or any MCP client.</span>
@@ -69,6 +80,7 @@ export default async function ShopPage({ params }: { params: Promise<{ slug: str
                 <span>Approve the exact total in PayPal. The shop prices it, never the assistant.</span>
               </li>
             </ol>
+            </details>
           </div>
         </div>
 
@@ -112,6 +124,9 @@ export default async function ShopPage({ params }: { params: Promise<{ slug: str
                     );
                   })}
                 </ul>
+                <a className="btn good-buy" href={assistantLink(assistantPrompt(catalog, p))}>
+                  Buy with AI
+                </a>
               </div>
             </article>
           ))}
