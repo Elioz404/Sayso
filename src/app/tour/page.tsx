@@ -6,6 +6,7 @@
 // Guard holds what only the judge may decide.
 import type { Metadata } from 'next';
 import { connection } from 'next/server';
+import { CopyField } from '@/app/_components/client-ui.tsx';
 import { Decision, FlashNotice } from '@/app/_components/owner-actions.tsx';
 import { OpenDemoShop, RunStep } from '@/app/_components/tour-actions.tsx';
 import { Icon, Status } from '@/app/_components/ui.tsx';
@@ -23,7 +24,24 @@ import { ready } from '@/server/context.ts';
 import { ownerView } from '@/server/owner.ts';
 import { claimedShop } from '@/server/seller-session.ts';
 
-export const metadata: Metadata = { title: 'For Judges', description: 'Try Sayso for real on the PayPal sandbox: buy with the AI assistant, or open a shop and run it with your agent.' };
+// It lists the sandbox accounts judges pay and sell with: no need for search engines to keep a copy.
+export const metadata: Metadata = {
+  title: 'For Judges',
+  description: 'Try Sayso for real on the PayPal sandbox: buy with the AI assistant, or open a shop and run it with your agent.',
+  robots: { index: false, follow: false },
+};
+
+/** The PayPal sandbox accounts judges use, from the server's settings (never in the code). */
+function sandboxAccounts() {
+  const account = (role: 'BUYER' | 'SELLER') => {
+    const email = process.env[`SAYSO_JUDGE_${role}_EMAIL`]?.trim();
+    const password = process.env[`SAYSO_JUDGE_${role}_PASSWORD`]?.trim();
+    return email && password ? { email, password } : undefined;
+  };
+  const buyer = account('BUYER');
+  const seller = account('SELLER');
+  return buyer || seller ? { buyer, seller } : undefined;
+}
 
 type State = 'done' | 'now' | 'open' | 'later';
 interface Row {
@@ -48,6 +66,7 @@ const AGENT_STEP: Record<TourStep, { title: string; note: string; run: string } 
 export default async function JudgesPage({ searchParams }: { searchParams: Promise<{ published?: string }> }) {
   await connection();
   const published = (await searchParams).published === '1';
+  const accounts = sandboxAccounts();
   const { carts, catalogs, orders, links, tours } = await ready();
 
   // The buyer's side: the orders this browser paid for, newest first.
@@ -153,19 +172,28 @@ export default async function JudgesPage({ searchParams }: { searchParams: Promi
         <span className="small soft">For Judges</span>
         <h1>Try Sayso for real</h1>
         <p className="lede">Buy like a shopper, or open a shop and run it with your own agent. Everything runs on the PayPal sandbox; no real money moves.</p>
-        <p className="judges-need small">
-          <Icon name="shield" size={16} />
-          <span>
-            You&apos;ll need the PayPal sandbox accounts from the testing instructions: a <b>personal</b> account to pay, a <b>business</b> account to
-            sell.
-          </span>
-        </p>
+        {!accounts && (
+          <p className="judges-need small">
+            <Icon name="shield" size={16} />
+            <span>
+              You&apos;ll need the PayPal sandbox accounts from the testing instructions: a <b>personal</b> account to pay, a <b>business</b> account
+              to sell.
+            </span>
+          </p>
+        )}
         {published && (
           <FlashNotice params={['published']} className="callout small callout-say">
             Your shop is live. Now let the agents at it, below.
           </FlashNotice>
         )}
       </header>
+
+      {accounts && (
+        <section className="judges-accounts" aria-label="PayPal sandbox accounts">
+          {accounts.buyer ? <Account who="PayPal sandbox buyer" use="Personal account, to pay" {...accounts.buyer} /> : <span />}
+          {accounts.seller && <Account who="PayPal sandbox seller" use="Business account, to publish your shop" {...accounts.seller} />}
+        </section>
+      )}
 
       <div className="judges-paths">
         <Path id="buy" title="Buy something" time="About 3 minutes" icon="bag" rows={buying} />
@@ -185,6 +213,20 @@ export default async function JudgesPage({ searchParams }: { searchParams: Promi
         />
       </div>
     </main>
+  );
+}
+
+/** One sandbox account: what it's for, and its email and password to copy into PayPal's sign-in. */
+function Account({ who, use, email, password }: { who: string; use: string; email: string; password: string }) {
+  return (
+    <div className="judges-account">
+      <span className="stack" style={{ gap: 0 }}>
+        <b>{who}</b>
+        <span className="small soft">{use}</span>
+      </span>
+      <CopyField value={email} />
+      <CopyField value={password} />
+    </div>
   );
 }
 

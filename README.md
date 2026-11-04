@@ -84,7 +84,7 @@ Agents work all day; the owner is out at the market. Sayso is built to be run fr
 
 ## For Judges: try it for real
 
-Open [`/tour`](https://sayso-ovph.onrender.com/tour) (or **For Judges** in the header) and pick a side. Everything is real, on the PayPal sandbox; each path is a checklist that ticks itself off as you go. You need the sandbox accounts from the testing instructions: a **personal** account to pay, a **business** account to sell.
+Open [`/tour`](https://sayso-ovph.onrender.com/tour) (or **For Judges** in the header) and pick a side. Everything is real, on the PayPal sandbox; each path is a checklist that ticks itself off as you go. The page lists the PayPal sandbox accounts to use, with copy buttons: a **personal** account to pay, a **business** account to sell (they're in the testing instructions too).
 
 **Buy something** (about 3 minutes)
 1. **Buy with the assistant.** It opens with a request; it searches every shop, the shop prices the cart, and you pay with PayPal's own button.
