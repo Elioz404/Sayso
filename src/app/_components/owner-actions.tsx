@@ -399,7 +399,7 @@ export function ConnectAgent({ endpoint, quiet = false }: { endpoint: string; qu
           dialog.current?.showModal();
         }}
       >
-        <Icon name="plus" size={16} /> Connect an agent
+        Connect an agent
       </button>
       <dialog
         ref={dialog}
@@ -414,9 +414,6 @@ export function ConnectAgent({ endpoint, quiet = false }: { endpoint: string; qu
           </button>
           {issued ? (
             <div className="connect">
-              <span className="connect-badge connect-badge-ok" aria-hidden="true">
-                <Icon name="check" size={20} />
-              </span>
               <div className="stack" style={{ gap: 4 }}>
                 <h2 id="connect-title" className="h3">
                   {issued.label} has its key
@@ -462,9 +459,6 @@ export function ConnectAgent({ endpoint, quiet = false }: { endpoint: string; qu
                 setBusy(false);
               }}
             >
-              <span className="connect-badge" aria-hidden="true">
-                <Icon name="agent" size={20} />
-              </span>
               <div className="stack" style={{ gap: 4 }}>
                 <h2 id="connect-title" className="h3">
                   Connect an agent

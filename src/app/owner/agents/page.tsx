@@ -5,7 +5,6 @@ import type { ReactNode } from 'react';
 import { CopyField } from '@/app/_components/client-ui.tsx';
 import { ConnectAgent, RevokeKey } from '@/app/_components/owner-actions.tsx';
 import { Ago, When } from '@/app/_components/time.tsx';
-import { Icon } from '@/app/_components/ui.tsx';
 import type { AgentKey } from '@/core/access.ts';
 import type { Policy } from '@/core/guard/policy.ts';
 import type { ActionKind, GuardRecord } from '@/core/guard/types.ts';
@@ -81,9 +80,6 @@ export default async function Agents() {
             </ul>
           ) : (
             <div className="agents-empty">
-              <span className="agent-avatar" aria-hidden="true">
-                <Icon name="agent" size={22} />
-              </span>
               <b>No agent connected yet</b>
               <span className="small soft">Connect ChatGPT or any MCP app, and it can look after orders, stock and refunds for you.</span>
               {!demo && <ConnectAgent endpoint={links.sellerMcp} quiet />}
@@ -108,18 +104,12 @@ export default async function Agents() {
           </h2>
           <ul className="agent-can">
             <li>
-              <span className="can-mark can-ok" aria-hidden="true">
-                <Icon name="check" size={14} />
-              </span>
               <span>
                 <b>On its own</b>
                 <span className="small soft">Orders and sales, prices and stock, what to make next, tracking numbers.</span>
               </span>
             </li>
             <li>
-              <span className="can-mark can-hold" aria-hidden="true">
-                <Icon name="shield" size={14} />
-              </span>
               <span>
                 <b>Within your rules</b>
                 <span className="small soft">
@@ -129,9 +119,6 @@ export default async function Agents() {
               </span>
             </li>
             <li>
-              <span className="can-mark can-stop" aria-hidden="true">
-                <Icon name="x" size={14} />
-              </span>
               <span>
                 <b>Only you</b>
                 <span className="small soft">Saying OK, changing the rules (an agent can only propose), publishing, keys.</span>
@@ -167,9 +154,6 @@ export default async function Agents() {
 function AgentRow({ agent: k, asked, action }: { agent: AgentKey; asked?: Asked; action?: ReactNode }) {
   return (
     <li className={`agent-row${k.revokedAt ? ' agent-row-off' : ''}`}>
-      <span className="agent-avatar" aria-hidden="true">
-        <Icon name="agent" size={18} />
-      </span>
       <span className="agent-name">
         <b>{k.label}</b>
         <span className="small muted">

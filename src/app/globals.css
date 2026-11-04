@@ -1047,11 +1047,9 @@ span.sell-qty { border-color: transparent; background: transparent; padding: 0; 
 .agents-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: var(--s5); align-items: start; }
 .agents-panel { display: flex; flex-direction: column; gap: var(--s4); min-width: 0; }
 .agent-list { list-style: none; margin: 0; padding: 0; }
-.agent-row { display: grid; grid-template-columns: 40px minmax(0, 1fr) minmax(0, 210px) auto; gap: var(--s4); align-items: center; padding: var(--s3) 0; }
+.agent-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 210px) auto; gap: var(--s4); align-items: center; padding: var(--s3) 0; }
 .agent-row + .agent-row { border-top: 1px solid var(--rule); }
 .agent-row-off { opacity: 0.6; }
-.agent-avatar { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--agent-soft); color: var(--agent); flex: none; }
-.agent-row-off .agent-avatar { background: var(--paper-2); color: var(--ink-3); }
 .agent-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .agent-name b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-use { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -1063,16 +1061,10 @@ span.sell-qty { border-color: transparent; background: transparent; padding: 0; 
 .agents-revoked summary { cursor: pointer; color: var(--ink-3); }
 .agents-revoked .agent-list { margin-top: var(--s2); }
 .agent-can { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s4); }
-.agent-can li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: var(--s3); align-items: start; }
-.agent-can li > span:last-child { display: flex; flex-direction: column; gap: 2px; }
-.can-mark { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; }
-.can-ok { background: var(--ok-soft); color: var(--ok); }
-.can-hold { background: var(--hold-soft); color: var(--hold); }
-.can-stop { background: var(--stop-soft); color: var(--stop); }
+.agent-can li > span { display: flex; flex-direction: column; gap: 2px; }
+.agent-can li + li { padding-top: var(--s4); border-top: 1px solid var(--rule); }
 .agents-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s4); }
 .connect { display: flex; flex-direction: column; gap: var(--s4); }
-.connect-badge { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; background: var(--agent-soft); color: var(--agent); }
-.connect-badge-ok { background: var(--ok-soft); color: var(--ok); }
 .connect-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s4); counter-reset: connect; }
 .connect-steps li { display: flex; flex-direction: column; gap: var(--s1); padding-left: 32px; position: relative; counter-increment: connect; }
 .connect-steps li::before { content: counter(connect); position: absolute; left: 0; top: 0; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--paper-2); font-size: var(--t-xs); font-weight: 700; color: var(--ink-2); }
@@ -1082,12 +1074,32 @@ span.sell-qty { border-color: transparent; background: transparent; padding: 0; 
 .connect-actions { display: flex; justify-content: flex-end; gap: var(--s2); }
 @media (max-width: 1080px) { .agents-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 640px) {
-  .agent-row { grid-template-columns: 40px minmax(0, 1fr) auto; row-gap: var(--s1); align-items: start; }
-  .agent-name { grid-column: 2; grid-row: 1; }
-  .agent-end { grid-column: 3; grid-row: 1; }
-  .agent-use { grid-column: 2 / 4; grid-row: 2; flex-direction: row; flex-wrap: wrap; gap: 0 var(--s2); }
+  .agent-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: var(--s1); align-items: start; }
+  .agent-name { grid-column: 1; grid-row: 1; }
+  .agent-end { grid-column: 2; grid-row: 1; }
+  .agent-use { grid-column: 1 / 3; grid-row: 2; flex-direction: row; flex-wrap: wrap; gap: 0 var(--s2); }
   .agent-use > * + *::before { content: '· '; color: var(--ink-3); }
   /* Asking "Revoke now?" needs the whole width. */
-  .agent-row:has(.agent-end .btn-danger) .agent-end { grid-column: 2 / 4; grid-row: 3; }
+  .agent-row:has(.agent-end .btn-danger) .agent-end { grid-column: 1 / 3; grid-row: 3; }
   .agents-links { grid-template-columns: minmax(0, 1fr); }
+}
+/* ---------- Rules: per action, what an agent does alone, what waits for the owner, what is blocked ---------- */
+.rules-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--s5); align-items: start; }
+.rules-panel { display: flex; flex-direction: column; gap: var(--s4); min-width: 0; }
+.rules-table { display: flex; flex-direction: column; font-size: var(--t-sm); }
+.rules-tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 1.3fr) minmax(0, 1.3fr); gap: var(--s4); padding: var(--s3) 0; border-top: 1px solid var(--rule); align-items: baseline; }
+.rules-th { border-top: 0; padding-top: 0; color: var(--ink-3); font-size: var(--t-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.rules-tr > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rules-source { max-width: none; padding-top: var(--s3); border-top: 1px solid var(--rule); }
+.earned > :last-child { flex: none; }
+.rules-more summary { cursor: pointer; color: var(--ink-3); }
+.rules-more .copy-field { margin-top: var(--s2); }
+@media (max-width: 1080px) { .rules-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 640px) {
+  .rules-th { display: none; }
+  .rules-tr { grid-template-columns: minmax(0, 1fr); gap: var(--s2); padding: var(--s4) 0; }
+  .rules-tr:nth-child(2) { border-top: 0; padding-top: 0; }
+  .rules-tr > [data-label] { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 2px var(--s3); }
+  .rules-tr > [data-label]::before { content: attr(data-label); color: var(--ink-3); }
+  .rules-tr > [data-label] > span { grid-column: 2; }
 }
