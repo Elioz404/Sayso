@@ -17,6 +17,8 @@ import { Icon } from './ui.tsx';
 interface Created {
   shop: { slug: string; name: string };
   draft: DraftView;
+  /** Opened from For Judges: it closes after two days. */
+  judge?: boolean;
   /** Only where owners sign in with a secret instead of PayPal. */
   owner_secret?: string;
 }
@@ -28,7 +30,10 @@ const EXAMPLE = `Hand-thrown mugs, 12 oz, $34. Sage green (6 left) and speckled 
 Ramen bowls $48, 3 left. Custom bud vases $62, made to order in about 10 days.
 USPS in the US $8.95, free over $75.`;
 
-/** `judge`: opened from For Judges (the shop closes after two days). `resume`: a draft this browser is still reviewing. */
+/**
+ * `judge`: For Judges sent them here, so a new draft is a judge's shop (it closes after two days).
+ * `resume`: a draft this browser is still reviewing, a judge's or not; starting over drops it.
+ */
 export function OnboardFlow({ paypalLogin, judge = false, resume }: { paypalLogin: boolean; judge?: boolean; resume?: Created }) {
   const [photos, setPhotos] = useState<string[]>([]);
   const [created, setCreated] = useState<Created | undefined>(resume);
@@ -40,7 +45,7 @@ export function OnboardFlow({ paypalLogin, judge = false, resume }: { paypalLogi
       <header className="sell-head">
         <h1>Open your shop</h1>
         <p className="lede">Photos in, a shop AI shoppers can buy from out. You check everything before it goes live.</p>
-        {judge && <p className="small soft">From For Judges: your shop closes after two days.</p>}
+        {(created ? created.judge : judge) && <p className="small soft">From For Judges: your shop closes after two days.</p>}
       </header>
       <Steps step={step} drafting={drafting} paypalLogin={paypalLogin} />
       {created ? (

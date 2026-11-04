@@ -14,11 +14,14 @@ export default async function Start({ searchParams }: { searchParams: Promise<{ 
   // A draft this browser made in the last hour and hasn't published: pick it up at the review.
   const draftId = await claimedShop();
   const draft = draftId ? await catalogs.byShopId(draftId) : undefined;
-  const resume = draft && !isLive(draft) ? { shop: { slug: draft.shop.slug, name: draft.shop.name }, draft: draftView(draft) } : undefined;
-  const judge = (await searchParams).judge === '1' || (draftId ? (await tours?.forShop(draftId))?.kind === 'seller' : false);
+  // Only that draft carries For Judges with it; a new shop is a judge's only when For Judges sent them here.
+  const resume =
+    draft && !isLive(draft)
+      ? { shop: { slug: draft.shop.slug, name: draft.shop.name }, draft: draftView(draft), judge: (await tours?.forShop(draft.shop.id))?.kind === 'seller' }
+      : undefined;
   return (
     <main className="wrap page">
-      <OnboardFlow paypalLogin={paypalLoginEnabled()} judge={judge} resume={resume} />
+      <OnboardFlow paypalLogin={paypalLoginEnabled()} judge={(await searchParams).judge === '1'} resume={resume} />
     </main>
   );
 }

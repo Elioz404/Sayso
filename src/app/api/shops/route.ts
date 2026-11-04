@@ -47,7 +47,8 @@ export async function POST(request: Request) {
       { ownerSecret: !paypalLogin, agentKey: body.agent_key !== false },
     );
     const { shop } = result.catalog;
-    if (body.judge && tours) await tours.adopt(shop.id);
+    const judge = Boolean(body.judge && tours);
+    if (judge) await tours!.adopt(shop.id);
     // This browser may edit the draft before publishing (and, with PayPal sign-in, claim it).
     await rememberClaim(shop.id);
     return Response.json(
@@ -68,6 +69,7 @@ export async function POST(request: Request) {
           })),
         })),
         draft: draftView(result.catalog),
+        judge,
         questions: result.questions,
         owner_secret: result.ownerSecret,
         claim_url: paypalLogin ? links.paypalSignIn : undefined,

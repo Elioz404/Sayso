@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { connection } from 'next/server';
 import { RailDrawer, RailNav, TabBar } from '@/app/_components/client-ui.tsx';
 import { LoginForm, ShopSwitcher, SignOut } from '@/app/_components/owner-actions.tsx';
+import { When } from '@/app/_components/time.tsx';
 import { Icon, Mark, Status } from '@/app/_components/ui.tsx';
 import { demoEnabled, paypalLoginEnabled } from '@/server/context.ts';
 import { ownerView, pendingFor, signedInSeller } from '@/server/owner.ts';
@@ -79,7 +80,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
               <span className="small">
                 {tour?.kind === 'seller' ? (
                   <>
-                    <b>You opened this shop from For Judges.</b> Everything here is real; it closes after two days.
+                    <b>A For Judges shop.</b> Everything here is real; it closes <When iso={tour.expiresAt} />.
                   </>
                 ) : (
                   <>
