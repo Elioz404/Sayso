@@ -30,6 +30,7 @@ import type { VariantRow } from '@/core/catalog-view.ts';
 import { formatMoney, parseAmount, toMoney } from '@/core/money.ts';
 import { callApi } from './api.ts';
 import type { PayPalCheck } from '@/core/record-view.ts';
+import { ProductEditDialog, type EditableProduct } from './catalog-editor.tsx';
 import { ChannelBadge, Thumb } from './owner-bits.tsx';
 import { RecordModal } from './record-modal.tsx';
 import { OUTCOME_TONE } from './record-receipt.tsx';
@@ -418,6 +419,17 @@ type MarketState = MarketView | 'loading' | { error: string };
 interface CatalogContext {
   market: Map<string, MarketState>;
   check: (id: string) => void;
+  /** Opens the whole product (name, description, photo, options) to edit. */
+  edit?: (productId: string) => void;
+}
+
+function EditCell({ data, context }: ICellRendererParams<VariantRow, unknown, CatalogContext>) {
+  if (!data || !context.edit) return null;
+  return (
+    <button type="button" className="btn btn-quiet btn-small" onClick={() => context.edit!(data.productId)}>
+      Edit
+    </button>
+  );
 }
 
 const POSITION_TONE = { below: 'hold', within: 'ok', above: 'hold' } as const;
@@ -446,7 +458,9 @@ function MarketCell({ data, context }: ICellRendererParams<VariantRow, unknown, 
 }
 
 /** `readOnly`: the shared demo shop, where nobody can change prices or stock. */
-export function CatalogGrid({ rows, market: marketEnabled, readOnly = false }: { rows: VariantRow[]; market: boolean; readOnly?: boolean }) {
+/** `products`: the full products of these rows, for the Edit button (left out when read-only). */
+export function CatalogGrid({ rows, market: marketEnabled, readOnly = false, products = [], currency = 'USD' }: { rows: VariantRow[]; market: boolean; readOnly?: boolean; products?: EditableProduct[]; currency?: string }) {
+  const [editing, setEditing] = useState<string>();
   const { ref, width } = useGridSize();
   const narrow = width < NARROW;
   const [feedback, setFeedback] = useState<Feedback>();
@@ -463,6 +477,7 @@ export function CatalogGrid({ rows, market: marketEnabled, readOnly = false }: {
     };
     return {
       market: market.current,
+      ...(readOnly ? {} : { edit: (productId: string) => setEditing(productId) }),
       check: (id) => {
         show(id, 'loading');
         fetch(`/api/owner/market?variant=${encodeURIComponent(id)}`)
@@ -473,7 +488,7 @@ export function CatalogGrid({ rows, market: marketEnabled, readOnly = false }: {
           .catch(() => show(id, { error: 'Network error' }));
       },
     };
-  }, []);
+  }, [readOnly]);
 
   const columns = useMemo<ColDef<VariantRow>[]>(
     () => [
@@ -520,6 +535,7 @@ export function CatalogGrid({ rows, market: marketEnabled, readOnly = false }: {
       { field: 'sold', headerName: 'Sold · 14d', headerTooltip: 'Units sold in the last 14 days', minWidth: 104, flex: 0.7, hide: narrow, type: 'rightAligned', cellClass: RIGHT, valueFormatter: (p) => (p.value ? String(p.value) : '-') },
       { colId: 'paypal', headerName: 'PayPal catalog', cellRenderer: PayPalCell, minWidth: 130, flex: 0.8, sortable: false, hide: narrow },
       { colId: 'market', headerName: 'Market price', cellRenderer: MarketCell, minWidth: 170, flex: 1.2, sortable: false, hide: narrow || !marketEnabled },
+      { colId: 'edit', headerName: '', cellRenderer: EditCell, minWidth: 92, flex: 0.6, sortable: false, hide: readOnly, cellClass: RIGHT },
     ],
     [narrow, marketEnabled, readOnly],
   );
@@ -571,6 +587,9 @@ export function CatalogGrid({ rows, market: marketEnabled, readOnly = false }: {
           <GridSkeleton rows={rows.length} />
         )}
       </div>
+      {editing && products.some((p) => p.id === editing) && (
+        <ProductEditDialog key={editing} product={products.find((p) => p.id === editing)!} currency={currency} onClose={() => setEditing(undefined)} />
+      )}
     </div>
   );
 }

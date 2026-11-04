@@ -6,6 +6,8 @@ import { formatMoney, toMoney } from './money.ts';
 
 export interface VariantRow {
   id: string;
+  /** The product this option belongs to. */
+  productId: string;
   product: string;
   /** The variant's own name, empty when the product has a single default variant. */
   title: string;
@@ -40,6 +42,7 @@ function toRow(catalog: Catalog, product: string, siblings: number, variantId: s
   if (!variant) return undefined;
   return {
     id: variant.id,
+    productId: found.product.id,
     product,
     title: siblings > 1 || variant.title !== 'Default' ? variant.title : '',
     currency: catalog.shop.currency,

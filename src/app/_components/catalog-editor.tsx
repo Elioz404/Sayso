@@ -5,7 +5,7 @@
 // prices. The shared demo shows them read-only.
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { callApi } from './api.ts';
 import { shrink } from './images.ts';
 import { useAction } from './use-action.ts';
@@ -35,7 +35,28 @@ export function currencySymbol(currency: string): string {
   }
 }
 
-export function ProductCard({ product, currency, readOnly }: { product: EditableProduct; currency: string; readOnly: boolean }) {
+/** One product to edit in full, in a modal over the catalog list. */
+export function ProductEditDialog({ product, currency, onClose }: { product: EditableProduct; currency: string; onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (dialog.current && !dialog.current.open) dialog.current.showModal();
+  }, []);
+  return (
+    <dialog ref={dialog} className="modal modal-wide" aria-label={`Edit ${product.name}`} onClose={onClose} onClick={(e) => e.target === dialog.current && dialog.current.close()}>
+      <div className="modal-body">
+        <button type="button" className="modal-close" aria-label="Close" onClick={() => dialog.current?.close()}>
+          ×
+        </button>
+        <h2 className="h3">Edit product</h2>
+        <ul className="sell-cards modal-product">
+          <ProductCard product={product} currency={currency} readOnly={false} onDone={() => dialog.current?.close()} />
+        </ul>
+      </div>
+    </dialog>
+  );
+}
+
+export function ProductCard({ product, currency, readOnly, onDone }: { product: EditableProduct; currency: string; readOnly: boolean; onDone?: () => void }) {
   const router = useRouter();
   const symbol = currencySymbol(currency);
   const start = () => ({
@@ -82,12 +103,14 @@ export function ProductCard({ product, currency, readOnly }: { product: Editable
       setPhoto(undefined);
       setSaved(true);
       router.refresh();
+      onDone?.();
     }, 'save');
 
   const remove = () =>
     run(async () => {
       await callApi(`/api/owner/products/${product.id}`, 'DELETE');
       router.refresh();
+      onDone?.();
     }, 'remove');
 
   const shown = photo ?? product.image;

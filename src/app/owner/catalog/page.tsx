@@ -1,8 +1,9 @@
 // The owner's catalog, in two tabs: Products (edited in place, ten to a page) and Shipping.
 import type { Metadata } from 'next';
-import { ProductCard, ShippingEditor, type EditableProduct } from '@/app/_components/catalog-editor.tsx';
+import { ShippingEditor, type EditableProduct } from '@/app/_components/catalog-editor.tsx';
+import { CatalogGrid } from '@/app/_components/grids.tsx';
 import { Icon } from '@/app/_components/ui.tsx';
-import { soldSince } from '@/core/catalog-view.ts';
+import { soldSince, variantRows } from '@/core/catalog-view.ts';
 import { toMoney } from '@/core/money.ts';
 import { ownerView } from '@/server/owner.ts';
 
@@ -44,8 +45,8 @@ export default async function Catalog({ searchParams }: { searchParams: Promise<
         <div>
           <h1>Catalog</h1>
           <p className="sub">
-            {catalog.products.length} product{catalog.products.length === 1 ? '' : 's'}. Edit any of them here, or ask your connected agent to change names, prices and
-            stock.
+            {catalog.products.length} product{catalog.products.length === 1 ? '' : 's'}. Double-click a price or stock to change it, or Edit for the whole product. Your
+            connected agent can change them too.
           </p>
         </div>
         <a className="btn btn-primary" href="/owner/catalog/new">
@@ -89,12 +90,15 @@ export default async function Catalog({ searchParams }: { searchParams: Promise<
         </section>
       ) : (
         <section className="block" aria-label="Products">
-          {demo && <p className="small soft">The shared demo shop&apos;s catalog stays as it is. Open your own shop from For Judges to edit yours.</p>}
-          <ul className="sell-cards">
-            {products.map((p) => (
-              <ProductCard key={p.id} product={p} currency={shop.currency} readOnly={demo} />
-            ))}
-          </ul>
+          <CatalogGrid
+            rows={variantRows(catalog)
+              .filter((r) => products.some((p) => p.id === r.productId))
+              .map((r) => ({ ...r, sold: sold.get(r.id) ?? 0 }))}
+            products={products}
+            currency={shop.currency}
+            market={Boolean(view.market)}
+            readOnly={demo}
+          />
           {pages > 1 && (
             <nav className="pager" aria-label="Pages">
               {page > 1 && (
