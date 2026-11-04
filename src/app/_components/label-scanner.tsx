@@ -46,8 +46,8 @@ export function LabelScanner({ orderId }: { orderId: string }) {
   return (
     <div className="scan">
       <input ref={file} type="file" accept="image/*" capture="environment" hidden onChange={(e) => e.target.files?.[0] && void read(e.target.files[0])} />
-      <button className="btn btn-primary scan-shoot" disabled={Boolean(busy)} onClick={() => file.current?.click()}>
-        <Icon name="camera" size={20} /> {busy === 'read' ? 'Reading the label...' : 'Snap the shipping label'}
+      <button type="button" className="btn scan-shoot" disabled={Boolean(busy)} onClick={() => file.current?.click()}>
+        <Icon name="camera" size={18} /> {busy === 'read' ? 'Reading the label…' : 'Fill it from a photo of the label'}
       </button>
       <div className="scan-row">
         {preview && <img src={preview} alt="The label you photographed" className="scan-preview" />}
@@ -69,8 +69,8 @@ export function LabelScanner({ orderId }: { orderId: string }) {
         </div>
       </div>
       {note && <p className="small soft">{note}</p>}
-      <button className="btn" disabled={Boolean(busy) || number.replace(/[\s-]/g, '').length < 8} onClick={() => void save()}>
-        <Icon name="truck" size={18} /> {busy === 'save' ? 'Adding to PayPal...' : 'Add tracking to the PayPal order'}
+      <button type="button" className="btn btn-primary scan-save" disabled={Boolean(busy) || number.replace(/[\s-]/g, '').length < 8} onClick={() => void save()}>
+        {busy === 'save' ? 'Adding to PayPal…' : 'Mark as shipped'}
       </button>
       {error && <p className="error small">{error}</p>}
     </div>
