@@ -105,3 +105,21 @@ test('the agent earns autonomy: the judge approves three held refunds, then adop
   const cap = (await s.saySo.policy(tour.shopId)).rules.find((r) => r.id === 'refund-cap') as { limit: number };
   assert.equal(cap.limit, 6_000);
 });
+
+test('an old rule proposal approved after the rules changed is refused, not applied over them', async () => {
+  const s = await stack();
+  const { tours: t } = tours(s, await lender(s));
+  const tour = await t.start();
+
+  const rules = await t.run(tour.shopId, 'rules'); // the agent asks for $10,000 refunds; it waits
+  const earn = await t.run(tour.shopId, 'earn');
+  for (const id of earn.recordIds!) await s.saySo.decide(tour.shopId, id, 'approve', `owner:${tour.shopId}`);
+  const [suggestion] = (await s.saySo.autonomy(tour.shopId)).suggestions;
+  await s.saySo.adoptSuggestion(tour.shopId, suggestion.id, ownerActor(tour.shopId));
+
+  const late = await s.saySo.decide(tour.shopId, rules.recordId!, 'approve', `owner:${tour.shopId}`);
+  assert.equal(late.status, 'failed');
+  assert.match(JSON.stringify(late.events.at(-1)), /rules changed since this was proposed/);
+  const cap = (await s.saySo.policy(tour.shopId)).rules.find((r) => r.id === 'refund-cap') as { limit: number };
+  assert.equal(cap.limit, 6_000, 'the earned rule is still in force');
+});

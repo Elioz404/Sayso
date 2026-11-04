@@ -121,7 +121,10 @@ export function sayso(record: GuardRecord, ctx: ToolContext) {
       ? 'Blocked before reaching PayPal: it would fail against the live payment state. Nothing moved. Explain why to the owner; do not retry.'
       : "Refused by the owner's rules. Do not retry the same action; explain why to the owner.",
     rejected: 'The owner said no.',
-    failed: 'PayPal did not complete it. Nothing else changed.',
+    failed:
+      record.action.kind === 'policy.update'
+        ? 'Not applied: the rules changed after you proposed this. Read the current rules (get_policy) and propose again if it is still needed.'
+        : 'PayPal did not complete it. Nothing else changed.',
     executing: 'In progress.',
   };
   return {

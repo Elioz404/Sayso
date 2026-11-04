@@ -2,6 +2,7 @@
 // is itself a Guard action (`policy.update`), so it gets the same simulate -> approve -> verify -> audit
 // treatment as moving money.
 
+import { createHash } from 'node:crypto';
 import { formatMoney } from '../money.ts';
 import { canonicalJson } from './engine.ts';
 import type { Policy, Rule } from './policy.ts';
@@ -23,7 +24,19 @@ export class MemoryPolicyStore implements PolicyStore {
   }
 }
 
-/** `params.policy` holds the proposed Policy. `current` is the policy in force (the default if none saved). */
+/** Which version of a policy's rules this is, so a proposal can say what it was written against. */
+export function policyVersion(policy: Policy): string {
+  return createHash('sha256').update(canonicalJson(policy.rules)).digest('hex').slice(0, 16);
+}
+
+export const STALE_PROPOSAL = 'The rules changed since this was proposed, so it was not applied; ask again';
+
+/**
+ * `params.policy` holds the proposed Policy; `params.base` the version of the rules it was written
+ * against. A proposal replaces the whole policy, so if the rules changed while it waited (the owner
+ * adopted something else, say), applying it would silently undo that change: it fails instead.
+ * `current` is the policy in force (the default if none saved).
+ */
 export function policyUpdateExecutor(store: PolicyStore, current: (ownerId: string) => Promise<Policy>): Executor {
   const proposed = (params: Record<string, unknown> | undefined): Policy => {
     const policy = params?.policy as Policy | undefined;
@@ -36,6 +49,7 @@ export function policyUpdateExecutor(store: PolicyStore, current: (ownerId: stri
       const next = proposed(action.params);
       const blockers = next.ownerId !== action.ownerId ? ['Policy belongs to a different owner.'] : [];
       const now = await current(action.ownerId);
+      if (stale(action.params, now)) blockers.push(`${STALE_PROPOSAL}.`);
       return {
         ok: blockers.length === 0,
         blockers,
@@ -46,6 +60,7 @@ export function policyUpdateExecutor(store: PolicyStore, current: (ownerId: stri
     },
     async execute(action) {
       const next = proposed(action.params);
+      if (stale(action.params, await current(action.ownerId))) throw new Error(STALE_PROPOSAL);
       await store.put({ ...next, ownerId: action.ownerId });
       return { rules: next.rules.length };
     },
@@ -55,6 +70,10 @@ export function policyUpdateExecutor(store: PolicyStore, current: (ownerId: stri
       return { ok, detail: ok ? `Policy now has ${saved.rules.length} rule(s).` : 'Saved policy does not match the proposal.' };
     },
   };
+}
+
+function stale(params: Record<string, unknown> | undefined, now: Policy): boolean {
+  return typeof params?.base === 'string' && params.base !== policyVersion(now);
 }
 
 /** One line per rule, for approval screens, the CLI and agents: "Refunds over $50.00 need the owner's OK". */

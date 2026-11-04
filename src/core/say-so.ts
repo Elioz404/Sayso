@@ -8,7 +8,7 @@ import { fromLlmError, HttpError, notFound } from './errors.ts';
 import { earnedAutonomy, LOOKBACK_DAYS, type Autonomy } from './guard/autonomy.ts';
 import { verifyAuditChain, type Guard } from './guard/engine.ts';
 import type { Policy } from './guard/policy.ts';
-import { describeRule } from './guard/policy-store.ts';
+import { describeRule, policyVersion } from './guard/policy-store.ts';
 import type { Actor, GuardRecord } from './guard/types.ts';
 import type { PolicyLookup } from './policies.ts';
 import { RateLimit } from './rate-limit.ts';
@@ -84,9 +84,13 @@ export class SaySo {
     return this.submitPolicy(found.policy, `${found.title}. ${found.evidence}`, actor);
   }
 
-  /** Ask to replace a shop's rules. Goes through Guard; from an agent it always waits for the owner. */
-  submitPolicy(policy: Policy, reason: string, actor: Actor): Promise<GuardRecord> {
-    return this.deps.guard.submit({ kind: 'policy.update', actor, ownerId: policy.ownerId, reason, params: { policy } });
+  /**
+   * Ask to replace a shop's rules. Goes through Guard; from an agent it always waits for the owner.
+   * It carries the version of the rules it replaces, so it is refused if they change while it waits.
+   */
+  async submitPolicy(policy: Policy, reason: string, actor: Actor): Promise<GuardRecord> {
+    const base = policyVersion(await this.policy(policy.ownerId));
+    return this.deps.guard.submit({ kind: 'policy.update', actor, ownerId: policy.ownerId, reason, params: { policy, base } });
   }
 
   /**

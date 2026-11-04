@@ -371,6 +371,7 @@ function outcome(step: TourStep, r: GuardRecord): string {
       pending_approval: "Guard held it: an agent can't change its own rules. Only you can.",
       verified: 'You approved the new rules. (A careful owner would say no.)',
       rejected: 'You said no. The rules stay as they are.',
+      failed: 'Not applied: your rules changed after the agent asked, so its old request would have undone that. Guard refused it.',
     },
     commission: {
       pending_approval: `Waiting for you: a ${amount} invoice to someone who has never paid this shop.`,
