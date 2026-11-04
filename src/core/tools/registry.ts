@@ -3,12 +3,13 @@
 // JSON written for an agent to read and relay to its human.
 
 import { HttpError } from '../errors.ts';
+import { maskDeep } from '../privacy.ts';
 import { buyerTools } from './buyer.ts';
 import { ToolError, type Tool, type ToolContext } from './context.ts';
 import { validate } from './schema.ts';
 import { sellerTools } from './seller.ts';
 
-export { ToolError, type Tool, type ToolContext, type ToolServices } from './context.ts';
+export { ToolError, type Tool, type ToolContext, type ToolCost, type ToolServices } from './context.ts';
 export { sayso } from './views.ts';
 
 export const TOOLS: readonly Tool[] = [...buyerTools, ...sellerTools];
@@ -32,8 +33,10 @@ export async function callTool(name: string, input: unknown, ctx: ToolContext): 
   const args = input ?? {};
   const errors = validate(tool.inputSchema, args);
   if (errors.length) throw new ToolError(`Invalid arguments: ${errors.join('; ')}`);
+  if (tool.cost && ctx.allow && !ctx.allow(tool.cost)) throw new ToolError(`Too many ${name} calls from here; wait a few minutes and try again.`);
   try {
-    return await tool.run(args as Record<string, unknown>, ctx);
+    const result = await tool.run(args as Record<string, unknown>, ctx);
+    return ctx.agent?.shared ? maskDeep(result) : result;
   } catch (err) {
     if (err instanceof HttpError) throw new ToolError(err.status >= 500 ? `Shop error: ${err.message}` : err.message);
     throw err;

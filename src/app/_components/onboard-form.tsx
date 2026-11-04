@@ -6,7 +6,9 @@
 // the browser so a phone picture uploads fast and stays under the server's limit.
 
 import { useState } from 'react';
+import { MAX_ONBOARDING_PHOTOS } from '@/core/photo-limits.ts';
 import { callApi } from './api.ts';
+import { shrink } from './images.ts';
 import { CopyField } from './client-ui.tsx';
 import { Icon } from './ui.tsx';
 
@@ -26,16 +28,6 @@ interface Created {
 }
 
 type Phase = 'describe' | 'reading' | 'created';
-
-async function shrink(file: File, max = 1280): Promise<string> {
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.round(bitmap.width * scale);
-  canvas.height = Math.round(bitmap.height * scale);
-  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL('image/jpeg', 0.85);
-}
 
 const EXAMPLE = `Hand-thrown mugs, 12 oz, $34. Sage green (6 left) and speckled white (1).
 Ramen bowls $48, 3 left. Custom bud vases $62, made to order in about 10 days.
@@ -126,7 +118,7 @@ function Describe({ busy, onSubmit }: { busy: boolean; onSubmit: (body: Record<s
                 accept="image/png,image/jpeg,image/webp"
                 multiple
                 onChange={async (e) => {
-                  const files = [...(e.target.files ?? [])].slice(0, 8);
+                  const files = [...(e.target.files ?? [])].slice(0, MAX_ONBOARDING_PHOTOS);
                   setImages(await Promise.all(files.map((f) => shrink(f))));
                 }}
               />

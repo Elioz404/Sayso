@@ -2,6 +2,10 @@
 // (fingerprint, face or PIN), over a challenge made from the exact action being approved. A stolen
 // session cookie, a shared phone left unlocked on the chat app, or an agent can't produce that. The
 // signature goes into the record's audit trail, so anyone can check later who said OK, to what.
+//
+// Every challenge is single-use and bound to one operation: an approval of one record, or a
+// confirmation of one change ("remove passkey X", "adopt rule Y"). Managing passkeys needs either a
+// passkey the shop already has or a fresh sign-in, so a session cookie stolen days ago can't add one.
 
 import { createHash, randomBytes } from 'node:crypto';
 import type { Access } from './access.ts';
@@ -71,17 +75,58 @@ export interface PasskeyProof {
   credential: AssertionCredential;
 }
 
+/** How the owner shows it's really them before changing passkeys: a fresh sign-in, or a passkey they have. */
+export interface OwnerCheck {
+  freshSignIn: boolean;
+  proof?: PasskeyProof;
+}
+
 /** Kept in the "approved" audit event: enough to re-check the signature with the stored public key. */
 export interface ApprovalSignature {
   passkey: string;
   label: string;
   nonce: string;
+  origin: string;
   client_data: string;
   authenticator_data: string;
   signature: string;
 }
 
-type Purpose = 'approve' | 'manage' | 'register';
+/** What a confirmation is for. Each one is signed over its own subject, so it can't be reused for another. */
+export type Confirmation = 'add-passkey' | `remove-passkey:${string}` | `adopt-rule:${string}` | 'phone-link';
+
+type Purpose = 'approve' | 'confirm' | 'register';
+
+/** A passkey's answer as the browser sends it, bounded (base64url fields). */
+export const PROOF_SCHEMA = {
+  type: 'object',
+  properties: {
+    token: { type: 'string', maxLength: 300 },
+    credential: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', maxLength: 1400 },
+        clientDataJSON: { type: 'string', maxLength: 4000 },
+        authenticatorData: { type: 'string', maxLength: 4000 },
+        signature: { type: 'string', maxLength: 2000 },
+      },
+      required: ['id', 'clientDataJSON', 'authenticatorData', 'signature'],
+    },
+  },
+  required: ['token', 'credential'],
+} as const;
+
+/** A newly made passkey as the browser sends it. */
+export const REGISTRATION_SCHEMA = {
+  type: 'object',
+  properties: {
+    id: { type: 'string', maxLength: 1400 },
+    clientDataJSON: { type: 'string', maxLength: 4000 },
+    attestationObject: { type: 'string', maxLength: 20_000 },
+    transports: { type: 'array', maxItems: 6, items: { type: 'string', maxLength: 20 } },
+  },
+  required: ['id', 'clientDataJSON', 'attestationObject'],
+} as const;
 
 const TTL_MS = 5 * 60_000;
 const MAX_PASSKEYS = 10;
@@ -99,12 +144,12 @@ export class Passkeys {
     return (await this.deps.store.list(shopId)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
-  /** Whether approvals for this shop need a passkey. */
+  /** Whether approvals (and rule changes) for this shop need a passkey. */
   async required(shopId: string): Promise<boolean> {
     return (await this.deps.store.list(shopId)).length > 0;
   }
 
-  /** Options for making a new passkey. Once a shop has one, adding another needs it too (`manage`). */
+  /** Options for making a new passkey on this device. */
   async registrationOptions(shopId: string, shopName: string): Promise<Challenge> {
     const existing = await this.list(shopId);
     if (existing.length >= MAX_PASSKEYS) throw new HttpError(409, `Up to ${MAX_PASSKEYS} passkeys per shop`);
@@ -124,13 +169,16 @@ export class Passkeys {
     };
   }
 
-  /** Keep a new passkey. `proof` is required when the shop already has one. */
-  async register(shopId: string, token: string, credential: RegistrationCredential, label: string, proof?: PasskeyProof): Promise<Passkey> {
-    if (await this.required(shopId)) {
-      if (!proof) throw new HttpError(403, 'Confirm with a passkey you already have before adding another');
-      await this.check(shopId, 'manage', 'passkeys', proof);
-    }
-    const expected = this.expected(shopId, 'register', 'new', token);
+  /**
+   * Keep a new passkey. The first one needs a fresh sign-in (so an old stolen session can't lock the
+   * owner out with its own passkey); later ones need that or one of the shop's passkeys.
+   */
+  async register(shopId: string, token: unknown, credential: RegistrationCredential, label: string, check: OwnerCheck): Promise<Passkey> {
+    const existing = await this.list(shopId);
+    if (existing.length >= MAX_PASSKEYS) throw new HttpError(409, `Up to ${MAX_PASSKEYS} passkeys per shop`);
+    if (!existing.length && !check.freshSignIn) throw new HttpError(403, 'For your safety, sign in again (in the last 30 minutes) to add the first passkey');
+    if (existing.length) await this.authorize(shopId, 'add-passkey', check);
+    const { expected } = await this.expected(shopId, 'register', 'new', token);
     const made = this.webauthn(() => verifyRegistration(credential, expected));
     if (await this.deps.store.get(made.id)) throw new HttpError(409, 'That passkey is already saved');
     const passkey: Passkey = {
@@ -139,7 +187,7 @@ export class Passkeys {
       publicKey: made.publicKey,
       alg: made.alg,
       counter: made.counter,
-      transports: credential.transports?.filter((t) => typeof t === 'string').slice(0, 6),
+      transports: Array.isArray(credential.transports) ? credential.transports.filter((t): t is string => typeof t === 'string').slice(0, 6) : undefined,
       label: label.trim().slice(0, 60) || 'My phone',
       backedUp: made.backedUp,
       createdAt: this.now().toISOString(),
@@ -148,38 +196,38 @@ export class Passkeys {
     return passkey;
   }
 
-  /** Remove a passkey; confirmed with one of the shop's passkeys (it can be the same one). */
-  async remove(shopId: string, id: string, proof: PasskeyProof): Promise<void> {
+  /** Remove a passkey, confirmed with a fresh sign-in or with one of the shop's passkeys (it can be the same one). */
+  async remove(shopId: string, id: string, check: OwnerCheck): Promise<void> {
     const passkey = await this.deps.store.get(id);
     if (!passkey || passkey.shopId !== shopId) throw notFound('Passkey');
-    await this.check(shopId, 'manage', 'passkeys', proof);
+    await this.authorize(shopId, `remove-passkey:${id}`, check);
     await this.deps.store.remove(id);
   }
 
-  /** Options to sign a decision about `record`, or to change the shop's passkeys. */
-  async assertionOptions(shopId: string, purpose: 'approve' | 'manage', record?: GuardRecord): Promise<Challenge> {
-    const keys = await this.list(shopId);
-    if (!keys.length) throw new HttpError(409, 'This shop has no passkey yet');
-    const { token, challenge } = this.issue(shopId, purpose, purpose === 'approve' ? subjectOf(record) : 'passkeys');
-    return {
-      token,
-      options: {
-        challenge,
-        rpId: this.rpId,
-        allowCredentials: keys.map((k) => ({ type: 'public-key', id: k.id, transports: k.transports })),
-        userVerification: 'required',
-        timeout: 120_000,
-      },
-    };
+  /** Options to sign a decision about `record`. */
+  approvalOptions(shopId: string, record: GuardRecord): Promise<Challenge> {
+    return this.assertionOptions(shopId, 'approve', subjectOf(record));
+  }
+
+  /** Options to confirm one change with a passkey. */
+  confirmationOptions(shopId: string, what: Confirmation): Promise<Challenge> {
+    return this.assertionOptions(shopId, 'confirm', what);
+  }
+
+  /** Check a passkey confirmation of `what`. Each challenge works once. */
+  async confirm(shopId: string, what: Confirmation, proof: PasskeyProof | undefined): Promise<void> {
+    if (!proof) throw new HttpError(428, 'Confirm with your passkey (fingerprint, face or PIN)');
+    await this.check(shopId, 'confirm', what, proof);
   }
 
   /** Check the owner's signature over this exact record. Returns what goes into the audit trail. */
   async signApproval(shopId: string, record: GuardRecord, proof: PasskeyProof): Promise<ApprovalSignature> {
-    const passkey = await this.check(shopId, 'approve', subjectOf(record), proof);
+    const { passkey, nonce } = await this.check(shopId, 'approve', subjectOf(record), proof);
     return {
       passkey: passkey.id,
       label: passkey.label,
-      nonce: nonceOf(proof.token),
+      nonce,
+      origin: this.deps.origin,
       client_data: proof.credential.clientDataJSON,
       authenticator_data: proof.credential.authenticatorData,
       signature: proof.credential.signature,
@@ -195,22 +243,46 @@ export class Passkeys {
     if (!signed) return undefined;
     const passkey = await this.deps.store.get(signed.passkey);
     if (!passkey) return { ok: false, label: signed.label };
-    const expected: Expected = { challenge: challengeFor(record.action.ownerId, 'approve', subjectOf(record), signed.nonce), origin: this.deps.origin, rpId: this.rpId };
+    const origin = signed.origin ?? this.deps.origin;
+    const expected: Expected = { challenge: challengeFor(record.action.ownerId, 'approve', subjectOf(record), signed.nonce), origin, rpId: new URL(origin).hostname };
     try {
-      verifyAssertion({ id: signed.passkey, clientDataJSON: signed.client_data, authenticatorData: signed.authenticator_data, signature: signed.signature }, expected, { ...passkey, counter: 0 });
+      const credential = { id: signed.passkey, clientDataJSON: signed.client_data, authenticatorData: signed.authenticator_data, signature: signed.signature };
+      verifyAssertion(credential, expected, passkey, { checkCounter: false });
       return { ok: true, label: passkey.label };
     } catch {
       return { ok: false, label: passkey.label };
     }
   }
 
-  private async check(shopId: string, purpose: Purpose, subject: string, proof: PasskeyProof): Promise<Passkey> {
-    const passkey = await this.deps.store.get(proof.credential?.id ?? '');
-    if (!passkey || passkey.shopId !== shopId) throw new HttpError(403, 'That passkey is not one of this shop\'s');
-    const expected = this.expected(shopId, purpose, subject, proof.token);
+  /** A fresh sign-in, or (once the shop has passkeys) a passkey confirmation of `what`. */
+  private async authorize(shopId: string, what: Confirmation, check: OwnerCheck): Promise<void> {
+    if (check.freshSignIn && !check.proof) return;
+    await this.confirm(shopId, what, check.proof);
+  }
+
+  private async assertionOptions(shopId: string, purpose: 'approve' | 'confirm', subject: string): Promise<Challenge> {
+    const keys = await this.list(shopId);
+    if (!keys.length) throw new HttpError(409, 'This shop has no passkey yet');
+    const { token, challenge } = this.issue(shopId, purpose, subject);
+    return {
+      token,
+      options: {
+        challenge,
+        rpId: this.rpId,
+        allowCredentials: keys.map((k) => ({ type: 'public-key', id: k.id, transports: k.transports })),
+        userVerification: 'required',
+        timeout: 120_000,
+      },
+    };
+  }
+
+  private async check(shopId: string, purpose: Purpose, subject: string, proof: PasskeyProof): Promise<{ passkey: Passkey; nonce: string }> {
+    const passkey = await this.deps.store.get(typeof proof?.credential?.id === 'string' ? proof.credential.id : '');
+    if (!passkey || passkey.shopId !== shopId) throw new HttpError(403, "That passkey is not one of this shop's");
+    const { expected, nonce } = await this.expected(shopId, purpose, subject, proof.token);
     const { counter } = this.webauthn(() => verifyAssertion(proof.credential, expected, passkey));
     await this.deps.store.put({ ...passkey, counter, lastUsedAt: this.now().toISOString() });
-    return passkey;
+    return { passkey, nonce };
   }
 
   private issue(shopId: string, purpose: Purpose, subject: string): { token: string; challenge: string } {
@@ -218,11 +290,13 @@ export class Passkeys {
     return { token: this.deps.access.signValue(`passkey:${purpose}`, `${shopId}:${nonce}`, TTL_MS, this.now().getTime()), challenge: challengeFor(shopId, purpose, subject, nonce) };
   }
 
-  private expected(shopId: string, purpose: Purpose, subject: string, token: string): Expected {
-    const value = this.deps.access.verifyValue(`passkey:${purpose}`, token, this.now().getTime());
-    const [forShop, nonce] = value?.split(':') ?? [];
-    if (!value || forShop !== shopId || !nonce) throw new HttpError(403, 'That passkey request expired; try again');
-    return { challenge: challengeFor(shopId, purpose, subject, nonce), origin: this.deps.origin, rpId: this.rpId };
+  /** What the device must have signed for this token, and the token's nonce, which is spent here. */
+  private async expected(shopId: string, purpose: Purpose, subject: string, token: unknown): Promise<{ expected: Expected; nonce: string }> {
+    const now = this.now().getTime();
+    const [forShop, nonce] = this.deps.access.verifyValue(`passkey:${purpose}`, token, now)?.split(':') ?? [];
+    if (forShop !== shopId || !nonce) throw new HttpError(403, 'That passkey request expired; try again');
+    if (!(await this.deps.access.consumeOnce(`passkey:${nonce}`, new Date(now + TTL_MS)))) throw new HttpError(403, 'That passkey request was already used; try again');
+    return { expected: { challenge: challengeFor(shopId, purpose, subject, nonce), origin: this.deps.origin, rpId: this.rpId }, nonce };
   }
 
   private webauthn<T>(fn: () => T): T {
@@ -239,17 +313,12 @@ export class Passkeys {
   }
 }
 
-/** The challenge the device signs: it commits to the shop, the purpose and, for approvals, the exact action. */
+/** The challenge the device signs: it commits to the shop, the purpose and what exactly is being confirmed. */
 function challengeFor(shopId: string, purpose: Purpose, subject: string, nonce: string): string {
   return createHash('sha256').update(`sayso:${purpose}:${shopId}:${subject}:${nonce}`).digest('base64url');
 }
 
-function subjectOf(record: GuardRecord | undefined): string {
-  if (!record) throw new HttpError(400, 'Which request?');
+/** An approval commits to the record and a hash of its action, so a signature can't be moved to another. */
+function subjectOf(record: GuardRecord): string {
   return `${record.id}:${createHash('sha256').update(canonicalJson(record.action)).digest('hex')}`;
 }
-
-function nonceOf(token: string): string {
-  return token.split('.')[0].split(':')[1] ?? '';
-}
-

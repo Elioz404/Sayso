@@ -38,6 +38,7 @@ import { MemoryWalletStore, walletCheckoutExecutor, Wallets, type WalletStore } 
 import { notifyOwner } from './notify.ts';
 import { Db, PgAccessStore, PgCartStore, PgCatalogStore, PgGuardStore, PgJobStore, PgMediaStore, PgPasskeyStore, PgPolicyStore, PgPushStore, PgSellerStore, PgTourStore, PgWalletStore } from './pg-stores.ts';
 import { vapidFrom, webPushSender } from './push-sender.ts';
+import { showDevSecret } from './log.ts';
 
 export interface Context {
   carts: CartStore;
@@ -82,6 +83,11 @@ export function siteLinks(): Links {
 /** Owners sign in with PayPal on this deployment (Log in with PayPal is set up on the PayPal app). */
 export function paypalLoginEnabled(): boolean {
   return process.env.PAYPAL_LOGIN === 'true';
+}
+
+/** This deployment runs the public demo: the shared demo shop session and the judges' tour. */
+export function demoEnabled(): boolean {
+  return process.env.SAYSO_DEMO === 'true';
 }
 
 /** Whether the APIMatic developer portal was generated into public/developers for this deployment. */
@@ -131,9 +137,10 @@ async function create(): Promise<Context> {
       'invoice.send': invoiceExecutor(paypal),
     },
     policyFor,
-    onApprovalNeeded: async (record) => {
-      await notifyOwner(record, site.approve(record.id));
-      void push.notify(record.action.ownerId, sayNeededMessage(record, site)); // never keeps the agent waiting
+    // Notifications never keep the agent waiting for its answer.
+    onApprovalNeeded: (record) => {
+      void notifyOwner(record, site.approve(record.id));
+      void push.notify(record.action.ownerId, sayNeededMessage(record, site));
     },
   });
   guard.subscribe(async (record) => {
@@ -159,7 +166,7 @@ async function create(): Promise<Context> {
   // Tours copy the demo shop. SAYSO_TOUR_WALLET names a connected wallet whose PayPal approval the tour's
   // buyer assistant may pay with; without it the tour hands out PayPal links instead.
   const tours =
-    process.env.SAYSO_DEMO === 'true'
+    demoEnabled()
       ? new Tours({
           store: db ? new PgTourStore(db) : new MemoryTourStore(),
           catalogs,
@@ -200,13 +207,13 @@ async function seedDemo(catalogs: CatalogStore, policies: PolicyStore, access: A
   const ownerSecret = process.env.SAYSO_DEMO_OWNER_SECRET || undefined;
   if (ownerSecret ? !(await access.checkOwnerSecret(shop.id, ownerSecret)) : !(await access.hasOwner(shop.id))) {
     const secret = await access.createOwner(shop.id, ownerSecret);
-    if (!ownerSecret) console.log(`[sayso] demo shop owner secret: ${secret}`);
+    if (!ownerSecret) showDevSecret('demo shop owner secret', secret, 'SAYSO_DEMO_OWNER_SECRET');
   }
 
   const agentSecret = process.env.SAYSO_DEMO_AGENT_KEY || undefined;
-  if (agentSecret) await access.ensureAgentKey(shop.id, 'demo agent', agentSecret);
+  if (agentSecret) await access.ensureSharedKey(shop.id, 'demo agent', agentSecret);
   else if (!(await access.listKeys(shop.id)).some((k) => !k.revokedAt)) {
     const { secret } = await access.createAgentKey(shop.id, 'demo agent');
-    console.log(`[sayso] demo shop agent key: ${secret}`);
+    showDevSecret('demo shop agent key', secret, 'SAYSO_DEMO_AGENT_KEY');
   }
 }

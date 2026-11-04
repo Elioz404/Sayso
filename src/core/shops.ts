@@ -7,11 +7,11 @@
 import type { Access } from './access.ts';
 import { draftCatalog, type OnboardingInput } from './ai/onboarding.ts';
 import type { ChatModel } from './ai/llm.ts';
-import { findVariant, pricesToConfirm, type Catalog, type PriceSuggestion, type Product } from './catalog.ts';
+import { findVariant, isLive, pricesToConfirm, type Catalog, type PriceSuggestion, type Product } from './catalog.ts';
 import { fromLlmError, HttpError, notFound } from './errors.ts';
 import type { Links } from './links.ts';
 import type { MarketPrices } from './market.ts';
-import { photoFromDataUrl, type MediaStore } from './media.ts';
+import { checkPhotos, MAX_DRAFT_PHOTOS, mediaIdOf, photoFromDataUrl, type MediaStore } from './media.ts';
 import { formatMoney } from './money.ts';
 import type { PayPalClient } from './paypal/client.ts';
 import { createCatalogProduct } from './paypal/products.ts';
@@ -76,17 +76,9 @@ export class Shops {
     const registered = new Map<string, string>();
     for (const product of catalog.products) {
       if (product.paypalProductId) continue;
-      try {
-        const created = await createCatalogProduct(
-          this.deps.paypal,
-          { name: product.name, description: product.description, imageUrl: product.imageUrl && this.deps.links.asset(product.imageUrl), homeUrl: this.deps.links.shopPage(catalog.shop.slug) },
-          `${shopId}-${product.id}-catalog`,
-        );
-        registered.set(product.id, created.id);
-      } catch (err) {
-        // A catalog sync hiccup should not keep a seller offline; checkout doesn't depend on it.
-        warnings.push(`${product.name}: not registered in PayPal's catalog (${err instanceof Error ? err.message : 'error'})`);
-      }
+      const result = await this.registerWithPayPal(catalog, product);
+      if (typeof result === 'string') registered.set(product.id, result);
+      else warnings.push(`${product.name}: not registered in PayPal's catalog (${result.error})`);
     }
     // The PayPal calls take a while; apply their results to the catalog as it is now, not as it was.
     const published = await this.deps.catalogs.modify(shopId, (current) => {
@@ -121,17 +113,18 @@ export class Shops {
    */
   async draftFromPhotos(shopId: string, images: string[], note = ''): Promise<Product[]> {
     if (!this.deps.model) throw new HttpError(503, 'Drafting from photos needs an AI key (OPENAI_API_KEY or DEEPSEEK_API_KEY) on the server');
-    if (!images.length) throw new HttpError(400, 'Add at least one photo');
+    const photos = checkPhotos(images, MAX_DRAFT_PHOTOS);
     const { shop } = await this.get(shopId);
     const text = note.trim() || 'New items for this shop. One product per photo, unless several photos show the same item.';
-    const { catalog: draft, photoOf } = await draftCatalog(this.deps.model, { text, images: images.slice(0, 6), currency: shop.currency, country: shop.country, shopName: shop.name }).catch((err: unknown) => {
+    const { catalog: draft, photoOf } = await draftCatalog(this.deps.model, { text, images: photos, currency: shop.currency, country: shop.country, shopName: shop.name }).catch((err: unknown) => {
       throw fromLlmError(err, 'Could not read those photos');
     });
     draft.shop = { ...draft.shop, id: shopId, currency: shop.currency };
-    await this.keepPhotos(draft, images, photoOf);
+    await this.keepPhotos(draft, photos, photoOf);
     await this.suggestPrices(draft);
 
     let added: Product[] = [];
+    let dropped: Product[] = [];
     await this.deps.catalogs.modify(shopId, (catalog) => {
       const taken = new Set([...catalog.products, ...(catalog.drafts ?? [])].flatMap((p) => [p.id, ...p.variants.map((v) => v.id)]));
       const unique = (id: string) => {
@@ -144,9 +137,12 @@ export class Shops {
         const id = unique(p.id);
         return { ...p, id, shopId, variants: p.variants.map((v) => ({ ...v, id: unique(v.id), productId: id, priceToConfirm: v.priceToConfirm ?? {} })) };
       });
-      catalog.drafts = [...(catalog.drafts ?? []), ...added].slice(-MAX_DRAFTS);
+      const all = [...(catalog.drafts ?? []), ...added];
+      dropped = all.slice(0, Math.max(0, all.length - MAX_DRAFTS));
+      catalog.drafts = all.slice(-MAX_DRAFTS);
       return true;
     });
+    await this.forgetPhotos(shopId, dropped);
     return added;
   }
 
@@ -159,51 +155,67 @@ export class Shops {
       if (!Number.isSafeInteger(v.price) || v.price <= 0) throw new HttpError(400, 'Every price must be a positive amount');
       if (!Number.isSafeInteger(v.inventory) || v.inventory < 0) throw new HttpError(400, 'Stock must be a whole number, 0 or more');
     }
-    let released: Product | undefined;
+    const draft = (await this.get(shopId)).drafts?.find((p) => p.id === productId);
+    if (!draft) throw notFound(`Draft ${productId}`);
+    if (draft.variants.some((variant) => !variants.some((v) => v.id === variant.id))) throw new HttpError(400, 'Set a price and stock for every option of that draft');
+
     const updated = await this.deps.catalogs.modify(shopId, (catalog) => {
-      const draft = catalog.drafts?.find((p) => p.id === productId);
-      if (!draft) return false;
-      for (const variant of draft.variants) {
-        const set = variants.find((v) => v.id === variant.id);
-        if (!set) return false;
+      const current = catalog.drafts?.find((p) => p.id === productId);
+      if (!current) return false;
+      for (const variant of current.variants) {
+        const set = variants.find((v) => v.id === variant.id)!;
         variant.price = set.price;
         variant.inventory = set.inventory;
         delete variant.priceToConfirm;
       }
-      if (name?.trim()) draft.name = name.trim().slice(0, 120);
+      if (name?.trim()) current.name = name.trim().slice(0, 120);
       catalog.drafts = catalog.drafts!.filter((p) => p.id !== productId);
-      catalog.products.push(draft);
-      released = draft;
+      catalog.products.push(current);
       return true;
     });
-    if (!updated || !released) throw new HttpError(409, 'Set a price and stock for every option of that draft');
-    if ((updated.shop.status ?? 'live') !== 'live') return updated;
-    const product = released as Product;
+    if (!updated) throw notFound(`Draft ${productId}`);
+    const product = updated.products.find((p) => p.id === productId)!;
+    if (!isLive(updated)) return updated;
+
+    // Checkout doesn't depend on PayPal's catalog: if this fails, the next publish retries it.
+    const registered = await this.registerWithPayPal(updated, product);
+    if (typeof registered !== 'string') return updated;
+    return (
+      (await this.deps.catalogs.modify(shopId, (catalog) => {
+        const p = catalog.products.find((x) => x.id === productId);
+        if (p) p.paypalProductId ??= registered;
+        return Boolean(p);
+      })) ?? updated
+    );
+  }
+
+  /** Throw a draft away, with its photo. */
+  async discardDraft(shopId: string, productId: string): Promise<void> {
+    let removed: Product | undefined;
+    const updated = await this.deps.catalogs.modify(shopId, (catalog) => {
+      removed = catalog.drafts?.find((p) => p.id === productId);
+      catalog.drafts = catalog.drafts?.filter((p) => p.id !== productId);
+      return Boolean(removed);
+    });
+    if (!updated || !removed) throw notFound(`Draft ${productId}`);
+    await this.forgetPhotos(shopId, [removed]);
+  }
+
+  /** Register a product in PayPal's catalog. Its id, or why it failed. */
+  private async registerWithPayPal(catalog: Catalog, product: Product): Promise<string | { error: string }> {
     try {
       const created = await createCatalogProduct(
         this.deps.paypal,
-        { name: product.name, description: product.description, imageUrl: product.imageUrl && this.deps.links.asset(product.imageUrl), homeUrl: this.deps.links.shopPage(updated.shop.slug) },
-        `${shopId}-${product.id}-catalog`,
+        { name: product.name, description: product.description, imageUrl: product.imageUrl && this.deps.links.asset(product.imageUrl), homeUrl: this.deps.links.shopPage(catalog.shop.slug) },
+        `${catalog.shop.id}-${product.id}-catalog`,
       );
-      return (await this.deps.catalogs.modify(shopId, (catalog) => {
-        const p = catalog.products.find((x) => x.id === product.id);
-        if (p) p.paypalProductId ??= created.id;
-        return Boolean(p);
-      })) ?? updated;
-    } catch {
-      return updated; // checkout doesn't depend on PayPal's catalog; the next publish retries it
+      return created.id;
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : 'error' };
     }
   }
 
-  async discardDraft(shopId: string, productId: string): Promise<void> {
-    await this.deps.catalogs.modify(shopId, (catalog) => {
-      const before = catalog.drafts?.length ?? 0;
-      catalog.drafts = catalog.drafts?.filter((p) => p.id !== productId);
-      return (catalog.drafts?.length ?? 0) !== before;
-    });
-  }
-
-  /** Each product gets the photo the model said shows it, stored and served from this site. */
+  /** Each product gets the photo the model said shows it, stored (as the shop's) and served from this site. */
   private async keepPhotos(catalog: Catalog, images: string[], photoOf: Record<string, number>): Promise<void> {
     const media = this.deps.media;
     if (!media) return;
@@ -212,7 +224,7 @@ export class Shops {
       const index = photoOf[product.id];
       if (index === undefined || !images[index]) continue;
       if (!stored.has(index)) {
-        const photo = photoFromDataUrl(images[index]);
+        const photo = photoFromDataUrl(images[index], catalog.shop.id);
         if (!photo) continue;
         await media.put(photo);
         stored.set(index, this.deps.links.media(photo.id));
@@ -221,21 +233,29 @@ export class Shops {
     }
   }
 
+  /** Delete the stored photos of products that are gone. */
+  private async forgetPhotos(shopId: string, products: Product[]): Promise<void> {
+    const ids = products.map((p) => mediaIdOf(p.imageUrl)).filter((id): id is string => Boolean(id));
+    if (ids.length) await this.deps.media?.remove(shopId, ids);
+  }
+
   /** Unpriced variants start at what similar items sell for, flagged until the owner confirms. */
   private async suggestPrices(catalog: Catalog): Promise<void> {
     const market = this.deps.market;
     if (!market) return;
     const { currency, id: shopId } = catalog.shop;
     const unpriced = catalog.products.filter((p) => p.variants.some((v) => v.priceToConfirm)).slice(0, SUGGESTED_PRODUCTS);
-    for (const product of unpriced) {
-      const suggested = await market.suggest(product, currency, shopId).catch(() => undefined); // a suggestion is optional
-      if (!suggested) continue;
+    // Each lookup is a search that can take seconds: ask for all of them at once.
+    const suggestions = await Promise.all(unpriced.map((product) => market.suggest(product, currency, shopId).catch(() => undefined))); // a suggestion is optional
+    unpriced.forEach((product, i) => {
+      const suggested = suggestions[i];
+      if (!suggested) return;
       for (const variant of product.variants) {
         if (!variant.priceToConfirm) continue;
         variant.price = suggested.median;
         variant.priceToConfirm = { suggested };
       }
-    }
+    });
   }
 
   async get(shopId: string): Promise<Catalog> {

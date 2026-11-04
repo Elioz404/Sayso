@@ -1,7 +1,8 @@
 // One order: what was bought, where it ships, and every money movement on it, in order.
+import { actionAmount } from '@/core/guard/describe.ts';
 import type { Metadata } from 'next';
 import { CopyField } from '@/app/_components/client-ui.tsx';
-import { LabelScanner } from '@/app/_components/phone.tsx';
+import { LabelScanner } from '@/app/_components/label-scanner.tsx';
 import { When } from '@/app/_components/time.tsx';
 import { actionLabel, Icon, Status, toneOf } from '@/app/_components/ui.tsx';
 import { HttpError } from '@/core/errors.ts';
@@ -15,7 +16,7 @@ export default async function OrderDetail({ params }: { params: Promise<{ id: st
   const view = await ownerView();
   if (!view) return null;
   const { id } = await params;
-  const { shopId, orders, shop, demo, redact } = view;
+  const { shopId, orders, demo, redact } = view;
   const found = await orders.get(shopId, id).catch((err: unknown) => {
     if (err instanceof HttpError && err.status === 404) return undefined;
     throw err;
@@ -104,7 +105,7 @@ export default async function OrderDetail({ params }: { params: Promise<{ id: st
           </div>
         </section>
 
-        {order.status === 'paid' && !order.tracking && (
+        {order.status === 'paid' && !order.tracking && !demo && (
           <section className="block block-ship" aria-labelledby="ship">
             <h2 id="ship">Shipped it?</h2>
             <p className="small soft">Snap the label: Sayso reads the carrier and tracking number, you check them, and PayPal shows the buyer where the parcel is.</p>
@@ -163,7 +164,7 @@ export default async function OrderDetail({ params }: { params: Promise<{ id: st
                 <span className="row" style={{ gap: 'var(--s3)' }}>
                   <b>
                     {actionLabel(r.action.kind)}
-                    {r.action.amount !== undefined ? ` ${formatMoney(r.action.amount, r.action.currency ?? shop.currency)}` : ''}
+                    {actionAmount(r.action) ? ` ${actionAmount(r.action)}` : ''}
                   </b>
                   <Status value={r.status} />
                 </span>

@@ -2,13 +2,14 @@
 // trusted: Sayso asks PayPal which account completed this shop's sign-up and what it allowed.
 import { ready } from '@/server/context.ts';
 import { ownerSession } from '@/server/http.ts';
+import { logError } from '@/server/log.ts';
 
 export async function GET() {
   const { payouts, links } = await ready();
   const session = await ownerSession();
   if (!session || session.kind !== 'owner') return Response.redirect(`${links.base}/owner`, 303);
   const outcome = await payouts.finish(session.shopId).catch((err: unknown) => {
-    console.error('[payouts]', err);
+    logError('payouts', err);
     return { status: 'failed' as const };
   });
   return Response.redirect(`${links.base}/owner?payouts=${outcome.status}`, 303);

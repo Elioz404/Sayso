@@ -1,10 +1,12 @@
 import 'server-only';
 import { cookies } from 'next/headers';
-import type { OwnerSession } from '@/core/access.ts';
+import { SESSION_TTL_MS, type OwnerSession } from '@/core/access.ts';
 import { isLive, type Catalog } from '@/core/catalog.ts';
 import { HttpError, notFound } from '@/core/errors.ts';
+import { check, type Infer, type JsonSchema } from '@/core/tools/schema.ts';
 import { PayPalError } from '@/core/paypal/client.ts';
 import { ready, siteLinks } from './context.ts';
+import { logError } from './log.ts';
 
 export const OWNER_COOKIE = 'sayso_owner';
 
@@ -14,11 +16,12 @@ export async function ownerSession(): Promise<OwnerSession | undefined> {
   return access.verifyOwnerSession((await cookies()).get(OWNER_COOKIE)?.value);
 }
 
-/** Sign this browser in as `shopId`'s owner until `expires`. */
-export async function startOwnerSession(shopId: string, kind: OwnerSession['kind'], expires: Date): Promise<void> {
+/** Sign this browser in as `shopId`'s owner, for a week unless `expires` says otherwise. */
+export async function startOwnerSession(shopId: string, options: { kind?: OwnerSession['kind']; via?: OwnerSession['via']; expires?: Date } = {}): Promise<void> {
   const { access } = await ready();
-  const ttlMs = expires.getTime() - Date.now();
-  (await cookies()).set(OWNER_COOKIE, access.signOwnerSession(shopId, ttlMs, Date.now(), kind), {
+  const ttlMs = Math.min(SESSION_TTL_MS, (options.expires?.getTime() ?? Infinity) - Date.now());
+  const token = await access.signOwnerSession(shopId, { ttlMs, kind: options.kind, via: options.via });
+  (await cookies()).set(OWNER_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production',
@@ -27,27 +30,29 @@ export async function startOwnerSession(shopId: string, kind: OwnerSession['kind
   });
 }
 
-/** Shop id of the signed-in owner, if any. */
-export async function ownerShopId(): Promise<string | undefined> {
-  return (await ownerSession())?.shopId;
-}
+/** Why the shared public demo session can look and decide, but not change the shop. */
+export const SHARED_DEMO_READ_ONLY = "The demo shop is shared by everyone trying Sayso, so it can't be changed here. Start the judges' tour for a shop of your own.";
 
-export async function requireOwner(request: Request): Promise<string> {
-  assertSameOrigin(request);
-  const shopId = await ownerShopId();
-  if (!shopId) throw new HttpError(401, 'Sign in as the shop owner first');
-  return shopId;
-}
-
-/**
- * Like requireOwner, but not in the shared public demo session: things tied to one person's device
- * (passkeys, notifications, signing in on a phone) would otherwise be shared by every visitor.
- */
-export async function requireOwnDevice(request: Request): Promise<{ shopId: string; kind: OwnerSession['kind'] }> {
+/** The signed-in owner's session for a cookie-authenticated request (cross-site requests are refused). */
+export async function requireOwnerSession(request: Request): Promise<OwnerSession> {
   assertSameOrigin(request);
   const session = await ownerSession();
   if (!session) throw new HttpError(401, 'Sign in as the shop owner first');
-  if (session.kind === 'demo') throw new HttpError(403, "The shared demo shop can't be tied to your phone. Start the judges' tour for a shop of your own.");
+  return session;
+}
+
+/** The owner's shop. The shared demo session passes: it may look and decide. */
+export async function requireOwner(request: Request): Promise<string> {
+  return (await requireOwnerSession(request)).shopId;
+}
+
+/**
+ * The owner's own shop, for anything that changes it or ties it to a device (prices, keys, rules,
+ * passkeys, notifications...). The shared demo session is refused: every visitor would share the change.
+ */
+export async function requireOwnShop(request: Request): Promise<OwnerSession> {
+  const session = await requireOwnerSession(request);
+  if (session.kind === 'demo') throw new HttpError(403, SHARED_DEMO_READ_ONLY);
   return session;
 }
 
@@ -83,22 +88,54 @@ export async function handle(fn: () => Promise<Response>): Promise<Response> {
   } catch (err) {
     if (err instanceof HttpError) return Response.json(err.body, { status: err.status });
     if (err instanceof PayPalError) {
-      console.error(`[paypal] ${err.message} debug_id=${err.debugId ?? '-'}`);
+      logError('paypal', err);
       return Response.json({ name: 'PAYPAL_ERROR', message: err.message, debug_id: err.debugId }, { status: 502 });
     }
-    console.error(err);
+    logError('request', err);
     const message = err instanceof Error && /PAYPAL_CLIENT_ID/.test(err.message) ? 'PayPal sandbox keys are not configured on this server' : 'Unexpected error';
     return Response.json({ name: 'INTERNAL_SERVER_ERROR', message }, { status: 500 });
   }
 }
 
-export async function readJson<T>(request: Request): Promise<T> {
+/** Bodies most routes accept; routes that take photos raise it. */
+export const BODY_LIMIT = 64 * 1024;
+export const PHOTO_BODY_LIMIT = 12 * 1024 * 1024;
+
+/**
+ * The JSON body, read with a size cap and checked against `schema`, so a route gets typed values or a
+ * 400 that says what is wrong, never a crash on a malformed body.
+ */
+export async function readBody<const S extends JsonSchema>(request: Request, schema: S, limit = BODY_LIMIT): Promise<Infer<S>> {
+  const parsed = check(schema, await readJson(request, limit), 'body');
+  if (!parsed.ok) throw new HttpError(400, parsed.errors.slice(0, 3).join('; '));
+  return parsed.value;
+}
+
+/** The JSON body as unknown, refused past `limit` bytes before it is buffered whole. */
+export async function readJson(request: Request, limit = BODY_LIMIT): Promise<unknown> {
+  const declared = Number(request.headers.get('content-length') ?? 0);
+  if (declared > limit) throw tooLarge(limit);
+  const reader = request.body?.getReader();
+  if (!reader) throw new HttpError(400, 'Request body must be JSON');
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > limit) {
+      await reader.cancel();
+      throw tooLarge(limit);
+    }
+    chunks.push(value);
+  }
   try {
-    return (await request.json()) as T;
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
   } catch {
     throw new HttpError(400, 'Request body must be JSON');
   }
 }
 
-/** What signs the ten-minute "continue on your phone" link. */
-export const HANDOFF_PURPOSE = 'owner-handoff';
+function tooLarge(limit: number): HttpError {
+  return new HttpError(413, `Request body is over ${Math.round(limit / 1024)} KB`);
+}

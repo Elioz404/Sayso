@@ -1,13 +1,14 @@
 // Notifications on the owner's phone (Web Push): when an agent's request waits for their say-so, and
 // when a new order is paid. Each subscription is one browser the owner turned notifications on in,
-// for one shop. The message is end-to-end encrypted to that browser, so the push service carries it
-// without being able to read it; still, it never includes buyer details.
+// for one shop. Messages are end-to-end encrypted to that browser, and still written from fixed
+// templates: what kind of request, how much, who asked. Never a buyer's words or details, which can
+// sit on a lock screen (and which a buyer's assistant could use to put its own text there).
 
 import { createHash } from 'node:crypto';
 import { HttpError } from './errors.ts';
-import { ACTIONS, type GuardRecord } from './guard/types.ts';
+import { actionAmount, actionTitle, askerOf } from './guard/describe.ts';
+import type { GuardRecord } from './guard/types.ts';
 import type { Links } from './links.ts';
-import { DEFAULT_CURRENCY, formatMoney } from './money.ts';
 
 export interface PushSubscriptionRecord {
   id: string;
@@ -45,6 +46,8 @@ export interface PushMessage {
   url: string;
   /** Replaces an earlier notification with the same tag instead of stacking. */
   tag: string;
+  /** Stays on screen until the owner acts on it (a request waiting for a decision). */
+  sticky?: boolean;
 }
 
 /** Delivers one message. "gone" means the browser unsubscribed: forget it. */
@@ -108,24 +111,21 @@ export class Push {
   }
 }
 
-/** "Your agent wants to refund $82.00", opening the say-so screen. */
+/** "Refund $82.00?", from "Your agent", opening the say-so screen. */
 export function sayNeededMessage(record: GuardRecord, links: Links): PushMessage {
-  const { action } = record;
-  const amount = action.amount !== undefined && action.kind !== 'policy.update' ? ` ${formatMoney(action.amount, action.currency ?? DEFAULT_CURRENCY)}` : '';
-  const who = action.actor.type === 'agent' ? (action.actor.side === 'buyer' ? 'A buyer’s assistant' : 'Your agent') : 'Someone';
   return {
-    title: `${ACTIONS[action.kind].label}${amount}?`,
-    body: `${who} asked: “${action.reason.slice(0, 120)}”. Tap to decide.`,
+    title: `${actionTitle(record.action)}?`,
+    body: `${askerOf(record.action)} asked for this. Tap to see why and decide.`,
     url: links.approve(record.id),
     tag: record.id,
+    sticky: true,
   };
 }
 
 /** A paid order, opening the orders list. Undefined for anything else. */
 export function paidOrderMessage(record: GuardRecord, links: Links): PushMessage | undefined {
   if (record.action.kind !== 'payment.capture' || record.status !== 'verified') return undefined;
-  const amount = record.action.amount !== undefined ? formatMoney(record.action.amount, record.action.currency ?? DEFAULT_CURRENCY) : 'A new order';
-  return { title: `New order: ${amount}`, body: 'Paid with PayPal and confirmed. Tap to see what to pack.', url: `${links.base}/owner/orders`, tag: `order-${record.id}` };
+  return { title: `New order: ${actionAmount(record.action) ?? 'paid'}`, body: 'Paid with PayPal and confirmed. Tap to see what to pack.', url: links.owner.orders, tag: `order-${record.id}` };
 }
 
 function idOf(endpoint: string): string {

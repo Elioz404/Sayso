@@ -2,6 +2,7 @@
 // (MCP or CLI) and the dashboard both call this. Refunds go through Guard like every money movement.
 
 import { HttpError, notFound } from './errors.ts';
+import { carrierCode, trackingNumber } from './shipping.ts';
 import type { Guard } from './guard/engine.ts';
 import type { Actor, GuardRecord } from './guard/types.ts';
 import { DEFAULT_CURRENCY, formatMoney, parseAmount, toMinor } from './money.ts';
@@ -87,12 +88,16 @@ export class Orders {
   }
 
   /** Not a money movement, so no Guard round-trip; still idempotent per order + tracking number. */
-  async addTracking(shopId: string, ref: string, carrier: string, trackingNumber: string): Promise<OrderSummary> {
+  async addTracking(shopId: string, ref: string, carrier: string, tracking: string): Promise<OrderSummary> {
+    const code = carrierCode(carrier);
+    const number = trackingNumber(tracking);
+    if (!code) throw new HttpError(400, 'Pick the carrier');
+    if (!number) throw new HttpError(400, 'Enter the tracking number as printed on the label (8 to 40 letters and digits)');
     const cart = await this.cart(shopId, ref);
     if (!cart.captureId || !cart.orderId) throw new HttpError(422, 'Tracking can be added once the order is paid');
-    const code = carrier.trim().toUpperCase();
-    await addTracking(this.deps.paypal, cart.orderId, { captureId: cart.captureId, trackingNumber, carrier: code }, `${cart.id}-track-${trackingNumber}`);
-    cart.tracking = { carrier: code, number: trackingNumber, addedAt: new Date().toISOString() };
+    // The same number, however it was typed, is the same request to PayPal.
+    await addTracking(this.deps.paypal, cart.orderId, { captureId: cart.captureId, trackingNumber: number, carrier: code }, `${cart.id}-track-${number}`);
+    cart.tracking = { carrier: code, number, addedAt: new Date().toISOString() };
     await this.deps.carts.put(cart);
     return summarize(cart);
   }

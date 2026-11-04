@@ -3,6 +3,7 @@ import { CopyField } from '@/app/_components/client-ui.tsx';
 import { NewKey, RevokeKey } from '@/app/_components/owner-actions.tsx';
 import { Icon } from '@/app/_components/ui.tsx';
 import { Ago } from '@/app/_components/time.tsx';
+import { SHARED_DEMO_READ_ONLY } from '@/server/http.ts';
 import { ownerView } from '@/server/owner.ts';
 
 export const metadata: Metadata = { title: 'Agents' };
@@ -10,7 +11,7 @@ export const metadata: Metadata = { title: 'Agents' };
 export default async function Agents() {
   const view = await ownerView();
   if (!view) return null;
-  const { access, shopId, shop, links } = view;
+  const { access, shopId, shop, links, demo } = view;
   const keys = await access.listKeys(shopId);
   const live = keys.filter((k) => !k.revokedAt);
 
@@ -48,11 +49,12 @@ export default async function Agents() {
                   )}
                 </span>
               </span>
-              {!k.revokedAt && <RevokeKey id={k.id} label={k.label} />}
+              {!k.revokedAt && !k.shared && !demo && <RevokeKey id={k.id} label={k.label} />}
+              {k.shared && <span className="small muted">Shared with everyone trying the demo; buyers’ details are masked for it</span>}
             </li>
           ))}
         </ul>
-        <NewKey />
+        {demo ? <p className="small soft">{SHARED_DEMO_READ_ONLY}</p> : <NewKey />}
       </section>
 
       <section className="block" aria-labelledby="connect">

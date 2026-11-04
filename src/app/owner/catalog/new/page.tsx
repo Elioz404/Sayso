@@ -1,9 +1,11 @@
 // New products from the camera: snap or share photos, Sayso drafts each product with a market price
 // suggestion, and it goes on sale once the owner sets the price.
 import type { Metadata } from 'next';
-import { PhotoDrafter, type DraftView } from '@/app/_components/phone.tsx';
+import { PhotoDrafter, type DraftView } from '@/app/_components/photo-drafter.tsx';
 import { Icon } from '@/app/_components/ui.tsx';
 import { formatMoney, toMoney } from '@/core/money.ts';
+import { MAX_DRAFT_PHOTOS } from '@/core/photo-limits.ts';
+import { SHARED_DEMO_READ_ONLY } from '@/server/http.ts';
 import { ownerView } from '@/server/owner.ts';
 
 export const metadata: Metadata = { title: 'Add from a photo' };
@@ -14,7 +16,7 @@ export default async function NewFromPhoto({ searchParams }: { searchParams: Pro
   const { catalog, demo, shop } = view;
   const money = (minor: number) => formatMoney(minor, shop.currency);
   const plain = (minor: number) => toMoney(minor, shop.currency).value;
-  const shared = Math.max(0, Math.min(6, Number((await searchParams).shared) || 0));
+  const shared = Math.max(0, Math.min(MAX_DRAFT_PHOTOS, Number((await searchParams).shared) || 0));
 
   const drafts: DraftView[] = (catalog.drafts ?? []).map((d) => ({
     id: d.id,
@@ -47,7 +49,14 @@ export default async function NewFromPhoto({ searchParams }: { searchParams: Pro
           </div>
         </div>
       </div>
-      <PhotoDrafter drafts={drafts} shared={demo} sharedCount={shared} />
+      {demo ? (
+        <div className="empty">
+          <b>Not in the shared demo shop.</b>
+          <span className="small">{SHARED_DEMO_READ_ONLY}</span>
+        </div>
+      ) : (
+        <PhotoDrafter drafts={drafts} sharedCount={shared} />
+      )}
     </>
   );
 }

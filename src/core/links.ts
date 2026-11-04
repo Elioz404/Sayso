@@ -33,6 +33,10 @@ export interface Links {
   shopPage(slug: string): string;
   productPage(slug: string, productId: string): string;
   approve(recordId: string): string;
+  /** The owner's screens. */
+  owner: { home: string; orders: string; catalog: string; addProduct: string; phone: string };
+  /** Opens the shop on another device; the token rides in the fragment, which never reaches a server log. */
+  handoff(token: string): string;
   wallet(walletId: string): string;
   walletReturn(walletId: string): string;
   walletCancelled(walletId: string): string;
@@ -61,6 +65,8 @@ export function links(baseUrl: string): Links {
     shopPage: (slug) => `${base}/shop/${slug}`,
     productPage: (slug, productId) => `${base}/shop/${slug}/${productId}`,
     approve: (id) => `${base}/approve/${id}`,
+    owner: { home: `${base}/owner`, orders: `${base}/owner/orders`, catalog: `${base}/owner/catalog`, addProduct: `${base}/owner/catalog/new`, phone: `${base}/owner/phone` },
+    handoff: (token) => `${base}/handoff#${token}`,
     wallet: (id) => `${base}/wallet/${id}`,
     walletReturn: (id) => `${base}/wallet/${id}/return`,
     walletCancelled: (id) => `${base}/wallet/${id}?cancelled=1`,

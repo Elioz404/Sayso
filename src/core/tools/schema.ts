@@ -14,6 +14,31 @@ export type JsonSchema =
       additionalProperties?: boolean;
     };
 
+type RequiredKeys<R> = R extends readonly (infer K)[] ? K : never;
+
+/** The TypeScript type a value has once `validate(schema, value)` found no errors. Schemas need `as const`. */
+export type Infer<S> = S extends { type: 'string'; enum: readonly (infer E)[] }
+  ? E
+  : S extends { type: 'string' }
+    ? string
+    : S extends { type: 'integer' | 'number' }
+      ? number
+      : S extends { type: 'boolean' }
+        ? boolean
+        : S extends { type: 'array'; items: infer I }
+          ? Infer<I>[]
+          : S extends { type: 'object'; properties: infer P }
+            ? { [K in keyof P as K extends RequiredKeys<S extends { required: infer R } ? R : never> ? K : never]: Infer<P[K]> } & {
+                [K in keyof P as K extends RequiredKeys<S extends { required: infer R } ? R : never> ? never : K]?: Infer<P[K]>;
+              }
+            : unknown;
+
+/** The value, typed by its schema, or the errors that make it invalid. */
+export function check<const S extends JsonSchema>(schema: S, value: unknown, path = 'input'): { ok: true; value: Infer<S> } | { ok: false; errors: string[] } {
+  const errors = validate(schema, value, path);
+  return errors.length ? { ok: false, errors } : { ok: true, value: value as Infer<S> };
+}
+
 export function validate(schema: JsonSchema, value: unknown, path = 'input'): string[] {
   switch (schema.type) {
     case 'string': {

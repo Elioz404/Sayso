@@ -23,6 +23,9 @@ export interface SubmitOptions {
 
 export type SettledListener = (record: GuardRecord) => Promise<void> | void;
 
+/** The record can't be decided now: it isn't waiting for a decision (any more). */
+export class GuardConflict extends Error {}
+
 export interface GuardDeps {
   store: GuardStore;
   executors?: Partial<Record<ActionKind, Executor>>;
@@ -110,7 +113,7 @@ export class Guard {
     const record = await this.pending(recordId);
     append(record, 'approved', approver, evidence, this.now());
     record.status = 'executing';
-    if (!(await this.deps.store.updateIf(record, 'pending_approval'))) throw new Error(`Record ${recordId} was already decided`);
+    if (!(await this.deps.store.updateIf(record, 'pending_approval'))) throw new GuardConflict(`Record ${recordId} was already decided`);
     return this.run(record);
   }
 
@@ -118,7 +121,7 @@ export class Guard {
     const record = await this.pending(recordId);
     append(record, 'rejected', approver, note ? { note } : undefined, this.now());
     record.status = 'rejected';
-    if (!(await this.deps.store.updateIf(record, 'pending_approval'))) throw new Error(`Record ${recordId} was already decided`);
+    if (!(await this.deps.store.updateIf(record, 'pending_approval'))) throw new GuardConflict(`Record ${recordId} was already decided`);
     await this.settled(record);
     return record;
   }
@@ -167,8 +170,8 @@ export class Guard {
 
   private async pending(recordId: string): Promise<GuardRecord> {
     const record = await this.deps.store.get(recordId);
-    if (!record) throw new Error(`No Guard record ${recordId}`);
-    if (record.status !== 'pending_approval') throw new Error(`Record ${recordId} is ${record.status}, not pending approval`);
+    if (!record) throw new GuardConflict(`No Guard record ${recordId}`);
+    if (record.status !== 'pending_approval') throw new GuardConflict(`Record ${recordId} is ${record.status}, not pending approval`);
     return record;
   }
 

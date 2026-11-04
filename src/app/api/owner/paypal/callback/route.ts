@@ -6,8 +6,7 @@ import { identityFromCode } from '@/core/paypal/identity.ts';
 import { ready } from '@/server/context.ts';
 import { startOwnerSession } from '@/server/http.ts';
 import { checkSignInState, startSellerSession, takeClaim, takeNext } from '@/server/seller-session.ts';
-
-const WEEK_MS = 7 * 86_400_000;
+import { logError } from '@/server/log.ts';
 
 export async function GET(request: Request) {
   const { paypal, sellers, links } = await ready();
@@ -25,11 +24,11 @@ export async function GET(request: Request) {
     if (claim) await sellers.claim(claim, seller.id);
     const shopId = claim ?? (await sellers.shops(seller.id))[0]?.shop.id;
     if (!shopId) return back('no-shop');
-    await startOwnerSession(shopId, 'owner', new Date(Date.now() + WEEK_MS));
+    await startOwnerSession(shopId);
     return Response.redirect(`${links.base}${await takeNext()}`, 303);
   } catch (err) {
     if (err instanceof HttpError && err.status === 409) return back('taken');
-    console.error('[paypal sign-in]', err);
+    logError('paypal sign-in', err);
     return back('failed');
   }
 }

@@ -1,9 +1,10 @@
 // Sayso on the owner's phone: install it, get notified, approve with a passkey. On a computer it shows
-// a QR code that signs the phone in to the same shop for ten minutes.
+// a one-time QR code that opens the same shop on the phone. Also where every sign-in can be ended.
 import type { Metadata } from 'next';
-import QRCode from 'qrcode';
-import { PhoneSetup } from '@/app/_components/phone.tsx';
-import { HANDOFF_PURPOSE } from '@/server/http.ts';
+import { PhoneLink } from '@/app/_components/handoff.tsx';
+import { SignOutEverywhere } from '@/app/_components/owner-actions.tsx';
+import { PhoneSetup } from '@/app/_components/phone-setup.tsx';
+import { ownerSession, SHARED_DEMO_READ_ONLY } from '@/server/http.ts';
 import { ownerView } from '@/server/owner.ts';
 
 export const metadata: Metadata = { title: 'On your phone' };
@@ -11,14 +12,12 @@ export const metadata: Metadata = { title: 'On your phone' };
 const day = (iso?: string) => (iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : undefined);
 
 export default async function Phone({ searchParams }: { searchParams: Promise<{ handoff?: string }> }) {
-  const view = await ownerView();
-  if (!view) return null;
-  const { shopId, demo, passkeys, push, access, links, pushKey } = view;
+  const [view, session] = await Promise.all([ownerView(), ownerSession()]);
+  if (!view || !session) return null;
+  const { shopId, demo, passkeys, push, pushKey, access } = view;
   const { handoff } = await searchParams;
   const [keys, devices] = await Promise.all([passkeys.list(shopId), push.list(shopId)]);
-
-  const link = demo ? undefined : `${links.base}/handoff/${encodeURIComponent(access.signValue(HANDOFF_PURPOSE, shopId, 10 * 60_000))}`;
-  const qr = link && (await QRCode.toString(link, { type: 'svg', margin: 1, errorCorrectionLevel: 'M', color: { dark: '#221c17', light: '#00000000' } }));
+  const fresh = access.isFresh(session);
 
   return (
     <>
@@ -29,35 +28,34 @@ export default async function Phone({ searchParams }: { searchParams: Promise<{ 
         </div>
       </div>
 
-      {handoff === '1' && (
-        <div className="callout callout-ok">
-          <span className="small">
-            <b>You’re signed in on this phone.</b> Three steps and it’s set.
-          </span>
+      {demo ? (
+        <div className="empty">
+          <b>Not in the shared demo shop.</b>
+          <span className="small">{SHARED_DEMO_READ_ONLY}</span>
         </div>
+      ) : (
+        <>
+          {handoff === '1' && (
+            <div className="callout callout-ok">
+              <span className="small">
+                <b>You’re signed in on this phone.</b> Three steps and it’s set.
+              </span>
+            </div>
+          )}
+          {session.via === 'signin' && <PhoneLink fresh={fresh} hasPasskey={keys.length > 0} />}
+          <PhoneSetup
+            pushKey={pushKey}
+            fresh={fresh}
+            devices={devices.map((d) => d.label)}
+            passkeys={keys.map((k) => ({ id: k.id, label: k.label, added: day(k.createdAt)!, used: day(k.lastUsedAt), synced: k.backedUp }))}
+          />
+          <section className="block" aria-labelledby="sessions">
+            <h2 id="sessions">Lost a phone?</h2>
+            <p className="small soft">Sign out of this shop on every device at once, this one included. Passkeys stay; remove a lost phone’s passkey above.</p>
+            <SignOutEverywhere />
+          </section>
+        </>
       )}
-      {handoff === 'expired' && (
-        <div className="callout">
-          <span className="small">That QR code expired. Scan a fresh one from your computer.</span>
-        </div>
-      )}
-
-      {qr && (
-        <section className="handoff" aria-labelledby="handoff">
-          <div className="handoff-qr" dangerouslySetInnerHTML={{ __html: qr }} role="img" aria-label="QR code that opens your shop on your phone" />
-          <div className="stack" style={{ gap: 8 }}>
-            <h2 id="handoff">On your computer? Scan this with your phone</h2>
-            <p className="soft">It opens this shop on your phone, already signed in, so you can set it up there. The code works for ten minutes.</p>
-          </div>
-        </section>
-      )}
-
-      <PhoneSetup
-        pushKey={pushKey}
-        shared={demo}
-        devices={devices.map((d) => d.label)}
-        passkeys={keys.map((k) => ({ id: k.id, label: k.label, added: day(k.createdAt)!, used: day(k.lastUsedAt), synced: k.backedUp }))}
-      />
     </>
   );
 }

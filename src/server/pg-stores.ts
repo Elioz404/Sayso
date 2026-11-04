@@ -34,7 +34,7 @@ create unique index if not exists sayso_docs_slug on sayso_docs (kind, slug) whe
 create index if not exists sayso_docs_hash on sayso_docs (kind, hash) where hash is not null;
 `;
 
-type Kind = 'catalog' | 'cart' | 'guard' | 'owner' | 'key' | 'policy' | 'wallet' | 'wallet-key' | 'jobs' | 'tour' | 'seller' | 'media' | 'passkey' | 'push';
+type Kind = 'catalog' | 'cart' | 'guard' | 'owner' | 'key' | 'policy' | 'wallet' | 'wallet-key' | 'jobs' | 'tour' | 'seller' | 'media' | 'passkey' | 'push' | 'epoch' | 'once';
 type Queryable = pg.Pool | pg.PoolClient;
 
 interface Doc {
@@ -240,6 +240,26 @@ export class PgAccessStore implements AccessStore {
   listKeys(shopId: string) {
     return this.db.list<AgentKey>('key', shopId);
   }
+  async sessionEpoch(shopId: string) {
+    return (await this.db.get<{ epoch: number }>('epoch', shopId))?.epoch ?? 0;
+  }
+  async bumpSessionEpoch(shopId: string) {
+    const { rows } = await this.db.pool.query(
+      `insert into sayso_docs (kind, id, owner, data) values ('epoch', $1, $1, '{"epoch":1}')
+       on conflict (kind, id) do update set data = jsonb_build_object('epoch', (sayso_docs.data->>'epoch')::int + 1)
+       returning (data->>'epoch')::int as epoch`,
+      [shopId],
+    );
+    return rows[0].epoch as number;
+  }
+  async consumeOnce(id: string, expiresAt: Date) {
+    const { rowCount } = await this.db.pool.query(
+      `insert into sayso_docs (kind, id, created_at, data) values ('once', $1, now(), jsonb_build_object('expiresAt', $2::text))
+       on conflict (kind, id) do nothing`,
+      [id, expiresAt.toISOString()],
+    );
+    return rowCount === 1;
+  }
 }
 
 export class PgPolicyStore implements PolicyStore {
@@ -343,7 +363,13 @@ export class PgMediaStore implements MediaStore {
     return this.db.get<StoredPhoto>('media', id);
   }
   async put(photo: StoredPhoto) {
-    await this.db.put({ kind: 'media', id: photo.id, createdAt: photo.createdAt, data: photo });
+    await this.db.put({ kind: 'media', id: photo.id, owner: photo.shopId, createdAt: photo.createdAt, data: photo });
+  }
+  async remove(shopId: string, ids: string[]) {
+    if (ids.length) await this.db.pool.query("delete from sayso_docs where kind = 'media' and owner = $1 and id = any($2)", [shopId, ids]);
+  }
+  async removeShop(shopId: string) {
+    await this.db.pool.query("delete from sayso_docs where kind = 'media' and owner = $1", [shopId]);
   }
 }
 

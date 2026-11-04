@@ -5,6 +5,7 @@ import { Icon } from '@/app/_components/ui.tsx';
 import { HttpError } from '@/core/errors.ts';
 import { formatMoney, toMinor } from '@/core/money.ts';
 import { ready } from '@/server/context.ts';
+import { logError } from '@/server/log.ts';
 
 export const metadata: Metadata = { title: 'Order' };
 
@@ -55,7 +56,7 @@ export default async function PayReturn({ searchParams }: { searchParams: Promis
     // A refusal Sayso made itself (stock, rules, an unapproved payment) happens before any charge. Anything
     // else is unexpected: say what we know and let the buyer check, never promise what we didn't verify.
     const refused = err instanceof HttpError && err.status < 500;
-    if (!refused) console.error(`[checkout] return for ${cart} failed`, err);
+    if (!refused) logError(`checkout ${cart}`, err);
     return (
       <main className="wrap wrap-narrow page">
         <article className="sayso-card" style={{ maxWidth: 'none' }}>

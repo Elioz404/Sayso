@@ -12,6 +12,7 @@ import { randomBytes } from 'node:crypto';
 import { OPS_AGENT } from './actors.ts';
 import { findVariant, isLive, returnStock, stockLines, takeStock, type Catalog } from './catalog.ts';
 import { isPayable, priceCart } from './cart/engine.ts';
+import { parseCartInput } from './cart/input.ts';
 import type { CheckoutResult, PayPalCart, ValidationIssue } from './cart/spec.ts';
 import { HttpError, notFound } from './errors.ts';
 import type { Guard } from './guard/engine.ts';
@@ -43,7 +44,8 @@ export class Commerce {
     deps.guard.subscribe((record) => this.onSettled(record));
   }
 
-  async createCart(shopSlug: string, input: PayPalCart, channel?: string): Promise<PayPalCart> {
+  async createCart(shopSlug: string, body: unknown, channel?: string): Promise<PayPalCart> {
+    const input = parseCartInput(body);
     const catalog = await this.deps.catalogs.bySlug(shopSlug);
     if (!catalog || !isLive(catalog)) throw notFound(`Shop ${shopSlug}`);
     const now = new Date().toISOString();
@@ -70,7 +72,8 @@ export class Commerce {
   }
 
   /** PUT replaces the whole cart, per the spec. */
-  updateCart(cartId: string, input: PayPalCart, shopId?: string): Promise<PayPalCart> {
+  updateCart(cartId: string, body: unknown, shopId?: string): Promise<PayPalCart> {
+    const input = parseCartInput(body);
     return this.lock.run(cartId, async () => {
       const stored = await this.stored(cartId, shopId);
       if (stored.cart.status === 'COMPLETED') throw new HttpError(422, 'Cart is already completed');
@@ -84,7 +87,8 @@ export class Commerce {
     });
   }
 
-  checkout(cartId: string, input: PayPalCart, shopId?: string): Promise<CheckoutResult> {
+  checkout(cartId: string, body: unknown, shopId?: string): Promise<CheckoutResult> {
+    const input = parseCartInput(body);
     return this.lock.run(cartId, async () => {
       const stored = await this.stored(cartId, shopId);
       // Return-URL refreshes and platform retries must not charge twice.

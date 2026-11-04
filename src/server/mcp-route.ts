@@ -9,7 +9,8 @@ import 'server-only';
 import { handleMcp } from '@/core/mcp.ts';
 import type { ToolContext } from '@/core/tools/registry.ts';
 import { ready } from './context.ts';
-import { channelOf, handle } from './http.ts';
+import { channelOf, handle, readJson } from './http.ts';
+import { clientAddress, costlyCalls, mcpRequests } from './rate-limit.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -31,6 +32,10 @@ const bearer = (request: Request, prefix: string) => new RegExp(`^Bearer\\s+(${p
 export async function mcpPost(request: Request, endpoint: McpEndpoint = {}): Promise<Response> {
   const { shopSlug, marketplace = false, pathKey } = endpoint;
   const response = await handle(async () => {
+    const caller = clientAddress(request);
+    if (!mcpRequests.allow(caller)) {
+      return Response.json({ jsonrpc: '2.0', id: null, error: { code: -32000, message: 'Too many requests; slow down and try again in a minute.' } }, { status: 429, headers: { 'Retry-After': '60' } });
+    }
     const { tools, catalogs, access, wallets } = await ready();
     const agentKey = bearer(request, 'sk_agent_') ?? (pathKey?.startsWith('sk_agent_') ? pathKey : undefined);
     const key = agentKey ? await access.agentFromHeader(`Bearer ${agentKey}`) : undefined;
@@ -43,14 +48,14 @@ export async function mcpPost(request: Request, endpoint: McpEndpoint = {}): Pro
 
     let message: unknown;
     try {
-      message = await request.json();
+      message = await readJson(request);
     } catch {
-      return Response.json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } }, { status: 400 });
+      return Response.json({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error, or a body over 64 KB' } }, { status: 400 });
     }
 
     // A key only unlocks seller tools at its own shop's endpoint.
     const shop = shopSlug ? await catalogs.bySlug(shopSlug) : undefined;
-    const agent = key && !marketplace && (!shopSlug || shop?.shop.id === key.shopId) ? { shopId: key.shopId, keyId: key.id, label: key.label } : undefined;
+    const agent = key && !marketplace && (!shopSlug || shop?.shop.id === key.shopId) ? { shopId: key.shopId, keyId: key.id, label: key.label, shared: key.shared } : undefined;
     const context: ToolContext = {
       services: tools,
       shopSlug,
@@ -58,6 +63,7 @@ export async function mcpPost(request: Request, endpoint: McpEndpoint = {}): Pro
       agent,
       wallet: await wallets.fromKey(bearer(request, 'sk_wallet_') ?? (pathKey?.startsWith('sk_wallet_') ? pathKey : undefined)),
       channel: channelOf(request, agent ? 'owner-agent' : 'mcp'),
+      allow: (cost) => costlyCalls[cost].allow(caller),
     };
 
     const reply = await handleMcp(message, context);

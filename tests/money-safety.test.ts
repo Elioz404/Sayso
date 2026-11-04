@@ -92,7 +92,7 @@ test('when the owner rejects a held order, the hold is released and the stock co
   assert.equal(placed.payment_confirmation?.payment_status, 'AUTHORIZED_PENDING_MERCHANT_REVIEW');
   assert.equal(await stock(s, 'var_mug_sage'), 4, 'held for the buyer meanwhile');
 
-  await s.saySo.decide('shop_maya', String(placed.payment_confirmation?.guard_record_id), 'reject', 'owner:shop_maya', 'Too big');
+  await s.saySo.decide('shop_maya', String(placed.payment_confirmation?.guard_record_id), 'reject', 'owner:shop_maya', { note: 'Too big' });
   const { cart, order } = await s.orders.get('shop_maya', cartId);
   assert.equal(order.status, 'released');
   assert.equal(cart.released?.holdVoided, true);
@@ -114,13 +114,31 @@ test('an approved capture that PayPal refuses releases the order instead of leav
   assert.equal(await stock(s, 'var_bowl_sand'), 3);
 });
 
+test('someone who sends their connect link to another person never gets to spend that person\'s PayPal', async () => {
+  const s = await stack();
+  const attacker = await s.call('connect_paypal', { assistant_name: 'ChatGPT' }, s.buyer);
+  const walletId = new URL(attacker.data.connect_url).pathname.split('/').pop()!;
+  // The victim opens the link, picks limits and approves in PayPal. The pairing code is shown to them only.
+  await s.wallets.startConnect(walletId, { perOrder: '50', daily: '80' });
+  s.pp.approveSetup((await s.wallets.get(walletId)).setupTokenId!);
+  await s.wallets.finishConnect(walletId);
+
+  const cart = await s.call('create_cart', { items: [{ variant_id: 'var_mug_sage', quantity: 1 }], shipping_address: address }, s.buyer);
+  const pay = await s.call('pay_with_paypal', { cart_id: cart.data.cart_id, wallet_key: attacker.data.wallet_key }, s.buyer);
+  assert.equal(pay.isError, true);
+  for (const guess of ['AAAA-AAAA', 'BBBB-BBBB', 'CCCC-CCCC', 'DDDD-DDDD', 'EEEE-EEEE']) await s.call('wallet_status', { wallet_key: attacker.data.wallet_key, claim_code: guess }, s.buyer);
+  assert.match((await s.call('wallet_status', { wallet_key: attacker.data.wallet_key, claim_code: 'FFFF-FFFF' }, s.buyer)).text, /No pairing code is waiting/, 'guessing burns the code');
+  assert.notEqual((await s.call('get_cart', { cart_id: cart.data.cart_id }, s.buyer)).data.status, 'COMPLETED');
+});
+
 test('a purchase over the buyer\'s limits goes to PayPal approval and leaves nothing pending', async () => {
   const s = await stack();
   const connect = await s.call('connect_paypal', { assistant_name: 'ChatGPT' }, s.buyer);
   const walletId = new URL(connect.data.connect_url).pathname.split('/').pop()!;
   await s.wallets.startConnect(walletId, { perOrder: '20', daily: '50' });
   s.pp.approveSetup((await s.wallets.get(walletId)).setupTokenId!);
-  await s.wallets.finishConnect(walletId);
+  const { pairingCode } = await s.wallets.finishConnect(walletId);
+  await s.call('wallet_status', { wallet_key: connect.data.wallet_key, claim_code: pairingCode }, s.buyer);
 
   const cart = await s.call('create_cart', { items: [{ variant_id: 'var_bowl_sand', quantity: 1 }], shipping_address: address }, s.buyer);
   const paid = await s.call('pay_with_paypal', { cart_id: cart.data.cart_id, wallet_key: connect.data.wallet_key }, s.buyer);

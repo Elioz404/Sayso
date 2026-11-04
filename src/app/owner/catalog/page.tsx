@@ -42,7 +42,7 @@ export default async function Catalog({ searchParams }: { searchParams: Promise<
         <h2 id="products" className="sr-only">
           Products
         </h2>
-        <CatalogGrid rows={variantRows(catalog)} market={Boolean(view.market)} />
+        <CatalogGrid rows={variantRows(catalog)} market={Boolean(view.market)} readOnly={view.demo} />
       </section>
 
       <section className="block" aria-labelledby="shipping">

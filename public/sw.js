@@ -33,7 +33,7 @@ self.addEventListener('push', (event) => {
       body: message.body || '',
       tag: message.tag || undefined,
       renotify: Boolean(message.tag),
-      requireInteraction: /\?$/.test(title), // a request waiting for a decision stays until it is seen
+      requireInteraction: Boolean(message.sticky), // a request waiting for a decision stays until it is seen
       icon: '/app-icon/192',
       badge: '/app-icon/192',
       data: { url: message.url || '/owner' },

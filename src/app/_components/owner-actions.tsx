@@ -7,8 +7,9 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { callApi } from './api.ts';
 import { CopyField } from './client-ui.tsx';
-import { signChallenge, usePasskeyChallenge } from './phone.tsx';
+import { signChallenge, usePasskeyChallenge } from './passkey-client.ts';
 import { Icon } from './ui.tsx';
+import { useAction } from './use-action.ts';
 
 /** What PayPal sign-in came back with, as /owner?signin=... */
 const SIGN_IN_OUTCOMES: Record<string, string> = {
@@ -119,6 +120,28 @@ export function ShopSwitcher({ shops, current }: { shops: { slug: string; name: 
   );
 }
 
+/** Ends every session of the shop, on every device (this one too). */
+export function SignOutEverywhere() {
+  const { busy, error, run } = useAction();
+  return (
+    <div className="stack" style={{ gap: 6, alignItems: 'flex-start' }}>
+      <button
+        className="btn btn-danger btn-small"
+        disabled={Boolean(busy)}
+        onClick={() =>
+          void run(async () => {
+            await callApi('/api/owner/session', 'DELETE', { everywhere: true });
+            window.location.assign('/owner');
+          })
+        }
+      >
+        {busy ? 'Signing out...' : 'Sign out on every device'}
+      </button>
+      {error && <p className="error small">{error}</p>}
+    </div>
+  );
+}
+
 export function SignOut() {
   const router = useRouter();
   return (
@@ -137,28 +160,25 @@ export function SignOut() {
 /** `passkey`: the shop approves with a passkey, so "Say OK" opens the fingerprint/face prompt first. */
 export function Decision({ id, big = false, passkey = false }: { id: string; big?: boolean; passkey?: boolean }) {
   const router = useRouter();
-  const [busy, setBusy] = useState<'approve' | 'reject'>();
-  const [error, setError] = useState<string>();
   const [note, setNote] = useState('');
-  const signing = usePasskeyChallenge(passkey ? 'approve' : undefined, id);
+  const { busy, error, run } = useAction();
+  const signing = usePasskeyChallenge(passkey ? { purpose: 'approve', record: id } : undefined);
 
-  async function decide(decision: 'approve' | 'reject') {
-    setBusy(decision);
-    setError(undefined);
-    try {
-      let proof;
-      if (decision === 'approve' && passkey) {
-        if (!signing.challenge) throw new Error(signing.error ?? 'Getting the passkey ready, try again in a second');
-        proof = await signChallenge(signing.challenge);
+  const decide = (decision: 'approve' | 'reject') =>
+    run(async () => {
+      try {
+        let proof;
+        if (decision === 'approve' && passkey) {
+          if (!signing.challenge) throw new Error(signing.error ?? 'Getting the passkey ready, try again in a second');
+          proof = await signChallenge(signing.challenge);
+        }
+        await callApi(`/api/guard/${id}`, 'POST', { decision, note: note || undefined, passkey: proof });
+        router.refresh();
+      } catch (err) {
+        if (passkey) void signing.reload(); // each challenge works once
+        throw err;
       }
-      await callApi(`/api/guard/${id}`, 'POST', { decision, note: note || undefined, passkey: proof });
-      router.refresh();
-    } catch (err) {
-      setError((err as Error).message);
-      if (passkey) void signing.reload();
-      setBusy(undefined);
-    }
-  }
+    }, decision);
 
   return (
     <div className="stack" style={{ gap: 10 }}>
@@ -295,27 +315,25 @@ export function RevokeKey({ id, label }: { id: string; label: string }) {
   );
 }
 
-export function AdoptRule({ id }: { id: string }) {
+/** Adopt a rule the owner's approvals earned; confirmed with their passkey once the shop has one. */
+export function AdoptRule({ id, passkey = false }: { id: string; passkey?: boolean }) {
   const router = useRouter();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
+  const { busy, error, run } = useAction();
+  const confirm = usePasskeyChallenge(passkey ? { purpose: 'confirm', what: `adopt-rule:${id}` } : undefined);
+  const adopt = () =>
+    run(async () => {
+      let proof;
+      if (passkey) {
+        if (!confirm.challenge) throw new Error(confirm.error ?? 'Getting the passkey ready, try again in a second');
+        proof = await signChallenge(confirm.challenge);
+      }
+      await callApi(`/api/owner/rules/suggestions/${id}`, 'POST', { passkey: proof });
+      router.refresh();
+    });
   return (
     <div className="stack" style={{ gap: 6 }}>
-      <button
-        className="btn btn-primary"
-        disabled={busy}
-        onClick={async () => {
-          setBusy(true);
-          setError(undefined);
-          try {
-            await callApi(`/api/owner/rules/suggestions/${id}`, 'POST');
-            router.refresh();
-          } catch (err) {
-            setError((err as Error).message);
-          }
-          setBusy(false);
-        }}
-      >
+      <button className="btn btn-primary" disabled={Boolean(busy)} onClick={() => void adopt()}>
+        {passkey && <Icon name="fingerprint" size={18} />}
         {busy ? 'Saving...' : 'Use this rule'}
       </button>
       {error && <p className="error small">{error}</p>}

@@ -77,7 +77,8 @@ export async function handleMcp(message: unknown, ctx: ToolContext): Promise<Jso
       } catch (err) {
         // Tool failures are results the model can read and recover from, not protocol errors.
         const text = err instanceof ToolError ? err.message : 'The shop hit an unexpected error. Try again in a moment.';
-        if (!(err instanceof ToolError)) console.error(`[mcp] ${name} failed`, err);
+        // The stack, not the error object: a PayPal error carries PayPal's response body, which can hold payer details.
+        if (!(err instanceof ToolError)) console.error(`[mcp] ${name} failed`, err instanceof Error ? (err.stack ?? err.message) : String(err));
         return { jsonrpc: '2.0', id, result: { content: [{ type: 'text', text }], isError: true } };
       }
     }

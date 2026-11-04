@@ -2,6 +2,7 @@
 // tools any assistant uses, and the judge as the owner who gives (or refuses) every say-so. One step per
 // screen: what it proves, what the judge does, what happened (with the agents' transcript and the Guard
 // record behind it), then the next step. Everything is real: PayPal sandbox calls, Guard, the audit log.
+import { actionAmount, actionTitle } from '@/core/guard/describe.ts';
 import type { Metadata } from 'next';
 import { connection } from 'next/server';
 import { CopyField } from '@/app/_components/client-ui.tsx';
@@ -11,7 +12,6 @@ import { When } from '@/app/_components/time.tsx';
 import { Icon, Status } from '@/app/_components/ui.tsx';
 import { verifyAuditChain } from '@/core/guard/engine.ts';
 import type { GuardRecord } from '@/core/guard/types.ts';
-import { DEFAULT_CURRENCY, formatMoney } from '@/core/money.ts';
 import { TOUR_STEPS, type StepResult, type Tour, type TourStep } from '@/core/tour.ts';
 import { developerPortalBuilt, ready } from '@/server/context.ts';
 import { ownerView } from '@/server/owner.ts';
@@ -225,7 +225,7 @@ function StepScreen({ view, n, total, redact, passkey }: { view: StepView; n: nu
                   {view.decide.map((r) => (
                     <li key={r.id}>
                       <span className="stack" style={{ gap: 0 }}>
-                        <b>{describe(r)}</b>
+                        <b>{actionTitle(r.action)}</b>
                         <span className="small soft">{r.decision?.hits.map((h) => h.message).join(' ')}</span>
                       </span>
                       <Decision id={r.id} passkey={passkey} />
@@ -239,7 +239,7 @@ function StepScreen({ view, n, total, redact, passkey }: { view: StepView; n: nu
                     <b>{view.suggestion.title}</b>
                     <span className="small soft">{view.suggestion.evidence}</span>
                   </span>
-                  <AdoptRule id={view.suggestion.id} />
+                  <AdoptRule id={view.suggestion.id} passkey={passkey} />
                 </div>
               )}
               {view.payUrl && (
@@ -352,15 +352,10 @@ async function earnView(view: OwnerView, tour: Tour, result: StepResult | undefi
     : { step, state: 'done', result, records, decide: [], outcome: 'Your agent already had room for these refunds, so none needed you.' };
 }
 
-function describe(r: GuardRecord): string {
-  const amount = r.action.amount !== undefined && r.action.kind !== 'policy.update' ? formatMoney(r.action.amount, r.action.currency ?? DEFAULT_CURRENCY) : '';
-  const what = { 'refund.create': 'Refund', 'invoice.send': 'Invoice', 'policy.update': 'New rules', 'payment.capture': 'Charge', 'payment.void': 'Release', 'checkout.create': 'Purchase' }[r.action.kind];
-  return [what, amount].filter(Boolean).join(' ');
-}
 
 /** The step's result in one line. */
 function outcome(step: TourStep, r: GuardRecord): string {
-  const amount = r.action.amount !== undefined ? formatMoney(r.action.amount, r.action.currency ?? DEFAULT_CURRENCY) : '';
+  const amount = actionAmount(r.action) ?? '';
   const lines: Partial<Record<TourStep, Partial<Record<GuardRecord['status'], string>>>> = {
     refund: {
       pending_approval: `Guard held a ${amount} refund. Nothing moves until you decide.`,
@@ -400,7 +395,7 @@ function Trace({ record }: { record: GuardRecord }) {
     <div className="panel panel-tight stack" style={{ gap: 'var(--s2)' }}>
       <div className="spread">
         <span className="small">
-          {describe(record)} · Guard record <span className="mono">{record.id}</span>
+          {actionTitle(record.action)} · Guard record <span className="mono">{record.id}</span>
         </span>
         <Status value={record.status} />
       </div>

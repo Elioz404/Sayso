@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { ChatModel } from '../src/core/ai/llm.ts';
 import { handleMcp } from '../src/core/mcp.ts';
+import { maskDeep } from '../src/core/privacy.ts';
 import { address, stack } from './stack.ts';
 
 /** Buyer agent buys one mug through the MCP tools and pays; returns the order id. */
@@ -104,7 +105,7 @@ test('an agent cannot loosen its own rules: policy changes always wait for the o
   assert.ok(proposed.data.why.some((w: string) => /only the owner can apply/.test(w)));
   assert.equal((await s.saySo.policy('shop_maya')).rules[0].id, 'refund-cap', 'old rules still apply');
 
-  await s.saySo.decide('shop_maya', proposed.data.say_so_id, 'reject', 'owner:shop_maya', 'No way');
+  await s.saySo.decide('shop_maya', proposed.data.say_so_id, 'reject', 'owner:shop_maya', { note: 'No way' });
   assert.equal((await s.saySo.policy('shop_maya')).rules[0].id, 'refund-cap');
 
   const again = await s.call('propose_policy', { rules: 'Refunds over $100 need my OK' }, s.owner);
@@ -122,7 +123,7 @@ test('owner rejects a big capture: the hold is released and the buyer is never c
   assert.equal(pending.action, 'payment.capture');
   assert.equal((await s.call('get_order', { order_id: orderId }, s.owner)).data.status, 'awaiting_owner');
 
-  await s.saySo.decide('shop_maya', pending.say_so_id, 'reject', 'owner:shop_maya', 'Suspicious');
+  await s.saySo.decide('shop_maya', pending.say_so_id, 'reject', 'owner:shop_maya', { note: 'Suspicious' });
   const order = await s.call('get_order', { order_id: orderId }, s.owner);
   assert.equal(order.data.status, 'released');
   assert.ok(order.data.say_so.some((r: { action: string; status: string }) => r.action === 'payment.void' && r.status === 'verified'));
@@ -158,11 +159,38 @@ test('agent keys: hashed, scoped to one shop, revocable; owner sessions are sign
   await s.access.revokeKey('shop_maya', key!.id);
   assert.equal(await s.access.agentFromHeader('Bearer sk_agent_demo'), undefined);
 
-  const session = s.access.signOwnerSession('shop_maya', 60_000);
-  assert.deepEqual(s.access.verifyOwnerSession(session), { shopId: 'shop_maya', kind: 'owner' });
-  assert.equal(s.access.verifyOwnerSession(session.replace('.owner.', '.demo.')), undefined, 'the kind is signed too');
-  assert.equal(s.access.verifyOwnerSession(session.replace('shop_maya', 'shop_evil')), undefined);
-  assert.equal(s.access.verifyOwnerSession(session, Date.now() + 120_000), undefined, 'expired');
+  const now = Date.now();
+  const session = await s.access.signOwnerSession('shop_maya', { ttlMs: 60_000, now });
+  assert.deepEqual(await s.access.verifyOwnerSession(session, now), { shopId: 'shop_maya', kind: 'owner', via: 'signin', issuedAt: now, expiresAt: now + 60_000 });
+  assert.equal(await s.access.verifyOwnerSession(session.replace('.owner.', '.demo.'), now), undefined, 'the kind is signed too');
+  assert.equal(await s.access.verifyOwnerSession(session.replace('.signin.', '.switch.'), now), undefined, 'and how it was opened');
+  assert.equal(await s.access.verifyOwnerSession(session.replace('shop_maya', 'shop_evil'), now), undefined);
+  assert.equal(await s.access.verifyOwnerSession(session, now + 120_000), undefined, 'expired');
+});
+
+test('sessions: "sign out everywhere" ends every copy, and only a fresh direct sign-in counts as fresh', async () => {
+  const s = await stack();
+  const now = Date.now();
+  const laptop = await s.access.signOwnerSession('shop_maya', { now });
+  const opened = (await s.access.verifyOwnerSession(laptop, now))!;
+  assert.equal(s.access.isFresh(opened, now), true);
+  assert.equal(s.access.isFresh(opened, now + 31 * 60_000), false, 'not half an hour later');
+  assert.equal(s.access.isFresh({ ...opened, via: 'switch' }, now), false, 'switching shops is not a sign-in');
+
+  await s.access.signOutEverywhere('shop_maya');
+  assert.equal(await s.access.verifyOwnerSession(laptop, now), undefined, 'the old cookie is dead');
+  assert.ok(await s.access.verifyOwnerSession(await s.access.signOwnerSession('shop_maya', { now }), now), 'a new sign-in works');
+});
+
+test('phone links work once, expire, and never outlive the session that made them', async () => {
+  const s = await stack();
+  const now = Date.now();
+  const session = (await s.access.verifyOwnerSession(await s.access.signOwnerSession('shop_maya', { now }), now))!;
+  const token = s.access.issueHandoff(session, session.expiresAt, now);
+  assert.deepEqual(await s.access.redeemHandoff(token, now), { shopId: 'shop_maya', expiresAt: session.expiresAt });
+  assert.equal(await s.access.redeemHandoff(token, now), undefined, 'used once already');
+  assert.equal(await s.access.redeemHandoff(s.access.issueHandoff(session, session.expiresAt, now), now + 6 * 60_000), undefined, 'expired after five minutes');
+  assert.equal(await s.access.redeemHandoff('shop_evil:x:1.9999999999999.forged', now), undefined);
 });
 
 test('onboarding: a new shop starts as a draft, and publishing registers it with PayPal', async () => {
@@ -273,13 +301,22 @@ test("saved PayPal: the buyer approves once and sets limits; the assistant pays 
   await s.wallets.startConnect(walletId, { perOrder: '50', daily: '80' });
   const pending = await s.wallets.get(walletId);
   s.pp.approveSetup(pending.setupTokenId!);
-  const { wallet, connectorKey } = await s.wallets.finishConnect(walletId);
+  const { wallet, connectorKey, pairingCode } = await s.wallets.finishConnect(walletId);
   assert.equal(wallet.status, 'connected');
   assert.match(connectorKey!, /^sk_wallet_/);
+  assert.match(pairingCode!, /^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
   assert.equal((await s.wallets.fromKey(connectorKey))?.id, walletId, 'the personal URL key opens the same wallet');
   assert.equal((await s.wallets.finishConnect(walletId)).connectorKey, undefined, 'shown once');
   assert.equal(wallet.payerEmail, 'buyer@example.com');
   await assert.rejects(s.wallets.startConnect(walletId, { perOrder: '2000', daily: '2000' }), /already connected/, 'limits are fixed once connected');
+
+  // The key from connect_paypal can't spend until the person who approved hands over the pairing code.
+  const unpaired = await s.call('pay_with_paypal', { cart_id: early.data.cart_id, wallet_key: connect.data.wallet_key }, s.buyer);
+  assert.match(unpaired.text, /pairing code/);
+  const wrong = await s.call('wallet_status', { wallet_key: connect.data.wallet_key, claim_code: 'AAAA-AAAA' }, s.buyer);
+  assert.match(wrong.text, /doesn't match/);
+  const paired = await s.call('wallet_status', { wallet_key: connect.data.wallet_key, claim_code: pairingCode!.toLowerCase() }, s.buyer);
+  assert.equal(paired.data.can_pay, true);
 
   // $44.99 is inside the $50 limit: paid with no link, and the shop's Guard still captured it.
   const paid = await s.call('pay_with_paypal', { cart_id: early.data.cart_id }, { ...s.buyer, wallet: await s.wallets.fromKey(connect.data.wallet_key) }); // as if sent in the header
@@ -382,4 +419,14 @@ test('autonomy is earned: approvals the owner keeps giving become a rule the age
   assert.equal(next.data.status, 'pending_approval');
   assert.deepEqual(next.data.why.map((w: string) => /daily limit/.test(w)), [true]);
   assert.equal((await s.call('rule_suggestions', {}, s.owner)).data.suggestions.length, 0);
+});
+
+test("the demo's shared agent key can't be revoked and sees buyers' details masked", async () => {
+  const s = await stack();
+  const key = await s.access.ensureSharedKey('shop_maya', 'demo agent', 'sk_agent_shared_demo_key_0123');
+  assert.equal(key.shared, true);
+  await assert.rejects(s.access.revokeKey('shop_maya', key.id), { status: 403 });
+
+  const masked = maskDeep({ buyer: 'grace.hopper@example.com', ship_to: { address_line_1: '100 Congress Ave', postal_code: '78701', admin_area_2: 'Austin' }, note: 'Ask grace.hopper@example.com' });
+  assert.deepEqual(masked, { buyer: 'g***@example.com', ship_to: { address_line_1: '•••', postal_code: '•••', admin_area_2: 'Austin' }, note: 'Ask g***@example.com' });
 });

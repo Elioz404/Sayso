@@ -58,6 +58,7 @@ export const buyerTools: Tool[] = [
     description:
       'Price a cart (items, shipping, tax). If validation_issues come back, apply one of their resolution_options and call update_cart. When status is CREATED, give the buyer payment_method.approval_url: they approve in PayPal and the shop completes the order.',
     side: 'buyer',
+    cost: 'paypal',
     inputSchema: {
       type: 'object',
       properties: {
@@ -79,6 +80,7 @@ export const buyerTools: Tool[] = [
     title: 'Update cart',
     description: 'Replace the items and/or address of a cart (the whole cart, as in PayPal\'s merchant-cart API). A changed total gets a new approval_url.',
     side: 'buyer',
+    cost: 'paypal',
     inputSchema: {
       type: 'object',
       properties: { cart_id: { type: 'string', maxLength: 60 }, items, shipping_address: address, customer },
@@ -111,6 +113,7 @@ export const buyerTools: Tool[] = [
     description:
       "Ask the shop for a refund on a paid order, with the buyer's reason. This only sends a request: the shop owner always decides, and PayPal refunds the buyer if they agree. Check the answer later with get_cart.",
     side: 'buyer',
+    cost: 'paypal',
     inputSchema: {
       type: 'object',
       properties: {
@@ -139,8 +142,9 @@ export const buyerTools: Tool[] = [
     name: 'connect_paypal',
     title: 'Let me pay without asking every time',
     description:
-      "Set up the buyer's PayPal so you can pay for them later without a PayPal link each time. Returns connect_url: give it to the buyer. They choose their limits (per order and per day) and approve once in PayPal. Keep wallet_key secret and send it with pay_with_paypal. Purchases over their limits still need their approval.",
+      "Set up the buyer's PayPal so you can pay for them later without a PayPal link each time. Returns connect_url: give it to the buyer. They choose their limits (per order and per day) and approve once in PayPal; then the page shows them a pairing code. Ask them for it and call wallet_status with wallet_key and claim_code. After that, send wallet_key with pay_with_paypal. Keep it secret. Purchases over their limits still need their approval.",
     side: 'buyer',
+    cost: 'paypal',
     inputSchema: { type: 'object', properties: { assistant_name: { type: 'string', maxLength: 40, description: 'How the buyer knows you, e.g. "ChatGPT"' } } },
     async run(input, ctx) {
       const { wallet, key, connectUrl } = await ctx.services.wallets.create(String(input.assistant_name ?? ctx.channel));
@@ -148,21 +152,26 @@ export const buyerTools: Tool[] = [
         wallet_key: key,
         connect_url: connectUrl,
         status: wallet.status,
-        next: 'Send the buyer to connect_url. Until they finish, keep using approval_url links. Then call pay_with_paypal with wallet_key.',
+        next: 'Send the buyer to connect_url. When they finish, ask for the pairing code they see and call wallet_status with claim_code. Until then, keep using approval_url links.',
       };
     },
   },
   {
     name: 'wallet_status',
     title: 'Saved PayPal status',
-    description: "Whether the buyer's saved PayPal is connected, and their limits.",
+    description: "Whether the buyer's saved PayPal is connected, and their limits. With claim_code (the pairing code the buyer read after approving in PayPal), it also pairs your wallet_key so you can pay.",
     side: 'buyer',
-    annotations: { readOnlyHint: true },
-    inputSchema: { type: 'object', properties: { wallet_key: { type: 'string', maxLength: 80 } } },
+    inputSchema: {
+      type: 'object',
+      properties: { wallet_key: { type: 'string', maxLength: 80 }, claim_code: { type: 'string', maxLength: 20, description: 'The pairing code the buyer reads to you, e.g. "K7QM-29XD"' } },
+    },
     async run(input, ctx) {
-      const wallet = await walletFrom(ctx, input.wallet_key);
+      const keyed = await walletFrom(ctx, input.wallet_key);
+      const wallet = input.claim_code && 'via' in keyed ? await ctx.services.wallets.pair(keyed, input.claim_code) : keyed;
+      const canPay = wallet.status === 'connected' && (!('via' in keyed) || keyed.via === 'personal' || Boolean(wallet.paired));
       return {
         status: wallet.status,
+        can_pay: canPay,
         paypal_account: wallet.payerEmail,
         limits: { per_order: formatMoney(wallet.limits.perOrder, wallet.limits.currency), per_day: formatMoney(wallet.limits.daily, wallet.limits.currency) },
         manage_url: ctx.services.wallets.connectUrl(wallet),
@@ -175,6 +184,7 @@ export const buyerTools: Tool[] = [
     description:
       "Pay for a cart with the buyer's saved PayPal, without sending them a link. Inside their limits it is paid at once; over a limit nothing is charged and you get approval_url for the buyer to approve this one order. The shop still confirms stock before charging.",
     side: 'buyer',
+    cost: 'paypal',
     inputSchema: {
       type: 'object',
       properties: { cart_id: { type: 'string', maxLength: 60 }, wallet_key: { type: 'string', maxLength: 80, description: 'From connect_paypal, unless sent as the Authorization header' } },

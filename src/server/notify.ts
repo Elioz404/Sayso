@@ -4,12 +4,11 @@
 // who knows the name, so the push carries what kind of request it is and a link, never buyer details.
 
 import 'server-only';
-import { ACTIONS, type GuardRecord } from '@/core/guard/types.ts';
-import { DEFAULT_CURRENCY, formatMoney } from '@/core/money.ts';
+import { actionTitle } from '@/core/guard/describe.ts';
+import type { GuardRecord } from '@/core/guard/types.ts';
 
 export async function notifyOwner(record: GuardRecord, approveUrl: string): Promise<void> {
-  const amount = record.action.amount !== undefined ? ` ${formatMoney(record.action.amount, record.action.currency ?? DEFAULT_CURRENCY)}` : '';
-  const title = `Say-so needed: ${ACTIONS[record.action.kind].label}${amount}`;
+  const title = `Say-so needed: ${actionTitle(record.action)}`;
   console.log(`[guard] ${record.id} for ${record.action.ownerId}: ${title} -> ${approveUrl}`);
 
   const topic = process.env.SAYSO_NTFY_TOPIC;
@@ -22,6 +21,6 @@ export async function notifyOwner(record: GuardRecord, approveUrl: string): Prom
       signal: AbortSignal.timeout(5_000),
     });
   } catch (err) {
-    console.error('[guard] owner push failed', err);
+    console.error('[guard] owner push failed', err instanceof Error ? err.message : err);
   }
 }

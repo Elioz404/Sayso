@@ -6,9 +6,17 @@
 // Secrets are stored as sha256 hashes and shown exactly once.
 
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { HttpError } from './errors.ts';
 
 /** "Last used" is shown to the owner; writing it on every call would turn each request into a write. */
 const LAST_USED_RESOLUTION_MS = 10 * 60_000;
+/** How long a sign-in lasts on a device. */
+export const SESSION_TTL_MS = 7 * 86_400_000;
+/** A session this young counts as a fresh sign-in: enough to tie a new device or a first passkey to the shop. */
+export const FRESH_SESSION_MS = 15 * 60_000;
+/** How long a "continue on your phone" link works. It also works only once. */
+export const HANDOFF_TTL_MS = 5 * 60_000;
+const HANDOFF = 'owner-handoff';
 
 export interface AgentKey {
   id: string;
@@ -20,12 +28,22 @@ export interface AgentKey {
   createdAt: string;
   revokedAt?: string;
   lastUsedAt?: string;
+  /** A key everyone trying the hosted demo holds: it can't be revoked, and it sees buyers' details masked. */
+  shared?: boolean;
 }
 
 export interface OwnerSession {
   shopId: string;
-  /** owner: the shop's owner (owner secret or PayPal). demo: the shared public demo session. */
+  /** owner: the shop's owner (owner secret, PayPal or a judge's tour). demo: the shared public demo session. */
   kind: 'owner' | 'demo';
+  /** When this device signed in, and when the sign-in ends (ms). */
+  issuedAt: number;
+  expiresAt: number;
+  /**
+   * signin: a credential was just shown (owner secret, PayPal, starting a tour). switch: another shop of
+   * a seller already signed in with PayPal. handoff: opened from another signed-in device's QR code.
+   */
+  via: 'signin' | 'switch' | 'handoff';
 }
 
 export interface AccessStore {
@@ -34,6 +52,11 @@ export interface AccessStore {
   putKey(key: AgentKey): Promise<void>;
   keyByHash(hash: string): Promise<AgentKey | undefined>;
   listKeys(shopId: string): Promise<AgentKey[]>;
+  /** The shop's session generation; sessions signed under an older one are no longer valid. */
+  sessionEpoch(shopId: string): Promise<number>;
+  bumpSessionEpoch(shopId: string): Promise<number>;
+  /** Records `id` as used until `expiresAt`. False if it was already used: one-time links and challenges. */
+  consumeOnce(id: string, expiresAt: Date): Promise<boolean>;
 }
 
 export function generateSecret(prefix: 'sk_agent' | 'sk_owner'): string {
@@ -83,13 +106,13 @@ export class Access {
     return { key, secret };
   }
 
-  /** A key with a known secret (the hosted demo's), active: re-enabled if it was revoked, created if missing. */
-  async ensureAgentKey(shopId: string, label: string, secret: string): Promise<AgentKey> {
+  /** The hosted demo's shared key (a known secret), active and marked shared: created if missing, re-enabled if revoked. */
+  async ensureSharedKey(shopId: string, label: string, secret: string): Promise<AgentKey> {
     const existing = await this.store.keyByHash(hashSecret(secret));
-    if (!existing) return (await this.createAgentKey(shopId, label, secret)).key;
-    if (existing.shopId !== shopId) throw new Error('That key belongs to another shop');
-    if (existing.revokedAt) await this.store.putKey({ ...existing, revokedAt: undefined });
-    return existing;
+    if (existing && existing.shopId !== shopId) throw new Error('That key belongs to another shop');
+    const key: AgentKey = { ...(existing ?? (await this.createAgentKey(shopId, label, secret)).key), revokedAt: undefined, shared: true };
+    await this.store.putKey(key);
+    return key;
   }
 
   /** Resolve an `Authorization: Bearer sk_agent_...` header. Owner secrets are not agent keys. */
@@ -105,16 +128,11 @@ export class Access {
     return key;
   }
 
-  /** Is `keyId` this shop's key for `secret`? */
-  async isKey(shopId: string, keyId: string, secret: string): Promise<boolean> {
-    const key = await this.store.keyByHash(hashSecret(secret));
-    return key?.shopId === shopId && key.id === keyId;
-  }
-
-  /** Returns false if the shop has no such key. */
+  /** Returns false if the shop has no such key. A shared key can't be revoked: the next visitor needs it. */
   async revokeKey(shopId: string, keyId: string): Promise<boolean> {
     const key = (await this.store.listKeys(shopId)).find((k) => k.id === keyId);
     if (!key) return false;
+    if (key.shared) throw new HttpError(403, 'This key is shared with everyone trying the demo, so it stays. Revoke any key you made.');
     await this.store.putKey({ ...key, revokedAt: new Date().toISOString() });
     return true;
   }
@@ -124,22 +142,58 @@ export class Access {
   }
 
   /**
-   * Signed, expiring owner session for a cookie: "<shopId>.<expiresMs>.<kind>.<hmac>". A "demo" session
-   * is the shared public one for the demo shop: it can decide, but sees buyers' details masked.
+   * Signed, expiring owner session for a cookie: "<shopId>.<issued>.<expires>.<kind>.<via>.<epoch>.<hmac>".
+   * A "demo" session is the shared public one for the demo shop: it can decide, sees buyers' details
+   * masked, and can't change the shop. The epoch ties it to the shop's current session generation, so
+   * "sign out everywhere" ends every copy of it.
    */
-  signOwnerSession(shopId: string, ttlMs = 7 * 86_400_000, now = Date.now(), kind: OwnerSession['kind'] = 'owner'): string {
-    const payload = `${shopId}.${now + ttlMs}.${kind}`;
-    return `${payload}.${this.hmac(payload)}`;
+  async signOwnerSession(shopId: string, options: { ttlMs?: number; now?: number; kind?: OwnerSession['kind']; via?: OwnerSession['via'] } = {}): Promise<string> {
+    const now = options.now ?? Date.now();
+    const epoch = await this.store.sessionEpoch(shopId);
+    const payload = [shopId, now, now + (options.ttlMs ?? SESSION_TTL_MS), options.kind ?? 'owner', options.via ?? 'signin', epoch].join('.');
+    return `${payload}.${this.hmac(`session:${payload}`)}`;
   }
 
-  /** The session's shop and kind, or undefined if it is forged or expired. */
-  verifyOwnerSession(token: string | undefined, now = Date.now()): OwnerSession | undefined {
+  /** The session, or undefined if it is forged, expired or from before the last "sign out everywhere". */
+  async verifyOwnerSession(token: string | undefined, now = Date.now()): Promise<OwnerSession | undefined> {
     const parts = token?.split('.') ?? [];
-    if (parts.length !== 4) return undefined;
-    const [shopId, expires, kind, sig] = parts;
-    if (!safeEqual(sig, this.hmac(`${shopId}.${expires}.${kind}`))) return undefined;
-    if (kind !== 'owner' && kind !== 'demo') return undefined;
-    return Number(expires) > now ? { shopId, kind } : undefined;
+    if (parts.length !== 7) return undefined;
+    const [shopId, issued, expires, kind, via, epoch, sig] = parts;
+    if (!safeEqual(sig, this.hmac(`session:${parts.slice(0, 6).join('.')}`))) return undefined;
+    if ((kind !== 'owner' && kind !== 'demo') || (via !== 'signin' && via !== 'switch' && via !== 'handoff')) return undefined;
+    if (Number(expires) <= now || Number(epoch) !== (await this.store.sessionEpoch(shopId))) return undefined;
+    return { shopId, kind, via, issuedAt: Number(issued), expiresAt: Number(expires) };
+  }
+
+  /** Ends every session of the shop, on every device (this one too). */
+  async signOutEverywhere(shopId: string): Promise<void> {
+    await this.store.bumpSessionEpoch(shopId);
+  }
+
+  /** A credential was shown on this device within the last few minutes (not a shop switch or another device's link). */
+  isFresh(session: OwnerSession, now = Date.now()): boolean {
+    return session.via === 'signin' && now - session.issuedAt < FRESH_SESSION_MS;
+  }
+
+  /**
+   * A token that signs another device in to the session's shop, once, within a few minutes. The new
+   * session ends when this one does, so a link can't stretch a sign-in past its week.
+   */
+  issueHandoff(session: OwnerSession, expiresAt: number, now = Date.now()): string {
+    return this.signValue(HANDOFF, `${session.shopId}:${randomBytes(12).toString('base64url')}:${expiresAt}`, HANDOFF_TTL_MS, now);
+  }
+
+  /** The shop a handoff token opens and when its session ends, or undefined if forged, expired or already used. */
+  async redeemHandoff(token: unknown, now = Date.now()): Promise<{ shopId: string; expiresAt: number } | undefined> {
+    const [shopId, nonce, expires] = this.verifyValue(HANDOFF, token, now)?.split(':') ?? [];
+    const expiresAt = Number(expires);
+    if (!shopId || !nonce || !(expiresAt > now)) return undefined;
+    return (await this.store.consumeOnce(`handoff:${nonce}`, new Date(now + HANDOFF_TTL_MS))) ? { shopId, expiresAt } : undefined;
+  }
+
+  /** Use a one-time id (a challenge nonce). False if it was used already. */
+  consumeOnce(id: string, expiresAt: Date): Promise<boolean> {
+    return this.store.consumeOnce(id, expiresAt);
   }
 
   /**
@@ -152,8 +206,8 @@ export class Access {
   }
 
   /** The value, or undefined if the token is forged, expired or for another purpose. */
-  verifyValue(purpose: string, token: string | undefined, now = Date.now()): string | undefined {
-    const parts = token?.split('.') ?? [];
+  verifyValue(purpose: string, token: unknown, now = Date.now()): string | undefined {
+    const parts = typeof token === 'string' ? token.split('.') : [];
     if (parts.length !== 3) return undefined;
     const [value, expires, sig] = parts;
     if (!safeEqual(sig, this.hmac(`${purpose}:${value}.${expires}`))) return undefined;
@@ -190,5 +244,22 @@ export class MemoryAccessStore implements AccessStore {
   }
   async listKeys(shopId: string) {
     return [...this.keys.values()].filter((k) => k.shopId === shopId).map((k) => structuredClone(k));
+  }
+  private readonly epochs = new Map<string, number>();
+  private readonly used = new Map<string, number>();
+  async sessionEpoch(shopId: string) {
+    return this.epochs.get(shopId) ?? 0;
+  }
+  async bumpSessionEpoch(shopId: string) {
+    const next = (this.epochs.get(shopId) ?? 0) + 1;
+    this.epochs.set(shopId, next);
+    return next;
+  }
+  async consumeOnce(id: string, expiresAt: Date) {
+    const now = Date.now();
+    for (const [k, until] of this.used) if (until <= now) this.used.delete(k);
+    if (this.used.has(id)) return false;
+    this.used.set(id, expiresAt.getTime());
+    return true;
   }
 }

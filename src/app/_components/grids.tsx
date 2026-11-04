@@ -331,7 +331,8 @@ function MarketCell({ data, context }: ICellRendererParams<VariantRow, unknown, 
   );
 }
 
-export function CatalogGrid({ rows, market: marketEnabled }: { rows: VariantRow[]; market: boolean }) {
+/** `readOnly`: the shared demo shop, where nobody can change prices or stock. */
+export function CatalogGrid({ rows, market: marketEnabled, readOnly = false }: { rows: VariantRow[]; market: boolean; readOnly?: boolean }) {
   const { ref, width } = useGridSize();
   const narrow = width < NARROW;
   const [feedback, setFeedback] = useState<Feedback>();
@@ -369,9 +370,9 @@ export function CatalogGrid({ rows, market: marketEnabled }: { rows: VariantRow[
         minWidth: 104,
         flex: 0.9,
         type: 'rightAligned',
-        cellClass: [...RIGHT, 'cell-editable'],
+        cellClass: readOnly ? RIGHT : [...RIGHT, 'cell-editable'],
         cellClassRules: { 'cell-confirm': (p) => Boolean(p.data?.toConfirm) },
-        editable: true,
+        editable: !readOnly,
         cellEditor: 'agTextCellEditor',
         // The owner types an amount ("24.50", "$1,200"); it is read with the same parser the server uses,
         // into minor units, so no float ever touches a price.
@@ -395,8 +396,8 @@ export function CatalogGrid({ rows, market: marketEnabled }: { rows: VariantRow[
         minWidth: 96,
         flex: 0.8,
         type: 'rightAligned',
-        cellClass: (p) => (p.data?.stock === null ? RIGHT : [...RIGHT, 'cell-editable']),
-        editable: (p) => p.data?.stock !== null,
+        cellClass: (p) => (readOnly || p.data?.stock === null ? RIGHT : [...RIGHT, 'cell-editable']),
+        editable: (p) => !readOnly && p.data?.stock !== null,
         cellEditor: 'agNumberCellEditor',
         cellEditorParams: { min: 0, precision: 0, showStepperButtons: false },
         valueFormatter: (p) => (p.value === null ? '-' : String(p.value)),
@@ -404,7 +405,7 @@ export function CatalogGrid({ rows, market: marketEnabled }: { rows: VariantRow[
       { colId: 'state', headerName: 'Status', cellRenderer: StockStateCell, minWidth: 150, flex: 1, sortable: false, hide: narrow },
       { colId: 'market', headerName: 'Market price', cellRenderer: MarketCell, minWidth: 170, flex: 1.2, sortable: false, hide: narrow || !marketEnabled },
     ],
-    [narrow, marketEnabled],
+    [narrow, marketEnabled, readOnly],
   );
 
   async function save(e: CellValueChangedEvent<VariantRow>) {
@@ -427,7 +428,7 @@ export function CatalogGrid({ rows, market: marketEnabled }: { rows: VariantRow[
   return (
     <div className="stack" style={{ gap: 'var(--s3)' }}>
       <p className={`small ${feedback?.tone === 'error' ? 'error' : 'soft'}`} role="status" aria-live="polite">
-        {feedback?.text ?? 'Double-click a price or a stock count to change it. Enter saves, Esc cancels, Ctrl+Z undoes.'}
+        {feedback?.text ?? (readOnly ? 'The demo shop is shared, so its prices and stock stay put. Start the judges’ tour to change your own copy.' : 'Double-click a price or a stock count to change it. Enter saves, Esc cancels, Ctrl+Z undoes.')}
       </p>
       <div ref={ref}>
         {width ? (

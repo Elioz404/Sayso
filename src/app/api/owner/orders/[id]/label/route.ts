@@ -2,15 +2,17 @@
 // is sent to PayPal here; the owner checks the reading and adds it with /tracking.
 import { readShippingLabel } from '@/core/ai/label.ts';
 import { fromLlmError, HttpError } from '@/core/errors.ts';
+import { checkPhotos } from '@/core/media.ts';
 import { ready } from '@/server/context.ts';
-import { handle, readJson, requireOwner } from '@/server/http.ts';
-import { checkPhotos } from '@/server/photos.ts';
+import { handle, PHOTO_BODY_LIMIT, readBody, requireOwnShop } from '@/server/http.ts';
 import { photoReads } from '@/server/rate-limit.ts';
+
+const LABEL = { type: 'object', properties: { image: { type: 'string' } }, required: ['image'] } as const;
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   return handle(async () => {
-    const shopId = await requireOwner(request);
-    const { image } = await readJson<{ image?: unknown }>(request);
+    const { shopId } = await requireOwnShop(request);
+    const { image } = await readBody(request, LABEL, PHOTO_BODY_LIMIT);
     const [photo] = checkPhotos([image], 1);
     const { model, orders } = await ready();
     if (!model) throw new HttpError(503, 'Reading labels needs an AI key on the server; type the number instead');

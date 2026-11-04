@@ -1,4 +1,4 @@
-// Fixed-window rate limits for the few things that cost money per call (AI, paid search). In-process:
+// Fixed-window rate limits for what costs money or quota per call (AI, PayPal, paid search). In-process:
 // enough for one server, and each limit is per key (a shop, an address).
 
 export class RateLimit {
@@ -7,6 +7,7 @@ export class RateLimit {
   private readonly windows = new Map<string, { start: number; count: number }>();
   /** Sweep expired windows once this many keys are tracked, so the map can't grow without bound. */
   private readonly sweepAt: number;
+  private lastSweep = 0;
 
   constructor(limit: number, windowMs: number, sweepAt = 10_000) {
     this.limit = limit;
@@ -16,7 +17,9 @@ export class RateLimit {
 
   /** Counts one call for `key`; false once the key is over its limit for this window. */
   allow(key: string, now = Date.now()): boolean {
-    if (this.windows.size >= this.sweepAt) {
+    // At most one sweep per window, so a crowd of callers doesn't make every call walk the whole map.
+    if (this.windows.size >= this.sweepAt && now - this.lastSweep > this.windowMs) {
+      this.lastSweep = now;
       for (const [k, w] of this.windows) if (now - w.start > this.windowMs) this.windows.delete(k);
     }
     const w = this.windows.get(key);

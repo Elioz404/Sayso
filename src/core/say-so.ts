@@ -6,7 +6,7 @@ import { draftPolicy } from './ai/policy-draft.ts';
 import type { ChatModel } from './ai/llm.ts';
 import { fromLlmError, HttpError, notFound } from './errors.ts';
 import { earnedAutonomy, LOOKBACK_DAYS, type Autonomy } from './guard/autonomy.ts';
-import { verifyAuditChain, type Guard } from './guard/engine.ts';
+import { GuardConflict, verifyAuditChain, type Guard } from './guard/engine.ts';
 import type { Policy } from './guard/policy.ts';
 import { describeRule, policyVersion } from './guard/policy-store.ts';
 import type { Actor, GuardRecord } from './guard/types.ts';
@@ -78,12 +78,16 @@ export class SaySo {
   }
 
   /**
-   * Submit a suggested rule. From the owner it applies at once; from an agent it waits for the owner
-   * like any policy change. The suggestion is recomputed here, never taken from the caller.
+   * Submit a suggested rule. From the owner it applies at once (confirmed with their passkey, once the
+   * shop has one); from an agent it waits for the owner like any policy change. The suggestion is
+   * recomputed here, never taken from the caller.
    */
-  async adoptSuggestion(shopId: string, suggestionId: string, actor: Actor): Promise<GuardRecord> {
+  async adoptSuggestion(shopId: string, suggestionId: string, actor: Actor, proof?: PasskeyProof): Promise<GuardRecord> {
     const found = (await this.autonomy(shopId)).suggestions.find((s) => s.id === suggestionId);
     if (!found) throw new HttpError(409, 'That suggestion no longer applies; your rules or decisions have changed since');
+    if (actor.type === 'human' && this.deps.passkeys && (await this.deps.passkeys.required(shopId))) {
+      await this.deps.passkeys.confirm(shopId, `adopt-rule:${suggestionId}`, proof);
+    }
     return this.submitPolicy(found.policy, `${found.title}. ${found.evidence}`, actor);
   }
 
@@ -100,9 +104,14 @@ export class SaySo {
    * The owner's say-so. Callers must have authenticated the owner of `shopId`. What follows from the
    * decision (charging the order, or releasing it and its stock) happens in Commerce when Guard settles.
    */
-  async decide(shopId: string, recordId: string, decision: 'approve' | 'reject', approver: string, note?: string, proof?: PasskeyProof): Promise<GuardRecord> {
+  async decide(shopId: string, recordId: string, decision: 'approve' | 'reject', approver: string, options: DecideOptions = {}): Promise<GuardRecord> {
+    const { note, proof } = options;
     if (!approver.startsWith('owner:')) throw new HttpError(403, 'Only the owner can decide');
     const record = await this.record(shopId, recordId);
+    // The shared public demo session decides refunds and invoices, but the demo's rules stay the same for everyone.
+    if (options.shared && decision === 'approve' && record.action.kind === 'policy.update') {
+      throw new HttpError(403, "The shared demo shop's rules stay as they are. Start the judges' tour for a shop of your own.");
+    }
     // Saying no is always safe; saying yes is signed by the owner's device once they have a passkey.
     let evidence: Record<string, unknown> | undefined;
     if (decision === 'approve' && this.deps.passkeys && (await this.deps.passkeys.required(shopId))) {
@@ -116,9 +125,19 @@ export class SaySo {
     try {
       return decision === 'approve' ? await this.deps.guard.approve(recordId, approver, evidence) : await this.deps.guard.reject(recordId, approver, note);
     } catch (err) {
-      throw new HttpError(409, err instanceof Error ? err.message : 'Could not decide');
+      if (err instanceof GuardConflict) throw new HttpError(409, err.message);
+      throw err; // anything else is a real failure, not "already decided"
     }
   }
+}
+
+export interface DecideOptions {
+  /** Saved with the decision. */
+  note?: string;
+  /** The owner's passkey signature, required to approve once the shop has a passkey. */
+  proof?: PasskeyProof;
+  /** The shared public demo session, which can't change the demo's rules. */
+  shared?: boolean;
 }
 
 function audited(record: GuardRecord): AuditedRecord {

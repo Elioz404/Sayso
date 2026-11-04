@@ -46,7 +46,9 @@ test('push: a held request says what it is and opens the decision; a paid order 
   } as unknown as GuardRecord;
   const asked = sayNeededMessage(record, site);
   assert.equal(asked.title, 'Refund $82.00?');
-  assert.match(asked.body, /Your agent asked: “Arrived chipped”/);
+  assert.equal(asked.body, 'Your agent asked for this. Tap to see why and decide.');
+  assert.ok(!asked.body.includes('chipped'), "never the words of whoever asked: they could be a buyer's, on a lock screen");
+  assert.equal(asked.sticky, true);
   assert.equal(asked.url, site.approve('say_1'));
 
   assert.equal(paidOrderMessage(record, site), undefined);
@@ -78,7 +80,8 @@ test('photo drafts: buyers never see a draft until the owner sets its price and 
   const before = await s.call('search_products', { query: 'speckled mug' }, s.buyer);
   assert.ok(!before.text.includes(draft.id), 'not searchable while it is a draft');
 
-  await assert.rejects(s.shops.releaseDraft(SHOP, draft.id, []), { status: 409 }, 'every option needs a price');
+  await assert.rejects(s.shops.releaseDraft(SHOP, draft.id, []), { status: 400 }, 'every option needs a price');
+  await assert.rejects(s.shops.releaseDraft(SHOP, 'prod_nope', []), { status: 404 });
   const catalog = await s.shops.releaseDraft(SHOP, draft.id, [{ id: draft.variants[0].id, price: 3_600, inventory: 3 }]);
   assert.equal(catalog.drafts?.length, 0);
   const live = catalog.products.find((p) => p.id === draft.id)!;
@@ -95,4 +98,9 @@ test('photo drafts can be discarded', async () => {
   const [draft] = await s.shops.draftFromPhotos(SHOP, ['data:image/jpeg;base64,AAAA']);
   await s.shops.discardDraft(SHOP, draft.id);
   assert.equal((await s.shops.get(SHOP)).drafts?.length, 0);
+});
+
+test('photo drafts: discarding one that is not there says so', async () => {
+  const s = await stack(vaseFromPhoto);
+  await assert.rejects(s.shops.discardDraft(SHOP, 'prod_nope'), { status: 404 });
 });

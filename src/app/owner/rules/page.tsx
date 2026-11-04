@@ -11,7 +11,7 @@ export default async function Rules() {
   const view = await ownerView();
   if (!view) return null;
   const { saySo, shopId, demo } = view;
-  const [policy, { suggestions, learning }] = await Promise.all([saySo.policy(shopId), saySo.autonomy(shopId)]);
+  const [policy, { suggestions, learning }, passkey] = await Promise.all([saySo.policy(shopId), saySo.autonomy(shopId), view.passkeys.required(shopId)]);
   const watching = learning.filter((l) => l.approvals < l.needed);
 
   return (
@@ -57,7 +57,7 @@ export default async function Rules() {
               <b>{s.title}</b>
               <p className="small soft">{s.evidence}</p>
             </div>
-            {demo ? <p className="small muted">The shared demo keeps its rules. Your tour copy can take this.</p> : <AdoptRule id={s.id} />}
+            {demo ? <p className="small muted">The shared demo keeps its rules. Your tour copy can take this.</p> : <AdoptRule id={s.id} passkey={passkey} />}
           </div>
         ))}
         {watching.length > 0 && (

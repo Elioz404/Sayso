@@ -178,6 +178,7 @@ export const sellerTools: Tool[] = [
     description:
       'Refund all or part of a paid order. This goes through the owner\'s say-so rules: it may run now, wait for the owner\'s OK, or be refused. You cannot approve it yourself; tell the owner what is waiting.',
     side: 'seller',
+    cost: 'paypal',
     annotations: { destructiveHint: true },
     inputSchema: {
       type: 'object',
@@ -194,6 +195,7 @@ export const sellerTools: Tool[] = [
     title: 'Add tracking',
     description: 'Attach a shipment tracking number to a paid order. PayPal shows it to the buyer.',
     side: 'seller',
+    cost: 'paypal',
     annotations: { idempotentHint: true },
     inputSchema: {
       type: 'object',
@@ -210,6 +212,7 @@ export const sellerTools: Tool[] = [
     description:
       "Send a PayPal invoice for a custom order agreed with a buyer (a commission, a made-to-order piece), optionally with a deposit. Goes through the owner's rules: a large invoice, or the first one to someone who has never paid the shop, waits for the owner. Prices are what the owner agreed, in the shop's currency.",
     side: 'seller',
+    cost: 'paypal',
     inputSchema: {
       type: 'object',
       properties: {
@@ -318,6 +321,7 @@ export const sellerTools: Tool[] = [
     title: 'Propose new rules',
     description: 'Turn the owner\'s words into say-so rules, e.g. "refunds over $30 need my OK; invoices to new clients always need my OK". The new rules only apply after the owner approves them.',
     side: 'seller',
+    cost: 'ai',
     inputSchema: { type: 'object', properties: { rules: { type: 'string', minLength: 5, maxLength: 2_000 } }, required: ['rules'] },
     async run(input, ctx) {
       const { record, unclear } = await ctx.services.saySo.proposePolicy(shop(ctx), input.rules, actor(ctx));

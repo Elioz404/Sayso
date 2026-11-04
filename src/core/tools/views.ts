@@ -1,6 +1,7 @@
 // How core objects read to an agent: plain JSON with formatted amounts, a status in words, and what to
 // do next. Buyer views never carry internal ids or anything about other buyers.
 
+import { actionAmount } from '../guard/describe.ts';
 import type { Catalog } from '../catalog.ts';
 import type { PayPalCart } from '../cart/spec.ts';
 import type { GuardRecord, RecordStatus } from '../guard/types.ts';
@@ -111,7 +112,6 @@ export function refundRequestForBuyer(record: GuardRecord) {
 
 /** How a Guard record reads to an agent: what happened, why, and what to tell the owner. */
 export function sayso(record: GuardRecord, ctx: ToolContext) {
-  const currency = record.action.currency ?? DEFAULT_CURRENCY;
   const next: Record<RecordStatus, string> = {
     pending_approval: `Waiting for the owner. Tell them what you asked for and why; they approve or reject at ${ctx.services.links.approve(record.id)}. You cannot approve it. Check back with get_say_so.`,
     verified: record.action.kind === 'policy.update' ? 'Done: the new rules apply from now on.' : 'Done and confirmed with PayPal.',
@@ -130,7 +130,7 @@ export function sayso(record: GuardRecord, ctx: ToolContext) {
   return {
     say_so_id: record.id,
     action: record.action.kind,
-    amount: record.action.amount !== undefined ? formatMoney(record.action.amount, currency) : undefined,
+    amount: actionAmount(record.action),
     status: record.status,
     what_happens: record.simulation?.effects ?? [],
     why: record.decision?.hits.map((h) => h.message) ?? [],

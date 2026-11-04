@@ -1,12 +1,12 @@
 // The owner's say-so screen, built for a phone: this is where the push notification lands. It needs
 // the owner session; an agent holding an agent key has no way in.
+import { actionAmount } from '@/core/guard/describe.ts';
 import type { Metadata } from 'next';
 import { connection } from 'next/server';
 import { Decision, LoginForm } from '@/app/_components/owner-actions.tsx';
 import { actionLabel, Icon, Status, Who } from '@/app/_components/ui.tsx';
 import { When } from '@/app/_components/time.tsx';
-import { DEFAULT_CURRENCY, formatMoney } from '@/core/money.ts';
-import { paypalLoginEnabled } from '@/server/context.ts';
+import { demoEnabled, paypalLoginEnabled } from '@/server/context.ts';
 import { ownerView } from '@/server/owner.ts';
 
 export const metadata: Metadata = { title: 'Your say-so' };
@@ -22,7 +22,7 @@ export default async function Approve({ params }: { params: Promise<{ id: string
           <h1>Sign in to decide</h1>
           <p className="soft">Only the shop owner can see and approve this request.</p>
         </div>
-        <LoginForm demo={process.env.SAYSO_DEMO === 'true'} paypal={paypalLoginEnabled()} next={`/approve/${id}`} />
+        <LoginForm demo={demoEnabled()} paypal={paypalLoginEnabled()} next={`/approve/${id}`} />
       </main>
     );
   }
@@ -58,10 +58,10 @@ export default async function Approve({ params }: { params: Promise<{ id: string
         </div>
 
         <div className="stack" style={{ gap: 6 }}>
-          {action.amount !== undefined && action.kind !== 'policy.update' ? (
+          {actionAmount(action) ? (
             <>
               <span className="soft">{actionLabel(action.kind)}</span>
-              <span className="amount">{formatMoney(action.amount, action.currency ?? DEFAULT_CURRENCY)}</span>
+              <span className="amount">{actionAmount(action)}</span>
             </>
           ) : (
             <h1>{actionLabel(action.kind)}</h1>

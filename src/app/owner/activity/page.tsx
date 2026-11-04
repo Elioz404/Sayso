@@ -1,7 +1,7 @@
+import { actionAmount } from '@/core/guard/describe.ts';
 import type { Metadata } from 'next';
 import { AuditGrid, type AuditRow } from '@/app/_components/grids.tsx';
 import { actionLabel, actorName } from '@/app/_components/ui.tsx';
-import { formatMoney } from '@/core/money.ts';
 import { ownerView } from '@/server/owner.ts';
 
 export const metadata: Metadata = { title: 'Activity' };
@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: 'Activity' };
 export default async function Activity() {
   const view = await ownerView();
   if (!view) return null;
-  const { saySo, shopId, shop, redact } = view;
+  const { saySo, shopId, redact } = view;
   const audit = await saySo.audit(shopId, 500);
   const tampered = audit.filter((r) => !r.chainIntact).length;
 
@@ -19,7 +19,7 @@ export default async function Activity() {
       id: r.id,
       at: r.createdAt,
       action: actionLabel(r.action.kind),
-      amount: r.action.amount !== undefined ? formatMoney(r.action.amount, r.action.currency ?? shop.currency) : '',
+      amount: actionAmount(r.action) ?? '',
       by: actorName(r.action.actor),
       byAgent: agent,
       status: r.status,

@@ -1,5 +1,6 @@
 // Overview: the one job first (what's waiting for the owner), then a single row of figures and the
 // latest orders. Everything else lives in its own view.
+import { actionAmount } from '@/core/guard/describe.ts';
 import { ConnectPayouts, Decision, KeepPrice, PublishButton } from '@/app/_components/owner-actions.tsx';
 import { actionLabel, Icon, Status, Who } from '@/app/_components/ui.tsx';
 import { Ago } from '@/app/_components/time.tsx';
@@ -166,7 +167,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                   </div>
                   <div className="row" style={{ gap: 'var(--s3)', alignItems: 'baseline' }}>
                     <b>{actionLabel(r.action.kind)}</b>
-                    {r.action.amount !== undefined && <span className="amount-md">{formatMoney(r.action.amount, r.action.currency ?? shop.currency)}</span>}
+                    {actionAmount(r.action) && <span className="amount-md">{actionAmount(r.action)}</span>}
                   </div>
                   <p className="small soft">{redact(r.action.reason)}</p>
                   <p className="ask-why">{redact(r.decision?.hits.map((h) => h.message).join(' ') ?? '')}</p>

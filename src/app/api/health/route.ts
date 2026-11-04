@@ -1,14 +1,15 @@
 // Render health check: the app is up and its stores (Postgres on Render) answer.
 import { demoCatalog } from '@/core/demo-shop.ts';
 import { ready } from '@/server/context.ts';
+import { logError } from '@/server/log.ts';
 
 export async function GET() {
   try {
-    const { catalogs, model, aiBudget } = await ready();
+    const { catalogs, model } = await ready();
     const demo = await catalogs.byShopId(demoCatalog.shop.id);
-    return Response.json({ ok: Boolean(demo), storage: process.env.DATABASE_URL ? 'postgres' : 'memory', ai: model?.name ?? 'not configured', ai_today: aiBudget?.status() });
+    return Response.json({ ok: Boolean(demo), storage: process.env.DATABASE_URL ? 'postgres' : 'memory', ai: model ? 'configured' : 'not configured' });
   } catch (err) {
-    console.error('[health]', err);
+    logError('health', err);
     return Response.json({ ok: false }, { status: 503 });
   }
 }

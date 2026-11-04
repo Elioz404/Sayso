@@ -63,8 +63,16 @@ export function verifyRegistration(credential: RegistrationCredential, expected:
   return { id: credential.id, publicKey: toB64url(key.export({ type: 'spki', format: 'der' })), alg, counter: auth.counter, backedUp: Boolean(auth.flags & FLAG_BS) };
 }
 
-/** Check a passkey signature over the challenge. Returns the authenticator's new counter. */
-export function verifyAssertion(credential: AssertionCredential, expected: Expected, key: { publicKey: string; alg: number; counter: number }): { counter: number } {
+/**
+ * Check a passkey signature over the challenge. Returns the authenticator's new counter. Re-checking an
+ * old signature (from the audit trail) skips the counter: it has moved on since.
+ */
+export function verifyAssertion(
+  credential: AssertionCredential,
+  expected: Expected,
+  key: { publicKey: string; alg: number; counter: number },
+  options: { checkCounter?: boolean } = {},
+): { counter: number } {
   const clientData = fromB64url(credential.clientDataJSON);
   checkClientData(credential.clientDataJSON, 'webauthn.get', expected);
   const authData = fromB64url(credential.authenticatorData);
@@ -72,7 +80,7 @@ export function verifyAssertion(credential: AssertionCredential, expected: Expec
   const signed = Buffer.concat([authData, createHash('sha256').update(clientData).digest()]);
   if (!checkSignature(key, signed, fromB64url(credential.signature))) throw new WebAuthnError('The passkey signature does not check out');
   // A counter that goes backwards means a cloned authenticator. Synced passkeys always report 0.
-  if ((auth.counter !== 0 || key.counter !== 0) && auth.counter <= key.counter) throw new WebAuthnError('This passkey was used out of order');
+  if (options.checkCounter !== false && (auth.counter !== 0 || key.counter !== 0) && auth.counter <= key.counter) throw new WebAuthnError('This passkey was used out of order');
   return { counter: auth.counter };
 }
 

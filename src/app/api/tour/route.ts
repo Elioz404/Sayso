@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     if (!tours) throw notFound('Tour');
     if (!tourStarts.allow(clientAddress(request))) throw new HttpError(429, 'A few tours an hour from one place; try again later');
     const tour = await tours.start();
-    await startOwnerSession(tour.shopId, 'owner', new Date(tour.expiresAt));
+    await startOwnerSession(tour.shopId, { expires: new Date(tour.expiresAt) });
     return Response.json({ ok: true, expires_at: tour.expiresAt }, { status: 201 });
   });
 }

@@ -12,7 +12,7 @@ import type { Production } from '../production.ts';
 import type { SaySo } from '../say-so.ts';
 import type { Shops } from '../shops.ts';
 import type { CatalogStore } from '../stores.ts';
-import type { Wallet, Wallets } from '../wallets.ts';
+import type { KeyedWallet, Wallet, Wallets } from '../wallets.ts';
 import type { JsonSchema } from './schema.ts';
 
 export interface ToolServices {
@@ -35,19 +35,32 @@ export interface ToolContext {
   shopSlug?: string;
   /** The all-shops buyer endpoint: tools search every published shop and take a `shop` argument. */
   marketplace?: boolean;
-  /** Set when an agent key was presented; seller tools act on this shop only. */
-  agent?: { shopId: string; keyId: string; label: string };
+  /**
+   * Set when an agent key was presented; seller tools act on this shop only. `shared`: a key everyone
+   * trying the demo holds, so buyers' personal details are masked in what the tools return.
+   */
+  agent?: { shopId: string; keyId: string; label: string; shared?: boolean };
+  /**
+   * The transport's limiter for calls that cost real money or quota (PayPal orders, AI calls), per
+   * caller. Absent in tests and the CLI's local runs.
+   */
+  allow?: (cost: ToolCost) => boolean;
   /** Who is calling, for the audit trail: "mcp", "cli", a client name... */
   channel: string;
   /** The buyer's saved PayPal, when the caller presented its key (header or personal URL). */
-  wallet?: Wallet;
+  wallet?: KeyedWallet | Wallet;
 }
+
+/** What a call spends besides our own CPU: PayPal requests on the app's credentials, or an AI call. */
+export type ToolCost = 'paypal' | 'ai';
 
 export interface Tool {
   name: string;
   title: string;
   description: string;
   side: 'buyer' | 'seller';
+  /** Calls that reach PayPal or the AI are rate limited per caller. */
+  cost?: ToolCost;
   /** Only on the all-shops endpoint. */
   marketplaceOnly?: boolean;
   inputSchema: Extract<JsonSchema, { type: 'object' }>;
@@ -89,7 +102,7 @@ export async function ownCart(ctx: ToolContext, cartId: string): Promise<string>
 }
 
 /** The wallet from the wallet_key argument, or the one the caller connected with. */
-export async function walletFrom(ctx: ToolContext, given: unknown): Promise<Wallet> {
+export async function walletFrom(ctx: ToolContext, given: unknown): Promise<KeyedWallet | Wallet> {
   const wallet = typeof given === 'string' && given ? await ctx.services.wallets.fromKey(given) : ctx.wallet;
   if (!wallet) throw new ToolError('Unknown wallet key. Call connect_paypal to set one up.');
   return wallet;

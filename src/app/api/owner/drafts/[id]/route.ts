@@ -1,28 +1,47 @@
 // Put a draft on sale: POST { name?, variants: [{ id, price: "34.00", inventory }] }. DELETE discards it.
+// Amounts travel as text so nothing is rounded on the way.
 import { HttpError } from '@/core/errors.ts';
 import { parseAmount } from '@/core/money.ts';
 import { ready } from '@/server/context.ts';
-import { handle, readJson, requireOwnDevice } from '@/server/http.ts';
+import { handle, readBody, requireOwnShop } from '@/server/http.ts';
+
+const RELEASE = {
+  type: 'object',
+  properties: {
+    name: { type: 'string', maxLength: 120 },
+    variants: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 10,
+      items: {
+        type: 'object',
+        properties: { id: { type: 'string', maxLength: 120 }, price: { type: 'string', maxLength: 20 }, inventory: { type: 'integer', minimum: 0, maximum: 100_000 } },
+        required: ['id', 'price', 'inventory'],
+      },
+    },
+  },
+  required: ['variants'],
+} as const;
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   return handle(async () => {
-    const { shopId } = await requireOwnDevice(request);
-    const { name, variants } = await readJson<{ name?: string; variants?: { id: string; price: string; inventory: number }[] }>(request);
+    const { shopId } = await requireOwnShop(request);
+    const { name, variants } = await readBody(request, RELEASE);
     const { shops } = await ready();
     const { shop } = await shops.get(shopId);
-    const parsed = (Array.isArray(variants) ? variants : []).map((v) => {
-      const price = parseAmount(String(v.price ?? ''), shop.currency);
+    const priced = variants.map((v) => {
+      const price = parseAmount(v.price, shop.currency);
       if (price === undefined) throw new HttpError(400, `"${v.price}" is not a price`);
-      return { id: String(v.id), price, inventory: Math.trunc(Number(v.inventory)) };
+      return { id: v.id, price, inventory: v.inventory };
     });
-    const catalog = await shops.releaseDraft(shopId, (await params).id, parsed, typeof name === 'string' ? name : undefined);
+    const catalog = await shops.releaseDraft(shopId, (await params).id, priced, name);
     return Response.json({ ok: true, products: catalog.products.length });
   });
 }
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   return handle(async () => {
-    const { shopId } = await requireOwnDevice(request);
+    const { shopId } = await requireOwnShop(request);
     await (await ready()).shops.discardDraft(shopId, (await params).id);
     return Response.json({ ok: true });
   });

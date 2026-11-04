@@ -5,6 +5,11 @@
 // The assistant holds a wallet key (sk_wallet_...), never the PayPal token. Limits are chosen by the
 // person on Sayso's page before they approve in PayPal, so they are bound to that approval: no tool
 // can raise them.
+//
+// Whoever starts a connection (connect_paypal) gets a key, but it can't spend until the person who
+// approved in PayPal gives that assistant the pairing code PayPal's return page shows only to them.
+// Someone who sends their connect link to another person never sees that code, so they can't spend
+// that person's PayPal. The personal URL on the same page is shown only to that person and works at once.
 
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { Commerce } from './commerce.ts';
@@ -43,7 +48,19 @@ export interface Wallet {
   sharedToken?: boolean;
   createdAt: string;
   connectedAt?: string;
+  /** The pairing code for the assistant that started the connection, hashed, until it is used. */
+  pairing?: { hash: string; expiresAt: string; attempts: number };
+  /** The assistant's key (from connect_paypal) was paired by the person who approved: it may spend. */
+  paired?: boolean;
 }
+
+/** A wallet as reached by a key: the starting assistant's own key, or the personal URL shown to the person. */
+export type KeyedWallet = Wallet & { via: 'assistant' | 'personal' };
+
+const PAIRING_TTL_MS = 30 * 60_000;
+const PAIRING_ATTEMPTS = 5;
+/** No 0/O, 1/I/L: read off a screen and typed into a chat. */
+const PAIRING_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 
 export interface WalletStore {
   put(wallet: Wallet): Promise<void>;
@@ -108,9 +125,31 @@ export class Wallets {
     return this.deps.links.wallet(wallet.id);
   }
 
-  async fromKey(key: string | undefined): Promise<Wallet | undefined> {
+  async fromKey(key: string | undefined): Promise<KeyedWallet | undefined> {
     if (!key?.startsWith('sk_wallet_')) return undefined;
-    return this.deps.store.byHash(hashOf(key));
+    const hash = hashOf(key);
+    const wallet = await this.deps.store.byHash(hash);
+    return wallet && { ...wallet, via: wallet.hash === hash ? 'assistant' : 'personal' };
+  }
+
+  /**
+   * The person gives their assistant the pairing code from PayPal's return page; the assistant sends it
+   * here with its key. A few wrong tries and the code is gone: the person connects again.
+   */
+  async pair(wallet: KeyedWallet, code: string): Promise<Wallet> {
+    if (wallet.via !== 'assistant' || wallet.paired) return wallet;
+    const pairing = wallet.pairing;
+    if (!pairing || Date.parse(pairing.expiresAt) <= Date.now()) throw new HttpError(409, 'No pairing code is waiting. The buyer connects PayPal again at the wallet page to get a new one.');
+    const ok = hashOf(code.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')) === pairing.hash;
+    const { via: _via, ...stored } = wallet;
+    if (!ok) {
+      const attempts = pairing.attempts + 1;
+      await this.deps.store.put({ ...stored, pairing: attempts >= PAIRING_ATTEMPTS ? undefined : { ...pairing, attempts } });
+      throw new HttpError(403, attempts >= PAIRING_ATTEMPTS ? 'Too many wrong codes. The buyer connects PayPal again to get a new one.' : "That code doesn't match. Ask the buyer to read it again from the page PayPal sent them to.");
+    }
+    const paired: Wallet = { ...stored, paired: true, pairing: undefined };
+    await this.deps.store.put(paired);
+    return paired;
   }
 
   async get(id: string): Promise<Wallet> {
@@ -149,16 +188,18 @@ export class Wallets {
   }
 
   /**
-   * Back from PayPal: turn the approved setup token into a payment token. Also issues the key for the
-   * buyer's personal shopping URL, returned once. Calling it again returns no new key.
+   * Back from PayPal: turn the approved setup token into a payment token. Also issues, once, the key for
+   * the buyer's personal shopping URL and the pairing code for the assistant that started it. Calling it
+   * again returns neither.
    */
-  async finishConnect(id: string): Promise<{ wallet: Wallet; connectorKey?: string }> {
+  async finishConnect(id: string): Promise<{ wallet: Wallet; connectorKey?: string; pairingCode?: string }> {
     const wallet = await this.get(id);
     if (wallet.status === 'connected') return { wallet };
     if (wallet.status !== 'awaiting_paypal' || !wallet.setupTokenId) throw new HttpError(409, 'Start from the wallet page');
     const setup = await getSetupToken(this.deps.paypal, wallet.setupTokenId);
     if (setup.status !== 'APPROVED') throw new HttpError(409, `PayPal says this approval is ${setup.status.toLowerCase().replace(/_/g, ' ')}`);
     const token = await createPaymentToken(this.deps.paypal, wallet.setupTokenId, `${wallet.setupTokenId}-token`); // one per approval, safe to retry
+    const pairingCode = Array.from(randomBytes(8), (b) => PAIRING_ALPHABET[b % PAIRING_ALPHABET.length]).join('');
     const connected: Wallet = {
       ...wallet,
       status: 'connected',
@@ -166,11 +207,13 @@ export class Wallets {
       paypalCustomerId: token.customer?.id,
       payerEmail: token.payment_source?.paypal?.email_address,
       connectedAt: new Date().toISOString(),
+      paired: false,
+      pairing: { hash: hashOf(pairingCode), expiresAt: new Date(Date.now() + PAIRING_TTL_MS).toISOString(), attempts: 0 },
     };
     await this.deps.store.put(connected);
     const connectorKey = `sk_wallet_${randomBytes(24).toString('base64url')}`;
     await this.deps.store.addKey(wallet.id, hashOf(connectorKey));
-    return { wallet: connected, connectorKey };
+    return { wallet: connected, connectorKey, pairingCode: `${pairingCode.slice(0, 4)}-${pairingCode.slice(4)}` };
   }
 
   /**
@@ -220,8 +263,11 @@ export class Wallets {
    * authorizes the saved account and the shop's Guard captures. Over a limit, nothing is charged and
    * the buyer gets the cart's normal PayPal link to approve this one order.
    */
-  async pay(wallet: Wallet, cartId: string, channel: string): Promise<WalletPayment> {
+  async pay(wallet: Wallet | KeyedWallet, cartId: string, channel: string): Promise<WalletPayment> {
     if (wallet.status !== 'connected' || !wallet.paymentTokenId) throw new HttpError(409, `PayPal isn't connected yet. The buyer finishes at ${this.connectUrl(wallet)}`);
+    if ('via' in wallet && wallet.via === 'assistant' && !wallet.paired) {
+      throw new HttpError(409, 'Ask the buyer for the pairing code PayPal showed them after they approved, then call wallet_status with claim_code. Until then you can only send approval links.');
+    }
     const cart = await this.deps.commerce.getCart(cartId);
     if (cart.status === 'COMPLETED') throw new HttpError(422, 'This cart is already paid');
     if (!cart.totals || !cart.payment_method?.approval_url) throw new HttpError(422, 'Fix the cart first: it has no payable total yet');

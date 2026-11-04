@@ -4,8 +4,9 @@ import type { Metadata } from 'next';
 import { connection } from 'next/server';
 import { ConnectForm, DisconnectButton } from '@/app/_components/wallet-actions.tsx';
 import { Status } from '@/app/_components/ui.tsx';
-import { formatMoney } from '@/core/money.ts';
+import { formatMoney, toMoney } from '@/core/money.ts';
 import { ready } from '@/server/context.ts';
+import { holdsWallet } from '@/server/wallet-session.ts';
 
 export const metadata: Metadata = { title: 'Saved PayPal' };
 
@@ -23,7 +24,8 @@ export default async function WalletPage({ params, searchParams }: { params: Pro
     );
   }
   const money = (minor: number) => formatMoney(minor, wallet.limits.currency);
-  const plain = (minor: number) => (minor / 100).toFixed(minor % 100 ? 2 : 0);
+  const plain = (minor: number) => toMoney(minor, wallet.limits.currency).value;
+  const holder = await holdsWallet(wallet.id);
 
   if (wallet.status === 'connected') {
     return (
@@ -31,7 +33,7 @@ export default async function WalletPage({ params, searchParams }: { params: Pro
         <div className="stack" style={{ gap: 'var(--s2)' }}>
           <Status value="live" />
           <h1>{wallet.label} can pay for you</h1>
-          <p className="soft">With your PayPal account{wallet.payerEmail ? ` ${wallet.payerEmail}` : ''}, at small shops on Sayso.</p>
+          <p className="soft">With {holder && wallet.payerEmail ? `your PayPal account ${wallet.payerEmail}` : 'your saved PayPal'}, at small shops on Sayso.</p>
         </div>
         <div className="panel">
           <dl className="kv">
@@ -49,8 +51,14 @@ export default async function WalletPage({ params, searchParams }: { params: Pro
             <dd>{wallet.connectedAt ? new Date(wallet.connectedAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : '-'}</dd>
           </dl>
         </div>
-        <DisconnectButton walletId={wallet.id} label={wallet.label} />
-        <p className="small muted">To change the limits, disconnect and connect again.</p>
+        {holder ? (
+          <>
+            <DisconnectButton walletId={wallet.id} label={wallet.label} />
+            <p className="small muted">To change the limits, disconnect and connect again.</p>
+          </>
+        ) : (
+          <p className="small muted">To change or disconnect it, open this page in the browser where you set it up.</p>
+        )}
       </main>
     );
   }

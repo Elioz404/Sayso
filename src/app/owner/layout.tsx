@@ -4,7 +4,7 @@ import { connection } from 'next/server';
 import { RailDrawer, RailNav, TabBar } from '@/app/_components/client-ui.tsx';
 import { LoginForm, ShopSwitcher, SignOut } from '@/app/_components/owner-actions.tsx';
 import { Icon, Mark, Status } from '@/app/_components/ui.tsx';
-import { paypalLoginEnabled } from '@/server/context.ts';
+import { demoEnabled, paypalLoginEnabled } from '@/server/context.ts';
 import { ownerView, pendingFor, signedInSeller } from '@/server/owner.ts';
 
 export const metadata: Metadata = { title: 'Your shop' };
@@ -19,7 +19,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
           <h1>Sign in to your shop</h1>
           <p className="soft">Approve what your agents ask for, publish your catalog and manage agent keys.</p>
         </div>
-        <LoginForm demo={process.env.SAYSO_DEMO === 'true'} paypal={paypalLoginEnabled()} />
+        <LoginForm demo={demoEnabled()} paypal={paypalLoginEnabled()} />
         <p className="small soft">
           No shop yet? <a href="/start">Draft one from photos and a price list</a>.
         </p>
