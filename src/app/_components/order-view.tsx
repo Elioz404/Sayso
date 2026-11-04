@@ -53,6 +53,7 @@ export function OrderRow({ order }: { order: BuyerOrder }) {
         <span className="orow-end">
           <b className="num">{order.total}</b>
           <OrderState state={order.state} />
+          {order.refundPending && <span className="small muted">Refund asked</span>}
         </span>
       </a>
     </li>

@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatMoney, toMinor } from '@/core/money.ts';
 import { callApi } from './api.ts';
-import { ordersInThisBrowser } from './browser-orders.tsx';
+import { ordersInThisBrowser } from './order-list.tsx';
 import { PayPalCheckout, type Paid } from './paypal-checkout.tsx';
 import { PurchaseCard, paymentWords, splitName, type Purchase } from './purchase-card.tsx';
 

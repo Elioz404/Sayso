@@ -42,6 +42,8 @@ export interface BuyerOrder {
   refundRequests: { amount: string; status: string; reason?: string; askedAt: string }[];
   /** A refund can still be asked for: charged, not all refunded, and nothing already waiting with the owner. */
   canAskRefund: boolean;
+  /** A refund the buyer asked for is waiting for the shop owner. */
+  refundPending: boolean;
 }
 
 const show = (m?: Money) => (m ? formatMoney(toMinor(m), m.currency_code) : undefined);
@@ -122,6 +124,7 @@ async function view(deps: BuyerOrderDeps, cart: StoredCart, catalog?: Catalog): 
     ...(tracking ? { tracking } : {}),
     refundRequests: requests.map(refundRequestForBuyer).map((r) => ({ amount: r.amount, status: r.status, reason: r.reason, askedAt: r.asked_at })),
     canAskRefund: paid && !cart.released && !fullyRefunded && !waitingRequest,
+    refundPending: waitingRequest,
   };
 }
 

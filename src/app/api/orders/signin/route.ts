@@ -5,9 +5,11 @@ import { markBuyerSignIn } from '@/server/buyer-session.ts';
 import { ready } from '@/server/context.ts';
 import { newSignInState } from '@/server/seller-session.ts';
 
-export async function GET() {
+export async function GET(request: Request) {
   const { paypal, paypalLogin, links } = await ready();
   if (!paypalLogin) return Response.redirect(`${links.base}/orders?signin=off`, 303);
+  // ?next=/order/<id> comes back to that order; anything else to My orders.
+  const next = new URL(request.url).searchParams.get('next');
   await markBuyerSignIn();
-  return Response.redirect(signInUrl(paypal, links.paypalSignInReturn, await newSignInState('/orders')), 303);
+  return Response.redirect(signInUrl(paypal, links.paypalSignInReturn, await newSignInState(next?.startsWith('/order/') ? next : '/orders')), 303);
 }

@@ -6,7 +6,7 @@ import { buyerOrder, buyerOrders, ordersForAssistant, type BuyerOrder } from '@/
 import { LlmError } from '@/core/ai/llm.ts';
 import { ConfigError, fromLlmError, HttpError } from '@/core/errors.ts';
 import { callTool, ToolError, toolsFor, type ToolContext } from '@/core/tools/registry.ts';
-import { buyerSession } from '@/server/buyer-session.ts';
+import { buyerSession, ownsOrder, paidHere } from '@/server/buyer-session.ts';
 import { ready } from '@/server/context.ts';
 import { assertSameOrigin, handle, readBody } from '@/server/http.ts';
 import { clientAddress, costlyCalls } from '@/server/rate-limit.ts';
@@ -33,6 +33,12 @@ export async function POST(request: Request) {
 
     const ctx: ToolContext = { services: tools, marketplace: true, channel: 'sayso-assistant', allow: (cost) => costlyCalls[cost].allow(caller) };
     const run = async (name: string, args: unknown) => {
+      if (name === 'request_refund') {
+        const id = (args as { cart_id?: unknown } | null)?.cart_id;
+        if (typeof id !== 'string' || !(await ownsOrder(carts, id))) {
+          return { isError: true, result: 'Only the person who paid can ask for a refund here. Tell them to log in with the PayPal account that paid, on My orders, and ask again from there.' };
+        }
+      }
       try {
         return { isError: false, result: await callTool(name, args, ctx) };
       } catch (err) {
@@ -44,7 +50,8 @@ export async function POST(request: Request) {
     const deps = { carts, catalogs, orders, links };
     const who = await buyerSession();
     const mine = who ? await buyerOrders(deps, who) : [];
-    const local = await Promise.all((here ?? []).filter((id) => !mine.some((o) => o.id === id)).map((id) => buyerOrder(deps, id)));
+    const ids = [...new Set([...(await paidHere()), ...(here ?? [])])].filter((id) => !mine.some((o) => o.id === id)).slice(0, 10);
+    const local = await Promise.all(ids.map((id) => buyerOrder(deps, id)));
     const context = ordersForAssistant([...mine, ...local.filter((o): o is BuyerOrder => Boolean(o))]);
     const turn = await shopperTurn({ model, tools: toolsFor(ctx), run }, cleanHistory(messages), text, context).catch((err: unknown) => {
       throw err instanceof LlmError ? fromLlmError(err, 'The assistant failed') : err;

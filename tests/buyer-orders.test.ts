@@ -71,6 +71,7 @@ test('an order at its link: where it stands, then shipped, then a refund the buy
   const waiting = (await buyerOrder(deps, id))!;
   assert.equal(waiting.refundRequests.length, 1);
   assert.ok(!waiting.canAskRefund, 'one request at a time');
+  assert.ok(waiting.refundPending);
 
   assert.match(ordersForAssistant([waiting]), new RegExp(`${waiting.number} from Maya Ceramics \\(cart_id ${id}`));
 });

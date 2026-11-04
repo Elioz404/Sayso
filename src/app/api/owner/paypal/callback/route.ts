@@ -24,8 +24,8 @@ export async function GET(request: Request) {
     try {
       // Only who they are: no seller record, no shop, no owner session.
       await startBuyerSession(await identityFromCode(paypal, code, links.paypalSignInReturn));
-      await takeNext();
-      return Response.redirect(`${links.base}/orders`, 303);
+      const next = await takeNext();
+      return Response.redirect(`${links.base}${next.startsWith('/order/') ? next : '/orders'}`, 303);
     } catch (err) {
       logError('paypal buyer sign-in', err);
       return back('failed');

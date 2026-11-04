@@ -3,9 +3,7 @@
 // said that account paid for. Orders paid in this browser show here too, signed in or not.
 import type { Metadata } from 'next';
 import { connection } from 'next/server';
-import { BrowserOrders } from '@/app/_components/browser-orders.tsx';
-import { OrderRow } from '@/app/_components/order-view.tsx';
-import { buyerOrders } from '@/core/buyer-orders.ts';
+import { OrderList } from '@/app/_components/order-list.tsx';
 import { buyerSession } from '@/server/buyer-session.ts';
 import { ready } from '@/server/context.ts';
 
@@ -21,13 +19,12 @@ const SIGNIN: Record<string, string> = {
 
 export default async function MyOrders({ searchParams }: { searchParams: Promise<{ signin?: string }> }) {
   await connection();
-  const { carts, catalogs, orders, links, paypalLogin } = await ready();
+  const { paypalLogin } = await ready();
   const who = await buyerSession();
-  const mine = who ? await buyerOrders({ carts, catalogs, orders, links }, who) : [];
   const note = SIGNIN[(await searchParams).signin ?? ''];
 
   return (
-    <main className="wrap wrap-narrow page stack" style={{ gap: 'var(--s6)' }}>
+    <main className="wrap wrap-narrow page stack" style={{ gap: 'var(--s5)' }}>
       <header className="stack" style={{ gap: 'var(--s2)' }}>
         <h1>My orders</h1>
         <p className="soft">No account to make: the PayPal account you paid with is how Sayso knows which orders are yours.</p>
@@ -35,26 +32,10 @@ export default async function MyOrders({ searchParams }: { searchParams: Promise
       </header>
 
       {who ? (
-        <section className="stack" style={{ gap: 'var(--s3)' }} aria-labelledby="paypal-orders">
-          <div className="spread" style={{ flexWrap: 'wrap', gap: 'var(--s2)' }}>
-            <h2 id="paypal-orders" className="h3">
-              Paid with your PayPal
-            </h2>
-            <form action="/api/orders/signout" method="post" className="row small" style={{ gap: 'var(--s2)' }}>
-              <span className="muted">Signed in as {who.email ?? who.name ?? 'your PayPal account'}</span>
-              <button className="link-button">Sign out</button>
-            </form>
-          </div>
-          {mine.length ? (
-            <ul className="orows">
-              {mine.map((o) => (
-                <OrderRow key={o.id} order={o} />
-              ))}
-            </ul>
-          ) : (
-            <p className="small muted">No orders paid with this PayPal account yet.</p>
-          )}
-        </section>
+        <form action="/api/orders/signout" method="post" className="row small" style={{ gap: 'var(--s2)', flexWrap: 'wrap' }}>
+          <span className="muted">Signed in with PayPal as {who.email ?? who.name ?? 'your PayPal account'}.</span>
+          <button className="link-button">Sign out</button>
+        </form>
       ) : (
         paypalLogin && (
           <section className="order-card order-signin" aria-labelledby="signin">
@@ -74,12 +55,7 @@ export default async function MyOrders({ searchParams }: { searchParams: Promise
         )
       )}
 
-      <section className="stack" style={{ gap: 'var(--s3)' }} aria-labelledby="here">
-        <h2 id="here" className="h3">
-          {who ? 'Also paid in this browser' : 'Paid in this browser'}
-        </h2>
-        <BrowserOrders exclude={mine.map((o) => o.id)} />
-      </section>
+      <OrderList pageSize={10} />
     </main>
   );
 }

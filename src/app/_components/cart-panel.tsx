@@ -53,7 +53,7 @@ function useReceipts() {
   return { list, add: (r: Receipt) => update((l) => [r, ...l.filter((x) => x.id !== r.id)]), drop: (id: string) => update((l) => l.filter((x) => x.id !== id)) };
 }
 
-export function CartPanel({ paypalClientId, onAskAi, onOrders }: { paypalClientId?: string; onAskAi: () => void; onOrders: () => void }) {
+export function CartPanel({ paypalClientId, onAskAi }: { paypalClientId?: string; onAskAi: () => void }) {
   const carts = useCarts();
   const receipts = useReceipts();
   const shops = Object.entries(carts);
@@ -92,9 +92,6 @@ export function CartPanel({ paypalClientId, onAskAi, onOrders }: { paypalClientI
         />
       ))}
       {shops.length > 0 && paid}
-      <button type="button" className="link-button small cart-orders" onClick={onOrders}>
-        My orders →
-      </button>
     </div>
   );
 }

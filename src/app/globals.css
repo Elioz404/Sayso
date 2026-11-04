@@ -944,3 +944,10 @@ html.dock-instant *, html.dock-instant *::before, html.dock-instant *::after { t
 .orders-panel .orow { grid-template-columns: 44px minmax(0, 1fr) auto; padding: var(--s3); }
 .orders-panel .orow-photo { width: 44px; height: 44px; }
 .orders-signin { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s2); padding: var(--s3) var(--s4); border: 1px solid var(--rule); border-radius: var(--radius); background: var(--sheet); }
+.olist { display: flex; flex-direction: column; gap: var(--s3); }
+.olist-views { max-width: 100%; overflow-x: auto; scrollbar-width: none; align-self: flex-start; }
+.olist-count { font-size: var(--t-xs); color: var(--ink-3); font-weight: 600; }
+.dock-tab[aria-selected='true'] .olist-count { color: var(--ink-2); }
+.olist-more { align-self: center; }
+.order-phone { flex-direction: row; align-items: center; gap: var(--s5); }
+@media (max-width: 640px) { .order-phone .handoff-qr { display: none; } }

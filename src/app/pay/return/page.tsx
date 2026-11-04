@@ -1,6 +1,7 @@
 // PayPal sends the buyer here after they approve (return_url). We complete the merchant-cart checkout
 // server-side: re-check stock, authorize, capture through Guard.
 import type { Metadata } from 'next';
+import { PaidHere } from '@/app/_components/paid-here.tsx';
 import { Icon } from '@/app/_components/ui.tsx';
 import { HttpError } from '@/core/errors.ts';
 import { formatMoney, toMinor } from '@/core/money.ts';
@@ -31,6 +32,7 @@ export default async function PayReturn({ searchParams }: { searchParams: Promis
     const total = result.totals?.total;
     return (
       <main className="wrap wrap-narrow page">
+        <PaidHere cart={cart} token={token} />
         <article className="sayso-card" style={{ maxWidth: 'none' }}>
           <span className="row ok-text" style={{ gap: 8, fontWeight: 650 }}>
             <Icon name="check" size={20} /> Order placed

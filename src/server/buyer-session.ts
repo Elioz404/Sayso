@@ -1,14 +1,18 @@
-// A buyer signed in with PayPal, so they can see their orders from any browser without a Sayso account.
-// PayPal says who they are; the signed, httpOnly cookie only keeps that PayPal account (payer id and
-// email) for a month. It opens nothing but the buyer's own orders, and never the owner area.
+// Who the buyer is, without a Sayso account. Signed in with PayPal: the signed, httpOnly cookie keeps that
+// PayPal account (payer id and email) for a month, so they see their orders from any browser. Paid here:
+// a second signed cookie lists the orders this browser paid for. Either one makes someone the buyer of
+// an order (they may ask for a refund on it); a link alone only shows it. Neither opens the owner area.
 import 'server-only';
 import { cookies } from 'next/headers';
 import type { PayPalIdentity } from '@/core/paypal/identity.ts';
-import type { PayerRef } from '@/core/stores.ts';
+import { paidByPayer, type CartStore, type PayerRef } from '@/core/stores.ts';
 import { ready } from './context.ts';
 
 const BUYER_COOKIE = 'sayso_buyer';
 const FOR_BUYER_COOKIE = 'sayso_paypal_for';
+const PAID_HERE_COOKIE = 'sayso_paid_here';
+const PAID_HERE_MAX = 20;
+const QUARTER = 90 * 86_400_000;
 const MONTH = 30 * 86_400_000;
 const TEN_MINUTES = 10 * 60_000;
 
@@ -59,4 +63,25 @@ export async function buyerSession(): Promise<BuyerSession | undefined> {
 
 export async function endBuyerSession(): Promise<void> {
   (await cookies()).delete(BUYER_COOKIE);
+}
+
+/** This browser just paid for `cartId` (only call it once the payment went through). */
+export async function rememberPaidHere(cartId: string): Promise<void> {
+  const ids = [cartId, ...(await paidHere()).filter((id) => id !== cartId)].slice(0, PAID_HERE_MAX);
+  await setCookie(PAID_HERE_COOKIE, (await ready()).access.signValue('paid-here', ids.join('~'), QUARTER), QUARTER);
+}
+
+/** Orders this browser paid for, newest first. */
+export async function paidHere(): Promise<string[]> {
+  const value = (await ready()).access.verifyValue('paid-here', (await cookies()).get(PAID_HERE_COOKIE)?.value);
+  return value ? value.split('~').filter(Boolean) : [];
+}
+
+/** Whether the person here is the order's buyer: paid in this browser, or signed in with the PayPal that paid. */
+export async function ownsOrder(carts: CartStore, cartId: string): Promise<boolean> {
+  if ((await paidHere()).includes(cartId)) return true;
+  const who = await buyerSession();
+  if (!who) return false;
+  const cart = await carts.get(cartId);
+  return Boolean(cart && paidByPayer(cart, who));
 }

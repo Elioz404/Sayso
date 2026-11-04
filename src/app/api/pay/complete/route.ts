@@ -1,5 +1,6 @@
 // POST { cart, token } after the buyer approved in PayPal's own button (the shopping assistant): the same
 // completion as the return page PayPal redirects to. Stock is re-checked, then Guard authorizes and captures.
+import { rememberPaidHere } from '@/server/buyer-session.ts';
 import { ready } from '@/server/context.ts';
 import { assertSameOrigin, handle, readBody } from '@/server/http.ts';
 import { limitPayPal } from '@/server/rate-limit.ts';
@@ -16,6 +17,7 @@ export async function POST(request: Request) {
     limitPayPal(request);
     const { cart, token } = await readBody(request, APPROVED);
     const result = await (await ready()).commerce.checkout(cart, { items: [], payment_method: { type: 'paypal', token } });
+    await rememberPaidHere(cart);
     return Response.json({
       order: result.payment_confirmation?.merchant_order_number,
       status: result.payment_confirmation?.payment_status,

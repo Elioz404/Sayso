@@ -93,9 +93,10 @@ export default async function Docs() {
               </li>
               <li>
                 <span>
-                  Every order gets its own page: where it is (paid, preparing, shipped, with the parcel&apos;s tracking) and its refunds. To ask for one,
-                  the assistant takes your reason to the shop, and the owner decides. Your receipt links to the page, and the panel&apos;s{' '}
-                  <b>Orders</b> tab lists your orders wherever you are on the site.
+                  Every order gets its own page: where it is (paid, preparing, shipped, with the parcel&apos;s tracking) and its refunds, with a QR code
+                  and a link to open it on your phone. To ask for a refund, the assistant takes your reason to the shop and the owner decides; only the
+                  buyer can ask (from the browser that paid, or signed in with that PayPal), so a shared link only shows the order. Your receipt links
+                  to the page, and the panel&apos;s <b>Orders</b> tab lists your orders wherever you are on the site.
                 </span>
               </li>
               <li>

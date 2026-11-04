@@ -11,7 +11,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { itemCount, OPEN_CART_EVENT, useCarts } from './cart-store.ts';
 import { CartPanel } from './cart-panel.tsx';
 import { DOCK_OPEN_KEY as OPEN_KEY, NOT_HERE } from './dock-restore.ts';
-import { OrdersPanel } from './orders-panel.tsx';
+import { OrderList } from './order-list.tsx';
 import { ShopperChat } from './shopper-chat.tsx';
 
 /** The floating button is the way in; not on the seller's onboarding, which is about something else. */
@@ -143,10 +143,15 @@ export function ShopperDock({ paypalClientId }: { paypalClientId?: string }) {
           <ShopperChat paypalClientId={paypalClientId} request={request} compact />
         </div>
         <div className="dock-body dock-scroll" role="tabpanel" hidden={tab !== 'cart'}>
-          <CartPanel paypalClientId={paypalClientId} onAskAi={() => setTab('ai')} onOrders={() => setTab('orders')} />
+          <CartPanel paypalClientId={paypalClientId} onAskAi={() => setTab('ai')} />
         </div>
         <div className="dock-body dock-scroll" role="tabpanel" hidden={tab !== 'orders'}>
-          <OrdersPanel active={open && tab === 'orders'} />
+          <div className="orders-panel">
+            <OrderList pageSize={5} active={open && tab === 'orders'} signIn />
+            <a className="small cart-orders" href="/orders">
+              See them all on My orders →
+            </a>
+          </div>
         </div>
         <footer className="dock-foot small">
           <span className="muted">{tab === 'ai' ? 'Only shopping at Sayso shops.' : tab === 'cart' ? 'Each shop prices its cart; you pay with PayPal.' : 'Your PayPal is your account here.'}</span>
