@@ -30,7 +30,7 @@ test('MCP handshake: buyer endpoint lists buyer tools, an agent key adds seller 
   assert.ok(!sellerTools.some((n: string) => /approve|decide/.test(n)), 'no tool can approve a say-so request');
 
   assert.equal(await handleMcp({ jsonrpc: '2.0', method: 'notifications/initialized' }, { services: s.services, channel: 't' }), undefined);
-  const unknown = (await handleMcp({ jsonrpc: '2.0', id: 3, method: 'resources/list' }, { services: s.services, channel: 't' })) as any;
+  const unknown = (await handleMcp({ jsonrpc: '2.0', id: 3, method: 'prompts/list' }, { services: s.services, channel: 't' })) as any;
   assert.equal(unknown.error.code, -32601);
 });
 

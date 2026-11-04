@@ -1,8 +1,10 @@
-// A minimal, dependency-free MCP server over JSON-RPC: initialize, ping, tools/list, tools/call.
+// A minimal, dependency-free MCP server over JSON-RPC: initialize, ping, tools/list, tools/call, and the
+// cart card (resources/list, resources/read) that hosts with MCP Apps, like ChatGPT, show for a cart.
 // Transport-agnostic: the Streamable HTTP route answers each POST with plain JSON (no SSE needed for
 // request/response tools), and the CLI's `sayso mcp` bridges stdio to the same endpoint.
 
 import { ABOUT } from './about.ts';
+import { CART_TOOLS, CART_WIDGET_URI, cartToolMeta, cartWidgetContents, cartWidgetResource } from './mcp-ui.ts';
 import { callTool, toolsFor, ToolError, type ToolContext } from './tools/registry.ts';
 
 export const MCP_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26'] as const;
@@ -46,7 +48,7 @@ export async function handleMcp(message: unknown, ctx: ToolContext): Promise<Jso
         id,
         result: {
           protocolVersion,
-          capabilities: { tools: { listChanged: false } },
+          capabilities: { tools: { listChanged: false }, resources: { listChanged: false } },
           serverInfo: {
             name: 'sayso',
             title: ctx.agent ? 'Sayso: run my shop' : ctx.marketplace ? 'Sayso: shop small sellers' : `Sayso shop ${ctx.shopSlug ?? ''}`.trim(),
@@ -64,7 +66,14 @@ export async function handleMcp(message: unknown, ctx: ToolContext): Promise<Jso
         jsonrpc: '2.0',
         id,
         result: {
-          tools: toolsFor(ctx).map((t) => ({ name: t.name, title: t.title, description: t.description, inputSchema: t.inputSchema, annotations: t.annotations })),
+          tools: toolsFor(ctx).map((t) => ({
+            name: t.name,
+            title: t.title,
+            description: t.description,
+            inputSchema: t.inputSchema,
+            annotations: t.annotations,
+            ...(CART_TOOLS.has(t.name) ? { _meta: cartToolMeta } : {}),
+          })),
         },
       };
 
@@ -82,10 +91,25 @@ export async function handleMcp(message: unknown, ctx: ToolContext): Promise<Jso
         return { jsonrpc: '2.0', id, result: { content: [{ type: 'text', text }], isError: true } };
       }
     }
+    case 'resources/list':
+      return { jsonrpc: '2.0', id, result: { resources: hasCartTools(ctx) ? [cartWidgetResource] : [] } };
+
+    case 'resources/templates/list':
+      return { jsonrpc: '2.0', id, result: { resourceTemplates: [] } };
+
+    case 'resources/read': {
+      const uri = String(req.params?.uri ?? '');
+      if (uri !== CART_WIDGET_URI || !hasCartTools(ctx)) return rpcError(id, -32002, `Resource not found: ${uri}`);
+      return { jsonrpc: '2.0', id, result: { contents: [cartWidgetContents()] } };
+    }
+
     default:
       return rpcError(id, -32601, `Method not found: ${req.method}`);
   }
 }
+
+/** The cart card is only offered where the cart tools are. */
+const hasCartTools = (ctx: ToolContext) => toolsFor(ctx).some((t) => CART_TOOLS.has(t.name));
 
 function rpcError(id: string | number | null, code: number, message: string): JsonRpcResponse {
   return { jsonrpc: '2.0', id, error: { code, message } };
