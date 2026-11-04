@@ -664,3 +664,22 @@ body:has(.owner) .site-header, body:has(.owner) .site-footer { display: none; }
   .draft-shot { aspect-ratio: 4 / 3; }
   .handoff { flex-direction: column; align-items: flex-start; }
 }
+
+/* The shopping assistant (/assistant) */
+.shopper-page { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--s6); align-items: start; }
+.shopper { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; }
+.shopper-log { display: flex; flex-direction: column; gap: var(--s4); min-height: 360px; max-height: min(64vh, 680px); overflow-y: auto; padding: var(--s4); background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius); }
+.shopper-empty { display: flex; flex-direction: column; gap: var(--s3); margin: auto 0; }
+.shopper-user { align-self: flex-end; max-width: 80%; padding: var(--s2) var(--s4); border-radius: 18px 18px 6px 18px; background: var(--paper-2); overflow-wrap: anywhere; }
+.shopper-bot { max-width: 92%; overflow-wrap: anywhere; }
+.shopper-bot p { margin: 0 0 var(--s2); } .shopper-bot p:last-child { margin: 0; }
+.shopper-pay { margin-top: var(--s1); }
+.shopper-tool { align-self: flex-start; max-width: 100%; padding: 6px var(--s3); border: 1px solid var(--rule); border-radius: var(--radius-sm); background: var(--paper); font-size: var(--t-sm); color: var(--ink-2); overflow-wrap: anywhere; }
+.shopper-tool code { font-family: var(--font-mono); color: var(--ink); }
+.shopper-tool-warn { background: var(--hold-soft); border-color: transparent; }
+.shopper-thinking { color: var(--ink-3); }
+.shopper-box { display: flex; gap: var(--s2); }
+.shopper-box input { flex: 1; min-width: 0; }
+.shopper-side { position: sticky; top: calc(var(--header-h) + var(--s4)); }
+.shopper-steps { margin: 0; padding-left: 1.2em; display: grid; gap: var(--s2); }
+@media (max-width: 860px) { .shopper-page { grid-template-columns: minmax(0, 1fr); } .shopper-side { position: static; } }

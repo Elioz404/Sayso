@@ -161,6 +161,9 @@ function Intro() {
         </div>
         <StartTour />
         <p className="small muted">No sign-in, nothing to install. Five short steps, one per screen. Your copy disappears after a day.</p>
+        <p className="small">
+          Rather be the shopper? <a href="/assistant">Buy from a shop with the AI assistant</a>, or connect your own assistant to Sayso&apos;s MCP server.
+        </p>
       </div>
       <ol className="tour-outline">
         {TOUR_STEPS.map((s, i) => (

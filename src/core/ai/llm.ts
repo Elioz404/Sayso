@@ -11,9 +11,27 @@ export interface JsonRequest {
   maxOutputTokens?: number;
 }
 
+/** One turn of a conversation with tools, in the OpenAI chat format both providers speak. */
+export type ChatMessage =
+  | { role: 'system' | 'user'; content: string }
+  | { role: 'assistant'; content: string | null; tool_calls?: ToolCall[] }
+  | { role: 'tool'; tool_call_id: string; content: string };
+export interface ToolCall {
+  id: string;
+  type: 'function';
+  function: { name: string; arguments: string };
+}
+export interface ChatRequest {
+  messages: ChatMessage[];
+  tools: { name: string; description: string; parameters: unknown }[];
+  maxOutputTokens?: number;
+}
+
 export interface ChatModel {
   readonly name: string;
   json(request: JsonRequest): Promise<unknown>;
+  /** A reply that may ask for tools instead of (or as well as) text. Not every model offers it. */
+  chat?(request: ChatRequest): Promise<{ content: string; toolCalls: ToolCall[] }>;
 }
 
 export interface OpenAICompatibleConfig {
@@ -130,7 +148,7 @@ export function openAICompatible(config: OpenAICompatibleConfig): ChatModel {
         { role: 'user', content: userContent },
       ];
       if (fix) messages.push({ role: 'assistant', content: fix.previous.slice(0, 20_000) }, { role: 'user', content: fix.nudge });
-      const body = await post(messages, maxOutputTokens);
+      const body = await post(messages, maxOutputTokens, { response_format: { type: 'json_object' } });
       usage = body.usage;
       if (body.choices?.[0]?.finish_reason === 'length') throw new LlmError('The reply was too long; send fewer products at a time.');
       return body.choices?.[0]?.message?.content ?? '';
@@ -139,7 +157,7 @@ export function openAICompatible(config: OpenAICompatibleConfig): ChatModel {
     }
   }
 
-  async function post(messages: unknown[], maxOutputTokens: number) {
+  async function post(messages: unknown[], maxOutputTokens: number, extra: Record<string, unknown>) {
     const res = await doFetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
@@ -147,17 +165,34 @@ export function openAICompatible(config: OpenAICompatibleConfig): ChatModel {
         model,
         messages,
         temperature: 0.2,
-        response_format: { type: 'json_object' },
+        ...extra,
         [provider === 'openai' ? 'max_completion_tokens' : 'max_tokens']: maxOutputTokens,
       }),
       signal: AbortSignal.timeout(60_000),
     });
     if (!res.ok) throw new LlmError(`${model} returned ${res.status}: ${(await res.text()).slice(0, 300)}`, res.status);
-    return (await res.json()) as { choices?: { message?: { content?: string }; finish_reason?: string }[]; usage?: { prompt_tokens?: number; completion_tokens?: number } };
+    return (await res.json()) as {
+      choices?: { message?: { content?: string | null; tool_calls?: ToolCall[] }; finish_reason?: string }[];
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+    };
   }
 
   return {
     name: model,
+    async chat(request) {
+      const maxOutputTokens = request.maxOutputTokens ?? 600;
+      const reservation = await config.budget?.reserve(maxOutputTokens);
+      let usage: { prompt_tokens?: number; completion_tokens?: number } | undefined;
+      try {
+        const tools = request.tools.map((t) => ({ type: 'function', function: t }));
+        const body = await post(request.messages, maxOutputTokens, { tools });
+        usage = body.usage;
+        const message = body.choices?.[0]?.message;
+        return { content: message?.content ?? '', toolCalls: message?.tool_calls ?? [] };
+      } finally {
+        if (reservation) await config.budget!.settle(reservation, usage);
+      }
+    },
     async json(request) {
       const first = await call(request);
       try {

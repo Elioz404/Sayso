@@ -10,6 +10,7 @@ export function NavLinks() {
   // `wide`: only where there is room; phones keep the essentials.
   const links = [
     { href: '/tour', label: 'For Judges' },
+    { href: '/assistant', label: 'Shop with AI' },
     { href: '/start', label: 'Start selling', wide: true },
     { href: `/shop/${ABOUT.demoShop}`, label: 'Demo shop', wide: true },
     { href: '/docs', label: 'Docs' },
