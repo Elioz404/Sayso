@@ -874,6 +874,8 @@ html.dock-instant *, html.dock-instant *::before, html.dock-instant *::after { t
 .osteps-dot { position: relative; z-index: 1; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; border: 2px solid var(--rule-strong); background: var(--sheet); font-size: 13px; font-weight: 700; }
 .osteps-done .osteps-dot { background: var(--ok); border-color: var(--ok); color: var(--sheet); }
 .osteps-now .osteps-dot { border-color: var(--say); box-shadow: 0 0 0 4px var(--say-soft); }
+.osteps-stop .osteps-dot { background: var(--ink-3); border-color: var(--ink-3); font-size: 12px; }
+.osteps li.osteps-stop:not(:last-child)::after { background: var(--rule-strong); }
 .osteps-label { display: flex; flex-direction: column; gap: 2px; font-size: var(--t-sm); }
 .osteps-now .osteps-label b { color: var(--say); }
 .orows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--sheet); overflow: hidden; }
@@ -886,7 +888,16 @@ html.dock-instant *, html.dock-instant *::before, html.dock-instant *::after { t
 .orow-main > b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .orow-end { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .purchase-track { font-size: var(--t-sm); font-weight: 600; }
-@media (max-width: 480px) { .osteps-label small { display: none; } .order-card { padding: var(--s4); } }
+@media (max-width: 480px) {
+  .osteps-label small { display: none; }
+  .order-card { padding: var(--s4); }
+  /* More than three steps don't fit side by side on a phone: they run down instead, with their times. */
+  .osteps-long { grid-template-columns: minmax(0, 1fr) !important; gap: var(--s3); }
+  .osteps-long li { flex-direction: row; align-items: center; gap: var(--s3); }
+  .osteps.osteps-long li:not(:last-child)::after { top: 30px; bottom: calc(4px - var(--s3)); left: 12px; right: auto; width: 2px; height: auto; }
+  .osteps-long .osteps-label { flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 0 var(--s2); }
+  .osteps-long .osteps-label small { display: inline; }
+}
 .cart-orders { align-self: flex-start; font-weight: 600; }
 .orders-panel { display: flex; flex-direction: column; gap: var(--s4); padding: var(--s4) var(--s5); width: 100%; }
 .orders-panel .orow { grid-template-columns: 44px minmax(0, 1fr) auto; padding: var(--s3); }

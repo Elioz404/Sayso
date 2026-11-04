@@ -13,7 +13,7 @@ type Listed = { signedIn: boolean; who?: string; canSignIn: boolean; orders: Buy
 
 const VIEWS = [
   { id: 'all', label: 'All', test: () => true },
-  { id: 'active', label: 'In progress', test: (o: BuyerOrder) => o.state === 'paid' || o.state === 'waiting' },
+  { id: 'active', label: 'In progress', test: (o: BuyerOrder) => o.state === 'paid' || o.state === 'waiting' || o.state === 'refund-asked' },
   { id: 'shipped', label: 'Shipped', test: (o: BuyerOrder) => o.state === 'shipped' },
   { id: 'refunds', label: 'Refunds', test: (o: BuyerOrder) => o.state === 'refunded' || Boolean(o.refunded) || o.refundRequests.length > 0 },
   { id: 'cancelled', label: 'Cancelled', test: (o: BuyerOrder) => o.state === 'cancelled' },

@@ -34,7 +34,14 @@ export interface Purchase {
   cartId?: string;
 }
 
-const BADGE: Record<BuyerOrder['state'], string> = { paid: 'Paid with PayPal', shipped: 'Shipped', waiting: 'Authorized in PayPal', refunded: 'Refunded', cancelled: 'Cancelled, not charged' };
+const BADGE: Record<BuyerOrder['state'], string> = {
+  paid: 'Paid with PayPal',
+  shipped: 'Shipped',
+  waiting: 'Authorized in PayPal',
+  'refund-asked': 'Refund asked',
+  refunded: 'Refunded',
+  cancelled: 'Cancelled, not charged',
+};
 
 /** Where a paid order stands now, from the shop (shipped, refunded...), once the card is shown. */
 function useLiveOrder(cartId?: string): BuyerOrder | undefined {
@@ -73,7 +80,7 @@ export function PurchaseCard({ data: given, state, children, onCancel, onDismiss
     ? {
         ...given,
         order: live.number,
-        status: [live.status, live.tracking ? `Tracking: ${live.tracking.carrier} ${live.tracking.number}.` : '', live.refunded && live.state !== 'refunded' ? `Refunded ${live.refunded}.` : '']
+        status: [live.status, live.tracking ? `Tracking: ${live.tracking.carrier} ${live.tracking.number}.` : '']
           .filter(Boolean)
           .join(' '),
       }

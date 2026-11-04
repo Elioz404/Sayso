@@ -4,6 +4,7 @@
 // and refunds; never the owner's notes, other buyers or Sayso's internal records.
 
 import { findVariant, type Catalog } from './catalog.ts';
+import type { AuditEvent, GuardRecord } from './guard/types.ts';
 import type { Links } from './links.ts';
 import { formatMoney, toMinor, type Money } from './money.ts';
 import type { Orders } from './orders.ts';
@@ -18,8 +19,8 @@ export interface BuyerOrderDeps {
   links: Links;
 }
 
-/** paid: charged, being prepared; waiting: authorized, the shop confirms before charging. */
-export type BuyerOrderState = 'paid' | 'waiting' | 'shipped' | 'refunded' | 'cancelled';
+/** paid: charged, being prepared; waiting: authorized, the shop confirms before charging; refund-asked: the buyer's refund request waits for the owner. */
+export type BuyerOrderState = 'paid' | 'waiting' | 'shipped' | 'refund-asked' | 'refunded' | 'cancelled';
 
 export interface BuyerOrder {
   /** The order's link: /order/<id>. */
@@ -30,8 +31,8 @@ export interface BuyerOrder {
   state: BuyerOrderState;
   /** Where it stands, in one sentence. */
   status: string;
-  /** The way an order goes, each step done or not yet (none for a cancelled order). */
-  steps: { label: string; done: boolean; at?: string }[];
+  /** What happened to the order, then what is still to come. `stop`: it ended there (cancelled, refund declined). */
+  steps: { label: string; done: boolean; at?: string; stop?: boolean }[];
   items: { name: string; detail?: string; qty: number; amount?: string; image?: string; url?: string }[];
   subtotal?: string;
   shipping?: string;
@@ -76,26 +77,30 @@ async function view(deps: BuyerOrderDeps, cart: StoredCart, catalog?: Catalog): 
     ? { carrier: carrierName(cart.tracking.carrier), number: cart.tracking.number, url: trackingLink(cart.tracking.carrier, cart.tracking.number), at: cart.tracking.addedAt }
     : undefined;
 
-  const state: BuyerOrderState = cart.released ? 'cancelled' : !paid ? 'waiting' : fullyRefunded ? 'refunded' : tracking ? 'shipped' : 'paid';
+  const requests = records.filter((r) => r.action.kind === 'refund.create' && r.action.actor.side === 'buyer');
+  const waitingRequest = requests.some((r) => r.status === 'pending_approval');
+  const partly = order.refundedMinor > 0 && !fullyRefunded ? ` ${order.refunded} refunded through PayPal.` : '';
+
+  const state: BuyerOrderState = cart.released
+    ? 'cancelled'
+    : !paid
+      ? 'waiting'
+      : fullyRefunded
+        ? 'refunded'
+        : waitingRequest
+          ? 'refund-asked'
+          : tracking
+            ? 'shipped'
+            : 'paid';
   const status = {
     cancelled: PAYMENT_FOR_BUYER.released,
     waiting: PAYMENT_FOR_BUYER.awaiting_owner,
     refunded: `Refunded in full (${order.refunded}) through PayPal.`,
-    shipped: `Shipped with ${tracking?.carrier}.`,
-    paid: PAYMENT_FOR_BUYER.paid,
+    'refund-asked': `You asked for a refund. The shop owner decides; if they agree, PayPal refunds you.${partly}`,
+    shipped: `Shipped with ${tracking?.carrier}.${partly}`,
+    paid: `${PAYMENT_FOR_BUYER.paid}${partly}`,
   }[state];
-  const steps =
-    state === 'cancelled'
-      ? []
-      : [
-          paid ? { label: 'Paid', done: true, ...(cart.paidAt ? { at: cart.paidAt } : {}) } : { label: 'Authorized', done: true, at: cart.updatedAt },
-          // Preparing is where a paid order is until it ships.
-          paid ? { label: 'Preparing', done: Boolean(tracking) } : { label: 'Shop confirms', done: false },
-          { label: 'Shipped', done: Boolean(tracking), ...(tracking ? { at: tracking.at } : {}) },
-        ];
 
-  const requests = records.filter((r) => r.action.kind === 'refund.create' && r.action.actor.side === 'buyer');
-  const waitingRequest = requests.some((r) => r.status === 'pending_approval');
   return {
     id: cart.id,
     number: cart.merchantOrderNumber!,
@@ -103,7 +108,7 @@ async function view(deps: BuyerOrderDeps, cart: StoredCart, catalog?: Catalog): 
     placedAt: cart.paidAt ?? cart.updatedAt,
     state,
     status,
-    steps,
+    steps: progress(cart, records, { paid, fullyRefunded, waitingRequest, refundedMinor: order.refundedMinor }),
     items: cart.cart.items.map((i) => {
       const found = catalog && i.variant_id ? findVariant(catalog, i.variant_id) : undefined;
       const at = (i.name ?? '').lastIndexOf(' - ');
@@ -126,6 +131,54 @@ async function view(deps: BuyerOrderDeps, cart: StoredCart, catalog?: Catalog): 
     canAskRefund: paid && !cart.released && !fullyRefunded && !waitingRequest,
     refundPending: waitingRequest,
   };
+}
+
+type Step = BuyerOrder['steps'][number];
+
+const eventAt = (r: GuardRecord, type: AuditEvent['type']) => r.events.find((e) => e.type === type)?.at ?? r.createdAt;
+
+/**
+ * What happened to the order, in the order it happened, then what is still to come; the first step not
+ * done is where it is now. Of the buyer's refund requests only the latest is a step (the others are listed
+ * under Refunds), and refunds count once PayPal confirms them.
+ */
+function progress(cart: StoredCart, records: readonly GuardRecord[], o: { paid: boolean; fullyRefunded: boolean; waitingRequest: boolean; refundedMinor: number }): Step[] {
+  if (cart.released) {
+    return [
+      { label: 'Authorized', done: true },
+      { label: 'Cancelled', done: true, at: cart.released.at, stop: true },
+    ];
+  }
+  if (!o.paid) return [{ label: 'Authorized', done: true, at: cart.updatedAt }, { label: 'Shop confirms', done: false }, { label: 'Shipped', done: false }];
+
+  const happened: { step: Step; t: number }[] = [{ step: { label: 'Paid', done: true, at: cart.paidAt ?? cart.updatedAt }, t: 0 }];
+  if (cart.tracking) {
+    const t = Date.parse(cart.tracking.addedAt);
+    happened.push({ step: { label: 'Preparing', done: true }, t }, { step: { label: 'Shipped', done: true, at: cart.tracking.addedAt }, t });
+  }
+  const refunds = records.filter((r) => r.action.kind === 'refund.create');
+  const asked = refunds
+    .filter((r) => r.action.actor.side === 'buyer' && r.status !== 'denied' && r.status !== 'failed')
+    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
+    .at(-1);
+  const add = (label: string, at: string, stop?: true) => happened.push({ step: { label, done: true, at, ...(stop ? { stop } : {}) }, t: Date.parse(at) });
+  if (asked) {
+    add('Refund asked', asked.createdAt);
+    if (asked.status === 'rejected') add('Refund declined', eventAt(asked, 'rejected'), true);
+    if (asked.status === 'executing' || asked.status === 'executed' || asked.status === 'unverified') add('Refund sent', eventAt(asked, 'executed'));
+  }
+  const confirmed = refunds.filter((r) => r.status === 'verified').map((r) => eventAt(r, 'verified')).sort().at(-1);
+  if (confirmed && o.refundedMinor > 0) add(o.fullyRefunded ? 'Refunded' : 'Partly refunded', confirmed);
+
+  const next: Step[] = o.waitingRequest
+    ? [{ label: 'Shop decides', done: false }]
+    : !o.fullyRefunded && !cart.tracking
+      ? [
+          { label: 'Preparing', done: false },
+          { label: 'Shipped', done: false },
+        ]
+      : [];
+  return [...happened.sort((a, b) => a.t - b.t).map((h) => h.step), ...next];
 }
 
 /** The buyer's orders, as a note for the shopping assistant: enough to call get_cart and answer. */

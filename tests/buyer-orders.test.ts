@@ -72,8 +72,71 @@ test('an order at its link: where it stands, then shipped, then a refund the buy
   assert.equal(waiting.refundRequests.length, 1);
   assert.ok(!waiting.canAskRefund, 'one request at a time');
   assert.ok(waiting.refundPending);
+  assert.equal(waiting.state, 'refund-asked');
+  assert.deepEqual(steps(waiting), [['Paid', true], ['Preparing', true], ['Shipped', true], ['Refund asked', true], ['Shop decides', false]]);
 
   assert.match(ordersForAssistant([waiting]), new RegExp(`${waiting.number} from Maya Ceramics \\(cart_id ${id}`));
+});
+
+const steps = (o: { steps: { label: string; done: boolean; stop?: boolean }[] }) => o.steps.map((st) => (st.stop ? [st.label, 'stop'] : [st.label, st.done]));
+
+test('the steps follow what happened: a refund declined, asked again, then refunded in full', async () => {
+  const s = await stack();
+  const deps = { carts: s.carts, catalogs: s.catalogs, orders: s.orders, links: links('https://sayso.test') };
+  const id = await buy(s, 'var_mug_sage', ALEX);
+  const ask = async () => (await s.call('request_refund', { cart_id: id, reason: 'It is not the green I expected.' }, { channel: 'sayso-assistant', marketplace: true })).data.request_id as string;
+
+  const first = await ask();
+  assert.deepEqual(steps((await buyerOrder(deps, id))!), [['Paid', true], ['Refund asked', true], ['Shop decides', false]], 'not shipped: the shop decides first');
+
+  await s.saySo.decide('shop_maya', first, 'reject', 'owner:shop_maya', { note: 'Colours vary by kiln' });
+  const declined = (await buyerOrder(deps, id))!;
+  assert.equal(declined.state, 'paid');
+  assert.deepEqual(steps(declined), [['Paid', true], ['Refund asked', true], ['Refund declined', 'stop'], ['Preparing', false], ['Shipped', false]]);
+  assert.ok(declined.canAskRefund, 'a declined request can be asked again');
+
+  await s.saySo.decide('shop_maya', await ask(), 'approve', 'owner:shop_maya');
+  const refunded = (await buyerOrder(deps, id))!;
+  assert.equal(refunded.state, 'refunded');
+  assert.match(refunded.status, /^Refunded in full \(\$[\d.]+\) through PayPal\.$/);
+  assert.deepEqual(steps(refunded), [['Paid', true], ['Refund asked', true], ['Refunded', true]], 'nothing left to ship, and only the latest request is a step');
+  assert.ok(!refunded.canAskRefund);
+});
+
+test('a partial refund is a step and part of the status; the order still ships', async () => {
+  const s = await stack();
+  const deps = { carts: s.carts, catalogs: s.catalogs, orders: s.orders, links: links('https://sayso.test') };
+  const id = await buy(s, 'var_mug_sage', ALEX);
+  const refund = await s.call('refund_order', { order_id: id, amount: '10.00', reason: 'Small chip on the rim' }, s.owner);
+  assert.equal(refund.data.status, 'verified', refund.text);
+
+  const partly = (await buyerOrder(deps, id))!;
+  assert.equal(partly.state, 'paid');
+  assert.equal(partly.status, 'Charged. The shop is preparing the order. $10.00 refunded through PayPal.');
+  assert.deepEqual(steps(partly), [['Paid', true], ['Partly refunded', true], ['Preparing', false], ['Shipped', false]]);
+
+  await s.call('add_tracking', { order_id: id, carrier: 'UPS', tracking_number: '1Z999AA10123456784' }, s.owner);
+  const shipped = (await buyerOrder(deps, id))!;
+  assert.equal(shipped.state, 'shipped');
+  assert.deepEqual(steps(shipped), [['Paid', true], ['Partly refunded', true], ['Preparing', true], ['Shipped', true]], 'in the order it happened');
+});
+
+test('an order the shop holds and then turns down ends at Cancelled', async () => {
+  const s = await stack();
+  const deps = { carts: s.carts, catalogs: s.catalogs, orders: s.orders, links: links('https://sayso.test') };
+  await s.policies.put({ ownerId: 'shop_maya', currency: 'USD', rules: [{ id: 'all', type: 'always_approve', kinds: ['payment.capture'] }] });
+  const id = await buy(s, 'var_mug_sage', ALEX);
+
+  const held = (await buyerOrder(deps, id))!;
+  assert.equal(held.state, 'waiting');
+  assert.deepEqual(steps(held), [['Authorized', true], ['Shop confirms', false], ['Shipped', false]]);
+
+  const [capture] = await s.guard.list('shop_maya', { cartId: id, kind: 'payment.capture' });
+  await s.saySo.decide('shop_maya', capture.id, 'reject', 'owner:shop_maya', { note: 'Out of glaze' });
+  const cancelled = (await buyerOrder(deps, id))!;
+  assert.equal(cancelled.state, 'cancelled');
+  assert.deepEqual(steps(cancelled), [['Authorized', true], ['Cancelled', 'stop']]);
+  assert.ok(!cancelled.canAskRefund);
 });
 
 test("a link that isn't a placed order shows nothing", async () => {
