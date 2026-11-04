@@ -49,3 +49,16 @@ test('an owner can rename the shop; its address stays so shared links keep worki
   assert.equal(renamed.shop.slug, demoCatalog.shop.slug);
   await assert.rejects(s.shops.rename(shopId, 'x'), /2 to 60/);
 });
+
+test('Add to cart takes what the shop page shows, capped at what can be sold', async () => {
+  const { cartLine, MADE_TO_ORDER_CAP } = await import('../src/core/storefront.ts');
+  const links = { asset: (u: string) => `https://sayso.test${u.startsWith('/') ? u : `/${u}`}` };
+  const mug = demoCatalog.products.find((p) => p.name.includes('Mug'))!;
+  const speckled = mug.variants.find((v) => v.title === 'Speckled White')!;
+  const line = cartLine(demoCatalog, mug, speckled, links);
+  assert.equal(line.price, speckled.price);
+  assert.equal(line.variant, 'Speckled White');
+  assert.equal(line.max, speckled.inventory, 'no more than is in stock');
+  const vase = demoCatalog.products.find((p) => p.variants.some((v) => v.madeToOrderDays !== undefined))!;
+  assert.equal(cartLine(demoCatalog, vase, vase.variants[0], links).max, MADE_TO_ORDER_CAP, 'made to order has a sensible cap');
+});

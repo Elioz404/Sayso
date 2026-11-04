@@ -8,6 +8,8 @@
 
 import { usePathname } from 'next/navigation';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { itemCount, OPEN_CART_EVENT, useCarts } from './cart-store.ts';
+import { CartPanel } from './cart-panel.tsx';
 import { DOCK_OPEN_KEY as OPEN_KEY, NOT_HERE } from './dock-restore.ts';
 import { ShopperChat } from './shopper-chat.tsx';
 
@@ -19,6 +21,8 @@ export function ShopperDock({ paypalClientId }: { paypalClientId?: string }) {
   const here = !NOT_HERE.test(path);
   const [open, setOpen] = useState(false);
   const [request, setRequest] = useState<{ text: string; id: number }>();
+  const [tab, setTab] = useState<'ai' | 'cart'>('ai');
+  const items = itemCount(useCarts());
   const panel = useRef<HTMLElement>(null);
   const opener = useRef<HTMLElement | null>(null);
 
@@ -32,6 +36,7 @@ export function ShopperDock({ paypalClientId }: { paypalClientId?: string }) {
       url.searchParams.delete('assistant');
       window.history.replaceState(null, '', url.pathname + url.search + url.hash);
       if (ask) setRequest({ text: ask.slice(0, 300), id: Date.now() });
+      setTab('ai');
       setOpen(true);
       return;
     }
@@ -61,22 +66,34 @@ export function ShopperDock({ paypalClientId }: { paypalClientId?: string }) {
       opener.current = link;
       const ask = new URL(link.href).searchParams.get('ask');
       if (ask) setRequest({ text: ask, id: Date.now() });
+      setTab('ai');
+      setOpen(true);
+    };
+    // "Add to cart" opens the panel on the cart.
+    const onCart = () => {
+      setTab('cart');
       setOpen(true);
     };
     document.addEventListener('click', onClick);
-    return () => document.removeEventListener('click', onClick);
+    window.addEventListener(OPEN_CART_EVENT, onCart);
+    return () => {
+      document.removeEventListener('click', onClick);
+      window.removeEventListener(OPEN_CART_EVENT, onCart);
+    };
   }, [here]);
 
   // Esc closes; focus goes to the message box on opening and back to what opened it on closing.
   useEffect(() => {
     if (!open) return;
-    panel.current?.querySelector<HTMLInputElement>('.shopper-input')?.focus({ preventScroll: true });
+    if (tab === 'ai') panel.current?.querySelector<HTMLInputElement>('.shopper-input')?.focus({ preventScroll: true });
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
       opener.current?.focus({ preventScroll: true });
     };
+    // Focus follows the tab only when the panel opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   // The page makes room in the same frame the panel starts to move (before paint), never a frame later.
@@ -93,26 +110,39 @@ export function ShopperDock({ paypalClientId }: { paypalClientId?: string }) {
   return (
     <>
       {!open && !NO_BUTTON.test(path) && (
-        <button type="button" className="dock-fab" onClick={() => setOpen(true)}>
+        <button type="button" className="dock-fab" onClick={() => setOpen(true)} aria-label={items ? `Ask AI to shop, ${items} in your cart` : undefined}>
           <span aria-hidden="true">✦</span> Ask AI to shop
+          {items > 0 && (
+            <span className="dock-fab-count" aria-hidden="true">
+              {items}
+            </span>
+          )}
         </button>
       )}
       <div className={open ? 'dock-scrim dock-on' : 'dock-scrim'} onClick={() => setOpen(false)} aria-hidden="true" />
       <aside ref={panel} className={open ? 'dock dock-on' : 'dock'} role="dialog" aria-modal="false" aria-label="Shop with AI" aria-hidden={!open} inert={!open}>
         <header className="dock-head">
-          <div className="stack" style={{ gap: 0, minWidth: 0 }}>
-            <b>Shop with AI</b>
-            <span className="small muted">Searches every Sayso shop · pay with PayPal</span>
+          <div className="dock-tabs" role="tablist" aria-label="Shop with AI">
+            <button type="button" role="tab" aria-selected={tab === 'ai'} className="dock-tab" onClick={() => setTab('ai')}>
+              Ask AI
+            </button>
+            <button type="button" role="tab" aria-selected={tab === 'cart'} className="dock-tab" onClick={() => setTab('cart')}>
+              Cart{items > 0 && <span className="dock-tab-count">{items}</span>}
+            </button>
           </div>
           <button type="button" className="btn btn-quiet btn-small" onClick={() => setOpen(false)} aria-label="Close">
             ✕
           </button>
         </header>
-        <div className="dock-body">
+        {/* Both stay mounted, so the conversation and a half-done checkout survive switching tabs. */}
+        <div className="dock-body" role="tabpanel" hidden={tab !== 'ai'}>
           <ShopperChat paypalClientId={paypalClientId} request={request} compact />
         </div>
+        <div className="dock-body dock-scroll" role="tabpanel" hidden={tab !== 'cart'}>
+          <CartPanel paypalClientId={paypalClientId} onAskAi={() => setTab('ai')} />
+        </div>
         <footer className="dock-foot small">
-          <span className="muted">Only shopping at Sayso shops.</span>
+          <span className="muted">{tab === 'ai' ? 'Only shopping at Sayso shops.' : 'Each shop prices its cart; you pay with PayPal.'}</span>
           <a href="/docs#chatgpt">Use your own assistant</a>
         </footer>
       </aside>

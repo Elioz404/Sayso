@@ -9,7 +9,8 @@ import { Icon } from '@/app/_components/ui.tsx';
 import { isLive } from '@/core/catalog.ts';
 import { jsonLdScript, shopJsonLd } from '@/core/discovery.ts';
 import { formatMoney } from '@/core/money.ts';
-import { assistantLink, assistantPrompt, stockNote } from '@/core/storefront.ts';
+import { AddToCart } from '@/app/_components/cart-actions.tsx';
+import { assistantLink, assistantPrompt, cartLine, stockNote } from '@/core/storefront.ts';
 import { ready } from '@/server/context.ts';
 import { shopBySlug } from '@/server/shops.ts';
 
@@ -119,7 +120,10 @@ export default async function ShopPage({ params }: { params: Promise<{ slug: str
                           <span>{v.title && v.title !== 'Default' ? v.title : p.name}</span>
                           <span className={`stock stock-${note.tone}`}>{note.text}</span>
                         </span>
-                        <span className="good-price">{money(v.price)}</span>
+                        <span className="good-buy-row">
+                          <span className="good-price">{money(v.price)}</span>
+                          {note.tone !== 'out' && <AddToCart shop={{ slug: shop.slug, name: shop.name }} line={cartLine(catalog, p, v, links)} />}
+                        </span>
                       </li>
                     );
                   })}

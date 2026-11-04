@@ -2,6 +2,7 @@
 // Framework-free so the shop page, the product page and tests share it.
 
 import { available, type Catalog, type Product, type Variant } from './catalog.ts';
+import type { Links } from './links.ts';
 
 export type StockTone = 'ok' | 'low' | 'out' | 'made';
 
@@ -44,5 +45,22 @@ export function shopCard({ shop, products }: Catalog) {
     from: prices.length ? Math.min(...prices) : undefined,
     to: prices.length ? Math.max(...prices) : undefined,
     picture: shop.cover?.url ?? products.find((p) => p.imageUrl)?.imageUrl,
+  };
+}
+
+/** Made-to-order pieces have no stock to run out of; a cart still shouldn't take more than this at once. */
+export const MADE_TO_ORDER_CAP = 10;
+
+/** What "Add to cart" puts in the shopper's cart for one variant (the shop prices it again at checkout). */
+export function cartLine({ shop }: Catalog, product: Product, variant: Variant, links: Pick<Links, 'asset'>) {
+  return {
+    variantId: variant.id,
+    productId: product.id,
+    name: product.name,
+    variant: variant.title && variant.title !== 'Default' ? variant.title : '',
+    price: variant.price,
+    currency: shop.currency,
+    ...(product.imageUrl ? { image: links.asset(product.imageUrl) } : {}),
+    max: Math.min(available(variant), MADE_TO_ORDER_CAP),
   };
 }

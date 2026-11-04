@@ -7,7 +7,8 @@ import { ShopPhoto } from '@/app/_components/photo.tsx';
 import { isLive, type Catalog } from '@/core/catalog.ts';
 import { jsonLdScript, productJsonLd } from '@/core/discovery.ts';
 import { formatMoney } from '@/core/money.ts';
-import { assistantPrompt, stockNote } from '@/core/storefront.ts';
+import { AddToCart } from '@/app/_components/cart-actions.tsx';
+import { assistantLink, assistantPrompt, cartLine, stockNote } from '@/core/storefront.ts';
 import { ready } from '@/server/context.ts';
 import { shopBySlug } from '@/server/shops.ts';
 
@@ -90,14 +91,21 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
                     <span>{v.title && v.title !== 'Default' ? v.title : product.name}</span>
                     <span className={`stock stock-${note.tone}`}>{note.text}</span>
                   </span>
-                  <span className="good-price">{money(v.price)}</span>
+                  <span className="good-buy-row">
+                    <span className="good-price">{money(v.price)}</span>
+                    {note.tone !== 'out' && <AddToCart shop={{ slug: shop.slug, name: shop.name }} line={cartLine(catalog, product, v, links)} />}
+                  </span>
                 </li>
               );
             })}
           </ul>
 
-          <div className="buy-via">
-            <h2 className="buy-via-title">Ask your assistant for it</h2>
+          <a className="btn good-buy" href={assistantLink(assistantPrompt(catalog, product))}>
+            Buy with AI
+          </a>
+
+          <details className="buy-via-own">
+            <summary>Or ask your own assistant (ChatGPT, any MCP client)</summary>
             <ol className="buy-via-steps">
               <li>
                 <span>Add Sayso as a connector in ChatGPT or any MCP client.</span>
@@ -111,7 +119,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
                 <span>Approve the exact total in PayPal. {shop.name} prices it, never the assistant.</span>
               </li>
             </ol>
-          </div>
+          </details>
 
           <p className="small soft">
             {home ? `${home.name}: ${money(home.price)}${home.freeAbove ? `, free over ${money(home.freeAbove)}` : ''}, ${home.minDays}-${home.maxDays} days. ` : ''}
