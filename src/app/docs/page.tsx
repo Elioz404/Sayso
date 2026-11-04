@@ -247,8 +247,9 @@ export default async function Docs() {
           <section id="paid" className="doc-section">
             <h2>Get paid into your PayPal</h2>
             <p>
-              In your dashboard, press <b>Connect your PayPal</b> and sign in to the PayPal account you sell with. You allow Sayso two things: to take
-              payments for you, and to refund them. From then on every sale lands in your account directly; Sayso never holds your money.
+              Signing in with PayPal only tells Sayso who you are. To have sales paid into your account, press <b>Set up payments</b> in your dashboard
+              and allow Sayso two things in PayPal: to take payments for you, and to refund them. From then on every sale lands in your account
+              directly; Sayso never holds your money.
             </p>
             <p>
               Refunds of those sales come out of your account, still only inside your rules or with your OK. Sayso checks with PayPal which account you

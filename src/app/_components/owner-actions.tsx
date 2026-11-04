@@ -4,7 +4,7 @@
 // refreshes the server-rendered page.
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { callApi } from './api.ts';
 import { CopyField } from './client-ui.tsx';
 import { signChallenge, usePasskeyChallenge } from './passkey-client.ts';
@@ -97,26 +97,111 @@ export function LoginForm({ demo, paypal, next }: { demo: boolean; paypal: boole
   );
 }
 
-/** For a seller signed in with PayPal who owns more than one shop. */
-export function ShopSwitcher({ shops, current }: { shops: { slug: string; name: string }[]; current: string }) {
-  const router = useRouter();
+export interface ShopChoice {
+  slug: string;
+  name: string;
+  status: 'live' | 'draft';
+  /** A photo from the shop, for telling shops apart at a glance. */
+  image?: string;
+  pieces: number;
+}
+
+function ShopAvatar({ shop }: { shop: ShopChoice }) {
   return (
-    <label className="field shop-switch">
-      <span className="sr-only">Switch shop</span>
-      <select
-        value={current}
-        onChange={async (e) => {
-          await callApi('/api/owner/session', 'POST', { shop: e.target.value, paypal: true }).catch(() => {});
-          router.refresh();
-        }}
-      >
-        {shops.map((s) => (
-          <option key={s.slug} value={s.slug}>
-            {s.name}
-          </option>
-        ))}
-      </select>
-    </label>
+    <span className="shop-avatar" aria-hidden="true">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      {shop.image ? <img src={shop.image} alt="" /> : shop.name.slice(0, 1).toUpperCase()}
+    </span>
+  );
+}
+
+/** For a seller signed in with PayPal who owns more than one shop: each shop with its photo, pieces and whether it's live. */
+export function ShopSwitcher({ shops, current }: { shops: ShopChoice[]; current: string }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState<string>();
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const outside = (e: MouseEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('mousedown', outside);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('mousedown', outside);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [open]);
+  const here = shops.find((s) => s.slug === current) ?? shops[0];
+  return (
+    <div className="shop-switch" ref={box}>
+      <button type="button" className="shop-switch-btn" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <ShopAvatar shop={here} />
+        <b className="shop-switch-name">{here.name}</b>
+        <svg className="shop-switch-chev" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 10l5 5 5-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {open && (
+        <div className="shop-menu" role="menu" aria-label="Your shops">
+          {shops.map((s) => (
+            <button
+              key={s.slug}
+              type="button"
+              role="menuitemradio"
+              aria-checked={s.slug === current}
+              className="shop-menu-item"
+              disabled={Boolean(busy)}
+              onClick={async () => {
+                if (s.slug === current) return setOpen(false);
+                setBusy(s.slug);
+                await callApi('/api/owner/session', 'POST', { shop: s.slug, paypal: true }).catch(() => {});
+                setOpen(false);
+                setBusy(undefined);
+                router.refresh();
+              }}
+            >
+              <ShopAvatar shop={s} />
+              <span className="stack" style={{ gap: 0, minWidth: 0 }}>
+                <b>{s.name}</b>
+                <span className="small soft">
+                  {busy === s.slug ? 'Opening…' : `${s.pieces} piece${s.pieces === 1 ? '' : 's'} · ${s.status === 'live' ? 'Live' : 'Draft'}`}
+                </span>
+              </span>
+              {s.slug === current && <Icon name="check" size={16} />}
+            </button>
+          ))}
+          <a className="shop-menu-item shop-menu-new" role="menuitem" href="/start">
+            <span className="shop-avatar" aria-hidden="true">
+              <Icon name="plus" size={16} />
+            </span>
+            <b>Open another shop</b>
+          </a>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A notice that came with the address (?published=1, ?payouts=...): shown once, then the address forgets it. */
+export function FlashNotice({ params, className, children }: { params: string[]; className?: string; children: React.ReactNode }) {
+  const [shown, setShown] = useState(true);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (!params.some((p) => url.searchParams.has(p))) return;
+    params.forEach((p) => url.searchParams.delete(p));
+    window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+    // Only the first render's address matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  if (!shown) return null;
+  return (
+    <div className={`flash ${className ?? ''}`} role="status">
+      <span>{children}</span>
+      <button type="button" className="flash-x" aria-label="Dismiss" onClick={() => setShown(false)}>
+        <Icon name="x" size={14} />
+      </button>
+    </div>
   );
 }
 
@@ -409,7 +494,7 @@ export function ConnectPayouts({ again = false }: { again?: boolean }) {
           }
         }}
       >
-        {busy ? 'Opening PayPal...' : again ? 'Connect a different account' : 'Connect your PayPal'}
+        {busy ? 'Opening PayPal...' : again ? 'Connect a different account' : 'Set up payments'}
       </button>
       {error && <p className="error small">{error}</p>}
     </div>

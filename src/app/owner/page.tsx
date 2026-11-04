@@ -3,7 +3,7 @@
 // before, what the shop's agents did with its money, the latest orders and revenue by day, and the whole
 // story in depth (AG Studio): every request and what Guard did, sales by channel, each order's money trail.
 import { actionAmount } from '@/core/guard/describe.ts';
-import { ConnectPayouts, Decision, KeepPrice, PublishButton, ShopName } from '@/app/_components/owner-actions.tsx';
+import { ConnectPayouts, Decision, FlashNotice, KeepPrice, PublishButton, ShopName } from '@/app/_components/owner-actions.tsx';
 import { actionLabel, Icon, Status, Who } from '@/app/_components/ui.tsx';
 import { Ago } from '@/app/_components/time.tsx';
 import { pricesToConfirm } from '@/core/catalog.ts';
@@ -89,8 +89,10 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     if (payouts.enabled && !onTour)
       setup.push({
         key: 'payouts',
-        title: shop.payout ? 'Sales go straight into your PayPal' : 'Get paid into your own PayPal',
-        note: shop.payout ? `PayPal account ${shop.payout.merchantId.slice(-4).padStart(8, '•')}. Sayso never holds your money.` : 'Sales go to the sandbox account until you connect yours. You allow taking payments and refunds, nothing else.',
+        title: shop.payout ? 'Sales go straight into your PayPal' : 'Get paid into your PayPal',
+        note: shop.payout
+          ? `PayPal account ${shop.payout.merchantId.slice(-4).padStart(8, '•')}. Sayso never holds your money.`
+          : "Signing in only told Sayso who you are. This lets your sales land in your PayPal: you allow payments and refunds, nothing else. Until then, they go to Sayso's sandbox account.",
         done: Boolean(shop.payout),
         action: <ConnectPayouts />,
       });
@@ -116,7 +118,11 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         </div>
       </div>
 
-      {outcome && <div className={`callout small ${shop.payout ? 'callout-say' : ''}`}>{outcome}</div>}
+      {outcome && (
+        <FlashNotice params={['payouts', 'published']} className={`callout small ${shop.payout || asked.published === '1' ? 'callout-say' : ''}`}>
+          {outcome}
+        </FlashNotice>
+      )}
 
       <section className="block" aria-labelledby="waiting">
         <div className="block-head">

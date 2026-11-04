@@ -31,5 +31,18 @@ export const signedInSeller = cache(async () => {
   if (!id) return undefined;
   const { sellers } = await ready();
   const [seller, shops] = await Promise.all([sellers.get(id), sellers.shops(id)]);
-  return seller && { id, email: seller.email, name: seller.name, shops: shops.map(({ shop }) => ({ slug: shop.slug, name: shop.name })) };
+  return (
+    seller && {
+      id,
+      email: seller.email,
+      name: seller.name,
+      shops: shops.map(({ shop, products }) => ({
+        slug: shop.slug,
+        name: shop.name,
+        status: (shop.status ?? 'live') === 'live' ? ('live' as const) : ('draft' as const),
+        ...(products.find((p) => p.imageUrl)?.imageUrl ? { image: products.find((p) => p.imageUrl)!.imageUrl } : {}),
+        pieces: products.length,
+      })),
+    }
+  );
 });
