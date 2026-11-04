@@ -18,23 +18,17 @@ export default async function NewFromPhoto({ searchParams }: { searchParams: Pro
   const plain = (minor: number) => toMoney(minor, shop.currency).value;
   const shared = Math.max(0, Math.min(MAX_DRAFT_PHOTOS, Number((await searchParams).shared) || 0));
 
-  const drafts: DraftView[] = (catalog.drafts ?? []).map((d) => ({
-    id: d.id,
-    name: d.name,
-    description: d.description,
-    image: d.imageUrl,
-    variants: d.variants.map((v) => {
-      const s = v.priceToConfirm?.suggested;
-      return {
-        id: v.id,
-        title: v.title,
-        price: v.price > 0 ? plain(v.price) : '',
-        suggested: s ? `Similar items sell for ${money(s.low)} to ${money(s.high)} (${s.listings} listings)` : undefined,
-        inventory: v.inventory,
-        madeToOrder: v.madeToOrderDays !== undefined,
-      };
-    }),
-  }));
+  const drafts: DraftView[] = (catalog.drafts ?? []).map((d) => {
+    const s = d.variants.find((v) => v.priceToConfirm?.suggested)?.priceToConfirm?.suggested;
+    return {
+      id: d.id,
+      name: d.name,
+      description: d.description,
+      image: d.imageUrl,
+      ...(s ? { suggested: `Similar items sell for ${money(s.low)} to ${money(s.high)} (${s.listings} listings).` } : {}),
+      variants: d.variants.map((v) => ({ id: v.id, title: v.title, price: v.price > 0 ? plain(v.price) : '', inventory: v.inventory, madeToOrder: v.madeToOrderDays !== undefined })),
+    };
+  });
 
   return (
     <>
@@ -45,7 +39,7 @@ export default async function NewFromPhoto({ searchParams }: { searchParams: Pro
         <div className="view-head">
           <div>
             <h1>Add from a photo</h1>
-            <p className="sub">Point your phone at it. Sayso writes the listing; you set the price.</p>
+            <p className="sub">Photos in, listings out. Sayso writes them; you check them and set the price.</p>
           </div>
         </div>
       </div>
@@ -55,7 +49,7 @@ export default async function NewFromPhoto({ searchParams }: { searchParams: Pro
           <span className="small">{SHARED_DEMO_READ_ONLY}</span>
         </div>
       ) : (
-        <PhotoDrafter drafts={drafts} sharedCount={shared} />
+        <PhotoDrafter drafts={drafts} sharedCount={shared} currency={shop.currency} />
       )}
     </>
   );

@@ -1,4 +1,4 @@
-// Put a draft on sale: POST { name?, variants: [{ id, price: "34.00", inventory }] }. DELETE discards it.
+// Put a draft on sale: POST { name?, description?, variants: [{ id, price: "34.00", inventory }] }. DELETE discards it.
 // Amounts travel as text so nothing is rounded on the way.
 import { HttpError } from '@/core/errors.ts';
 import { parseAmount } from '@/core/money.ts';
@@ -9,6 +9,7 @@ const RELEASE = {
   type: 'object',
   properties: {
     name: { type: 'string', maxLength: 120 },
+    description: { type: 'string', maxLength: 2000 },
     variants: {
       type: 'array',
       minItems: 1,
@@ -26,7 +27,7 @@ const RELEASE = {
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   return handle(async () => {
     const { shopId } = await requireOwnShop(request);
-    const { name, variants } = await readBody(request, RELEASE);
+    const { name, description, variants } = await readBody(request, RELEASE);
     const { shops } = await ready();
     const { shop } = await shops.get(shopId);
     const priced = variants.map((v) => {
@@ -34,7 +35,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       if (price === undefined) throw new HttpError(400, `"${v.price}" is not a price`);
       return { id: v.id, price, inventory: v.inventory };
     });
-    const catalog = await shops.releaseDraft(shopId, (await params).id, priced, name);
+    const catalog = await shops.releaseDraft(shopId, (await params).id, priced, name, description);
     return Response.json({ ok: true, products: catalog.products.length });
   });
 }

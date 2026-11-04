@@ -11,7 +11,7 @@ import { findVariant, isLive, pricesToConfirm, type Catalog, type PriceSuggestio
 import { fromLlmError, HttpError, notFound } from './errors.ts';
 import type { Links } from './links.ts';
 import type { MarketPrices } from './market.ts';
-import { checkPhotos, MAX_DRAFT_PHOTOS, mediaIdOf, photoFromDataUrl, type MediaStore } from './media.ts';
+import { checkPhotos, MAX_DRAFT_PHOTOS, mediaIdOf, photoFromDataUrl, type MediaStore, type StoredPhoto } from './media.ts';
 import { formatMoney, parseAmount } from './money.ts';
 import type { PayPalClient } from './paypal/client.ts';
 import { createCatalogProduct } from './paypal/products.ts';
@@ -60,6 +60,15 @@ export interface DraftEdits {
 }
 
 const MAX_STOCK = 100_000;
+
+/** What an owner (or their agent) may change on a product that is on sale. Amounts as text, like "24.50". */
+export interface ProductEdits {
+  name?: string;
+  description?: string;
+  variants?: { id: string; title?: string; price?: string; inventory?: number }[];
+  /** A new photo, as a data URL (owner only). */
+  photo?: string;
+}
 
 export class Shops {
   private readonly deps: ShopsDeps;
@@ -216,6 +225,109 @@ export class Shops {
   }
 
   /**
+   * The owner (or their agent) edits a product on sale: name, description, each option's name, price
+   * and stock, and, for the owner, its photo. Everything is checked before anything changes.
+   */
+  async editProduct(shopId: string, productId: string, edits: ProductEdits): Promise<Catalog> {
+    const catalog = await this.get(shopId);
+    const product = catalog.products.find((p) => p.id === productId);
+    if (!product) throw notFound(`Product ${productId}`);
+    const currency = catalog.shop.currency;
+    const name = edits.name?.trim().replace(/\s+/g, ' ');
+    if (name !== undefined && (name.length < 2 || name.length > 120)) throw new HttpError(400, 'A name is 2 to 120 characters');
+    if (edits.description !== undefined && edits.description.length > 2_000) throw new HttpError(400, 'A description is up to 2,000 characters');
+    const prices = new Map<string, number>();
+    for (const v of edits.variants ?? []) {
+      const variant = product.variants.find((x) => x.id === v.id);
+      if (!variant) throw notFound(`Option ${v.id}`);
+      if (v.price !== undefined) {
+        const minor = parseAmount(v.price, currency);
+        if (!minor || minor <= 0) throw new HttpError(400, `${product.name} (${variant.title}): write a price like 24.50`);
+        prices.set(variant.id, minor);
+      }
+      if (v.inventory !== undefined && (!Number.isSafeInteger(v.inventory) || v.inventory < 0 || v.inventory > MAX_STOCK)) {
+        throw new HttpError(400, `${product.name} (${variant.title}): stock is a whole number, 0 or more`);
+      }
+      if (v.title !== undefined && (v.title.trim().length < 1 || v.title.length > 80)) throw new HttpError(400, 'An option name is 1 to 80 characters');
+    }
+    let photo: StoredPhoto | undefined;
+    if (edits.photo !== undefined) {
+      photo = photoFromDataUrl(checkPhotos([edits.photo], 1)[0], shopId);
+      if (!photo || !this.deps.media) throw new HttpError(400, 'That photo could not be kept');
+      await this.deps.media.put(photo);
+    }
+    const old = product.imageUrl;
+    const updated = await this.deps.catalogs.modify(shopId, (c) => {
+      const p = c.products.find((x) => x.id === productId);
+      if (!p) return false;
+      if (name) p.name = name;
+      if (edits.description !== undefined) p.description = edits.description.trim();
+      if (photo) p.imageUrl = this.deps.links.media(photo.id);
+      for (const v of edits.variants ?? []) {
+        const variant = p.variants.find((x) => x.id === v.id);
+        if (!variant) continue;
+        if (v.title !== undefined) variant.title = v.title.trim();
+        if (prices.has(variant.id)) {
+          variant.price = prices.get(variant.id)!;
+          delete variant.priceToConfirm;
+        }
+        if (v.inventory !== undefined) variant.inventory = v.inventory;
+      }
+      return true;
+    });
+    if (!updated) throw notFound(`Product ${productId}`);
+    if (photo && old && !updated.products.some((p) => p.imageUrl === old)) await this.forgetPhotos(shopId, [{ ...product, imageUrl: old }]);
+    return updated;
+  }
+
+  /** Owner only. Takes a product off sale for good, with its photo. A shop keeps at least one product. */
+  async removeProduct(shopId: string, productId: string): Promise<Catalog> {
+    const last = 'A shop keeps at least one product; add another before removing this one';
+    if ((await this.get(shopId)).products.length <= 1) throw new HttpError(409, last);
+    let removed: Product | undefined;
+    const updated = await this.deps.catalogs.modify(shopId, (c) => {
+      removed = c.products.find((p) => p.id === productId);
+      if (!removed || c.products.length <= 1) return false;
+      c.products = c.products.filter((p) => p.id !== productId);
+      return true;
+    });
+    if (!updated || !removed) throw notFound(`Product ${productId}`);
+    if (removed.imageUrl && !updated.products.some((p) => p.imageUrl === removed!.imageUrl)) await this.forgetPhotos(shopId, [removed]);
+    return updated;
+  }
+
+  /** Owner only. Shipping prices and the free-shipping threshold of each method, as amounts like "8.95". */
+  async editShipping(shopId: string, edits: { id: string; price?: string; freeAbove?: string | null }[]): Promise<Catalog> {
+    const catalog = await this.get(shopId);
+    const currency = catalog.shop.currency;
+    const amount = (value: string, what: string, zeroOk: boolean) => {
+      const minor = parseAmount(value, currency);
+      if (minor === undefined || minor < 0 || (!zeroOk && minor === 0)) throw new HttpError(400, `${what}: write an amount like 8.95`);
+      return minor;
+    };
+    const changes = new Map<string, { price?: number; freeAbove?: number | null }>();
+    for (const e of edits) {
+      const rule = catalog.shop.shipping.find((s) => s.id === e.id);
+      if (!rule) throw notFound(`Shipping method ${e.id}`);
+      changes.set(rule.id, {
+        ...(e.price !== undefined ? { price: amount(e.price, rule.name, true) } : {}),
+        ...(e.freeAbove !== undefined ? { freeAbove: e.freeAbove === null || e.freeAbove.trim() === '' ? null : amount(e.freeAbove, 'Free shipping above', false) } : {}),
+      });
+    }
+    const updated = await this.deps.catalogs.modify(shopId, (c) => {
+      for (const rule of c.shop.shipping) {
+        const change = changes.get(rule.id);
+        if (!change) continue;
+        if (change.price !== undefined) rule.price = change.price;
+        if (change.freeAbove === null) delete rule.freeAbove;
+        else if (change.freeAbove !== undefined) rule.freeAbove = change.freeAbove;
+      }
+      return true;
+    });
+    return updated ?? catalog;
+  }
+
+  /**
    * Photos from the owner's phone -> draft products for a shop that already exists: named, described,
    * with the photo and a market price suggestion. They wait in `drafts` until the owner puts them on sale.
    */
@@ -258,7 +370,7 @@ export class Shops {
    * Put a draft on sale at the owner's prices and stock (minor units, per variant). On a live shop it is
    * registered with PayPal's catalog like every other product.
    */
-  async releaseDraft(shopId: string, productId: string, variants: { id: string; price: number; inventory: number }[], name?: string): Promise<Catalog> {
+  async releaseDraft(shopId: string, productId: string, variants: { id: string; price: number; inventory: number }[], name?: string, description?: string): Promise<Catalog> {
     for (const v of variants) {
       if (!Number.isSafeInteger(v.price) || v.price <= 0) throw new HttpError(400, 'Every price must be a positive amount');
       if (!Number.isSafeInteger(v.inventory) || v.inventory < 0) throw new HttpError(400, 'Stock must be a whole number, 0 or more');
@@ -277,6 +389,7 @@ export class Shops {
         delete variant.priceToConfirm;
       }
       if (name?.trim()) current.name = name.trim().slice(0, 120);
+      if (description !== undefined) current.description = description.trim().slice(0, 2_000);
       catalog.drafts = catalog.drafts!.filter((p) => p.id !== productId);
       catalog.products.push(current);
       return true;

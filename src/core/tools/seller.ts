@@ -91,6 +91,26 @@ export const sellerTools: Tool[] = [
     },
   },
   {
+    name: 'update_product',
+    title: 'Rename or describe a product',
+    description: "Change a product's name and/or description (the listing buyers' assistants read). For price and stock use update_variant.",
+    side: 'seller',
+    annotations: { idempotentHint: true },
+    inputSchema: {
+      type: 'object',
+      properties: { product_id: { type: 'string', maxLength: 80 }, name: { type: 'string', minLength: 2, maxLength: 120 }, description: { type: 'string', maxLength: 2000 } },
+      required: ['product_id'],
+    },
+    async run(input, ctx) {
+      if (input.name === undefined && input.description === undefined) throw new ToolError('Pass name, description or both');
+      const catalog = await ctx.services.shops.editProduct(shop(ctx), String(input.product_id), {
+        name: input.name as string | undefined,
+        description: input.description as string | undefined,
+      });
+      return catalogView(catalog).products.find((p) => p.id === input.product_id);
+    },
+  },
+  {
     name: 'update_variant',
     title: 'Update price or stock',
     description: 'Set the price and/or stock of one variant.',

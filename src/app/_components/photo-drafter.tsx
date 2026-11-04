@@ -1,13 +1,16 @@
 'use client';
 
-// "Add from a photo": snap or pick product photos (or share them to the installed app on Android),
-// Sayso drafts each product with a market price, and it goes on sale once the owner sets the price.
+// "Add from a photo", in the same three steps as Start selling: drop or shoot photos (or share them to the
+// installed app on Android), Sayso drafts each product with what similar items sell for, and the owner
+// checks the cards and puts each one on sale at their own price.
 
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { MAX_DRAFT_PHOTOS } from '@/core/photo-limits.ts';
 import { callApi } from './api.ts';
+import { currencySymbol } from './catalog-editor.tsx';
 import { shrink } from './images.ts';
+import { PhotoDrop } from './photo-drop.tsx';
 import { Icon } from './ui.tsx';
 import { useAction } from './use-action.ts';
 
@@ -19,22 +22,17 @@ export interface DraftView {
   name: string;
   description: string;
   image?: string;
-  variants: { id: string; title: string; price: string; suggested?: string; inventory: number; madeToOrder: boolean }[];
+  /** "Similar items sell for $30 to $42 (12 listings)", once for the product. */
+  suggested?: string;
+  variants: { id: string; title: string; price: string; inventory: number; madeToOrder: boolean }[];
 }
 
-export function PhotoDrafter({ drafts, sharedCount }: { drafts: DraftView[]; sharedCount: number }) {
+export function PhotoDrafter({ drafts, sharedCount, currency }: { drafts: DraftView[]; sharedCount: number; currency: string }) {
   const router = useRouter();
-  const camera = useRef<HTMLInputElement>(null);
-  const gallery = useRef<HTMLInputElement>(null);
   const [photos, setPhotos] = useState<string[]>([]);
   const [note, setNote] = useState('');
   const { busy, error, setError, run } = useAction();
-  const full = photos.length >= MAX_DRAFT_PHOTOS;
-
-  const add = useCallback(async (files: Blob[]) => {
-    const next = await Promise.all(files.slice(0, MAX_DRAFT_PHOTOS).map((f) => shrink(f)));
-    setPhotos((now) => [...now, ...next].slice(0, MAX_DRAFT_PHOTOS));
-  }, []);
+  const step = busy ? 2 : drafts.length ? 2 : 1;
 
   // Photos shared to the installed app wait in the service worker's cache.
   useEffect(() => {
@@ -44,9 +42,10 @@ export function PhotoDrafter({ drafts, sharedCount }: { drafts: DraftView[]; sha
       const keys = await cache.keys();
       const blobs = await Promise.all(keys.map(async (k) => (await cache.match(k))!.blob()));
       await Promise.all(keys.map((k) => cache.delete(k)));
-      await add(blobs.filter((b) => b.type.startsWith('image/')));
+      const read = await Promise.all(blobs.filter((b) => b.type.startsWith('image/')).map((b) => shrink(b)));
+      setPhotos((now) => [...now, ...read].slice(0, MAX_DRAFT_PHOTOS));
     })().catch(() => setError('Could not read the shared photos; pick them here instead.'));
-  }, [sharedCount, add, setError]);
+  }, [sharedCount, setError]);
 
   const draft = () =>
     run(async () => {
@@ -57,47 +56,81 @@ export function PhotoDrafter({ drafts, sharedCount }: { drafts: DraftView[]; sha
     });
 
   return (
-    <div className="stack" style={{ gap: 'var(--s6)' }}>
-      <section className="panel stack" style={{ gap: 14 }} aria-label="New photos">
-        <input ref={camera} type="file" accept="image/*" capture="environment" hidden onChange={(e) => e.target.files && void add([...e.target.files])} />
-        <input ref={gallery} type="file" accept="image/*" multiple hidden onChange={(e) => e.target.files && void add([...e.target.files])} />
-        <div className="row" style={{ gap: 10, flexWrap: 'wrap' }}>
-          <button className="btn btn-primary btn-big" disabled={Boolean(busy) || full} onClick={() => camera.current?.click()}>
-            <Icon name="camera" size={20} /> Take a photo
-          </button>
-          <button className="btn btn-big" disabled={Boolean(busy) || full} onClick={() => gallery.current?.click()}>
-            Choose photos
-          </button>
-        </div>
-        {photos.length > 0 && (
-          <ul className="shots">
-            {photos.map((p, i) => (
-              <li key={i}>
-                <img src={p} alt={`Photo ${i + 1}`} />
-                <button className="shots-x" aria-label={`Remove photo ${i + 1}`} onClick={() => setPhotos((now) => now.filter((_, j) => j !== i))}>
-                  <Icon name="x" size={14} />
-                </button>
+    <div className="sell">
+      <ol className="sell-steps">
+        {[
+          { title: 'Upload photos', who: 'You' },
+          { title: 'Review the draft', who: busy ? 'Sayso is drafting…' : 'AI drafts, you check' },
+          { title: 'Put it on sale', who: 'You confirm the price' },
+        ].map((s, i) => {
+          const n = i + 1;
+          const state = n < step ? 'done' : n === step ? 'now' : 'later';
+          return (
+            <li key={s.title} className={`sell-step sell-step-${state}`} aria-current={state === 'now' ? 'step' : undefined}>
+              <span className="sell-step-n" aria-hidden="true">
+                {state === 'done' ? <Icon name="check" size={14} /> : n}
+              </span>
+              <span className="stack" style={{ gap: 0, minWidth: 0 }}>
+                <b>{s.title}</b>
+                <span className="small soft">{s.who}</span>
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+
+      {busy ? (
+        <section className="sell-drafting" aria-live="polite">
+          <p className="soft">Naming your pieces and looking up what similar items sell for…</p>
+          <ul className="sell-cards">
+            {photos.map((src, i) => (
+              <li key={i} className="sell-card sell-card-loading">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <div className="sell-card-photo">
+                  <img src={src} alt="" />
+                </div>
+                <div className="sell-card-body">
+                  <span className="skeleton" />
+                  <span className="skeleton" />
+                  <span className="skeleton" style={{ width: '60%' }} />
+                </div>
               </li>
             ))}
           </ul>
-        )}
-        <div className="field">
-          <label htmlFor="draft-note">Anything a photo can’t show (optional)</label>
-          <input id="draft-note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} placeholder="Stoneware, 12 oz, dishwasher safe. 4 of each." />
-        </div>
-        <button className="btn btn-primary" disabled={Boolean(busy) || photos.length === 0} onClick={() => void draft()}>
-          {busy ? 'Sayso is looking at your photos...' : `Draft ${photos.length > 1 ? 'products' : 'a product'} from ${photos.length || 'your'} photo${photos.length === 1 ? '' : 's'}`}
-        </button>
-        {error && <p className="error small">{error}</p>}
-        <p className="small muted">Sayso names and describes what it sees and looks up what similar items sell for. Nothing goes on sale until you set the price.</p>
-      </section>
+        </section>
+      ) : (
+        <form
+          className="sell-upload"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void draft();
+          }}
+        >
+          <PhotoDrop photos={photos} setPhotos={setPhotos} max={MAX_DRAFT_PHOTOS} />
+          <div className="sell-details">
+            <div className="field">
+              <label htmlFor="draft-note">Anything a photo can&apos;t show (optional)</label>
+              <textarea id="draft-note" rows={3} value={note} onChange={(e) => setNote(e.target.value)} maxLength={1000} placeholder="Stoneware, 12 oz, dishwasher safe. 4 of each." />
+            </div>
+            <button className="btn btn-primary btn-large" disabled={photos.length === 0}>
+              Draft {photos.length > 1 ? 'products' : 'a product'}
+            </button>
+            {error && <p className="small error">{error}</p>}
+            <p className="small muted">Nothing goes on sale until you check it and set the price.</p>
+          </div>
+        </form>
+      )}
 
       {drafts.length > 0 && (
-        <section className="stack" style={{ gap: 'var(--s4)' }} aria-labelledby="drafts">
-          <h2 id="drafts">Waiting for your price</h2>
-          <ul className="photo-drafts">
+        <section className="sell-review" aria-labelledby="drafts">
+          <div className="sell-review-head">
+            <h2 id="drafts" className="h3">
+              Check {drafts.length === 1 ? 'it' : `these ${drafts.length}`} and put {drafts.length === 1 ? 'it' : 'them'} on sale
+            </h2>
+          </div>
+          <ul className="sell-cards">
             {drafts.map((d) => (
-              <DraftCard key={d.id} draft={d} />
+              <DraftCard key={d.id} draft={d} currency={currency} />
             ))}
           </ul>
         </section>
@@ -106,16 +139,19 @@ export function PhotoDrafter({ drafts, sharedCount }: { drafts: DraftView[]; sha
   );
 }
 
-function DraftCard({ draft }: { draft: DraftView }) {
+function DraftCard({ draft, currency }: { draft: DraftView; currency: string }) {
   const router = useRouter();
+  const symbol = currencySymbol(currency);
   const [name, setName] = useState(draft.name);
-  const [variants, setVariants] = useState(draft.variants.map((v) => ({ id: v.id, price: v.price, inventory: String(v.inventory) })));
+  const [description, setDescription] = useState(draft.description);
+  const [variants, setVariants] = useState(draft.variants.map((v) => ({ id: v.id, title: v.title, price: v.price, inventory: v.inventory })));
   const { busy, error, run } = useAction();
   const edit = (i: number, patch: Partial<(typeof variants)[number]>) => setVariants((now) => now.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  const priced = variants.every((v) => v.price.trim());
 
   const sell = () =>
     run(async () => {
-      await callApi(`/api/owner/drafts/${draft.id}`, 'POST', { name, variants: variants.map((v) => ({ id: v.id, price: v.price, inventory: Number(v.inventory) })) });
+      await callApi(`/api/owner/drafts/${draft.id}`, 'POST', { name, description, variants: variants.map((v) => ({ id: v.id, price: v.price, inventory: v.inventory })) });
       router.push(`/owner/catalog?added=${encodeURIComponent(name)}`);
     }, 'sell');
 
@@ -126,34 +162,34 @@ function DraftCard({ draft }: { draft: DraftView }) {
     }, 'discard');
 
   return (
-    <li className="photo-draft">
-      {draft.image ? <img src={draft.image} alt={draft.name} className="draft-shot" /> : <div className="draft-shot" aria-hidden="true" />}
-      <div className="stack" style={{ gap: 10, minWidth: 0 }}>
-        <div className="field">
-          <label htmlFor={`name-${draft.id}`}>Name</label>
-          <input id={`name-${draft.id}`} value={name} onChange={(e) => setName(e.target.value)} maxLength={120} />
-        </div>
-        <p className="small soft">{draft.description}</p>
-        {draft.variants.map((v, i) => (
-          <div key={v.id} className="photo-draft-variant">
-            {draft.variants.length > 1 && <b className="small">{v.title}</b>}
-            <div className="field">
-              <label htmlFor={`price-${v.id}`}>Price</label>
-              <input id={`price-${v.id}`} inputMode="decimal" value={variants[i].price} onChange={(e) => edit(i, { price: e.target.value })} />
-            </div>
-            <div className="field">
-              <label htmlFor={`stock-${v.id}`}>{v.madeToOrder ? 'In stock now' : 'Stock'}</label>
-              <input id={`stock-${v.id}`} inputMode="numeric" value={variants[i].inventory} onChange={(e) => edit(i, { inventory: e.target.value.replace(/\D/g, '') })} />
-            </div>
-            {v.suggested && <span className="small muted photo-draft-hint">{v.suggested}</span>}
-          </div>
-        ))}
-        <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
-          <button className="btn btn-primary" disabled={Boolean(busy)} onClick={() => void sell()}>
-            {busy === 'sell' ? 'Putting it on sale...' : 'Put it on sale'}
+    <li className="sell-card">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <div className="sell-card-photo">{draft.image && <img src={draft.image} alt="" />}</div>
+      <div className="sell-card-body">
+        <input className="sell-card-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} aria-label="Name" />
+        <textarea className="sell-card-desc" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} maxLength={2000} aria-label={`Description of ${name}`} />
+        <ul className="sell-variants">
+          {draft.variants.map((v, i) => (
+            <li key={v.id} className="sell-variant">
+              {draft.variants.length > 1 || v.title !== 'Default' ? <span className="sell-vtitle small">{v.title}</span> : <span className="sell-vtitle small soft">Price and stock</span>}
+              <label className={variants[i].price.trim() ? 'sell-price' : 'sell-price sell-price-waiting'}>
+                <span aria-hidden="true">{symbol}</span>
+                <input value={variants[i].price} onChange={(e) => edit(i, { price: e.target.value })} inputMode="decimal" maxLength={12} aria-label={`Price of ${v.title}`} placeholder="0.00" />
+              </label>
+              <label className="sell-qty">
+                <input type="number" min={0} max={100000} value={variants[i].inventory} onChange={(e) => edit(i, { inventory: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} aria-label={`Stock of ${v.title}`} />
+                <span>{v.madeToOrder ? 'ready now' : 'in stock'}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+        {draft.suggested && <div className="sell-suggest small">{draft.suggested}</div>}
+        <div className="sell-card-actions">
+          <button type="button" className="link-button small sell-remove" disabled={Boolean(busy)} onClick={() => void discard()}>
+            {busy === 'discard' ? 'Discarding…' : 'Discard'}
           </button>
-          <button className="btn btn-quiet" disabled={Boolean(busy)} onClick={() => void discard()}>
-            Discard
+          <button type="button" className="btn btn-primary btn-small" style={{ marginLeft: 'auto' }} disabled={Boolean(busy) || !priced} onClick={() => void sell()}>
+            {busy === 'sell' ? 'Putting it on sale…' : 'Put it on sale'}
           </button>
         </div>
         {error && <p className="error small">{error}</p>}

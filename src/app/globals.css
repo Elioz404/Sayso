@@ -1133,3 +1133,21 @@ span.sell-qty { border-color: transparent; background: transparent; padding: 0; 
 .assistant-box input { flex: 1; min-width: 0; }
 .assistant-new { align-self: flex-start; }
 @media (max-width: 640px) { .assistant-log { padding: var(--s4); min-height: 240px; max-height: calc(100dvh - 330px); } }
+/* ---------- the owner's catalog: tabs, product cards edited in place, pages ---------- */
+.tabs { display: flex; gap: var(--s1); border-bottom: 1px solid var(--rule); margin-bottom: calc(var(--s5) - var(--s7)); }
+.tabs a { display: inline-flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s3) var(--s3); color: var(--ink-3); font-weight: 600; text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tabs a:hover { color: var(--ink); }
+.tabs a[aria-current='page'] { color: var(--ink); border-bottom-color: var(--say); }
+.tabs-count { font-size: var(--t-xs); color: var(--ink-3); font-weight: 600; }
+.sell-card-photo { position: relative; }
+.sell-card-photo-change { position: absolute; inset: auto 0 0; padding: 4px; text-align: center; background: rgb(20 16 13 / 0.62); color: #fff; cursor: pointer; opacity: 0; transition: opacity 0.15s; }
+.sell-card-photo:hover .sell-card-photo-change, .sell-card-photo-change:focus-within { opacity: 1; }
+@media (hover: none) { .sell-card-photo-change { opacity: 1; } }
+.sell-card-actions { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; padding-top: var(--s2); border-top: 1px solid var(--rule); }
+.sell-card-actions .sell-remove { align-self: center; }
+.sell-sold { grid-column: 1 / -1; }
+.sell-qty-out { border-color: color-mix(in srgb, var(--stop) 45%, var(--field)); }
+.pager { display: flex; justify-content: center; gap: var(--s1); flex-wrap: wrap; }
+.pager a { min-width: 36px; height: 36px; padding: 0 var(--s2); display: inline-grid; place-items: center; border: 1px solid var(--rule); border-radius: var(--radius-sm); color: var(--ink-2); text-decoration: none; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pager a:hover { border-color: var(--ink-3); color: var(--ink); }
+.pager a[aria-current='page'] { background: var(--say); border-color: var(--say); color: var(--say-ink); }

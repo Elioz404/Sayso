@@ -11,7 +11,7 @@ import type { DraftView } from '@/core/catalog-view.ts';
 import { MAX_ONBOARDING_PHOTOS } from '@/core/photo-limits.ts';
 import { callApi } from './api.ts';
 import { CopyField } from './client-ui.tsx';
-import { shrink } from './images.ts';
+import { PhotoDrop } from './photo-drop.tsx';
 import { Icon } from './ui.tsx';
 
 interface Created {
@@ -22,9 +22,6 @@ interface Created {
   /** Only where owners sign in with a secret instead of PayPal. */
   owner_secret?: string;
 }
-
-/** Pictures of real-looking pieces, for trying the flow without photos of your own. */
-const SAMPLES = ['/photos/mugs.webp', '/photos/bowl.webp', '/photos/vase.webp'];
 
 const EXAMPLE = `Hand-thrown mugs, 12 oz, $34. Sage green (6 left) and speckled white (1).
 Ramen bowls $48, 3 left. Custom bud vases $62, made to order in about 10 days.
@@ -107,18 +104,8 @@ function Steps({ step, drafting, paypalLogin }: { step: 1 | 2; drafting: boolean
 
 /** Step 1: the photos, the shop's name and where it ships from; notes only if they want. */
 function Upload({ photos, setPhotos, onDraft }: { photos: string[]; setPhotos: (p: string[]) => void; onDraft: (body: Record<string, unknown>) => Promise<void> }) {
-  const [over, setOver] = useState(false);
-  const [unread, setUnread] = useState(0);
   const [text, setText] = useState('');
   const [error, setError] = useState<string>();
-  const room = MAX_ONBOARDING_PHOTOS - photos.length;
-
-  async function add(files: File[]) {
-    const images = files.filter((f) => f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name)).slice(0, room);
-    const read = await Promise.all(images.map((f) => shrink(f).catch(() => undefined)));
-    setUnread(read.filter((r) => !r).length);
-    setPhotos([...photos, ...read.filter((r): r is string => Boolean(r))]);
-  }
 
   return (
     <form
@@ -135,76 +122,7 @@ function Upload({ photos, setPhotos, onDraft }: { photos: string[]; setPhotos: (
         }).catch((err: Error) => setError(err.message));
       }}
     >
-      <div className="sell-photos">
-        {photos.length === 0 ? (
-          <label
-            className={`sell-drop${over ? ' sell-drop-over' : ''}`}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setOver(true);
-            }}
-            onDragLeave={() => setOver(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setOver(false);
-              void add([...e.dataTransfer.files]);
-            }}
-          >
-            <span className="sell-drop-icon">
-              <Icon name="camera" size={28} />
-            </span>
-            <b>Drop photos of your pieces</b>
-            <span className="small soft">or tap to choose · up to {MAX_ONBOARDING_PHOTOS} · JPEG, PNG, WebP or HEIC</span>
-            <input type="file" accept="image/*,.heic,.heif" multiple className="sr-only" onChange={(e) => void add([...(e.target.files ?? [])])} />
-          </label>
-        ) : (
-          <ul
-            className={`sell-thumbs${over ? ' sell-drop-over' : ''}`}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setOver(true);
-            }}
-            onDragLeave={() => setOver(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setOver(false);
-              void add([...e.dataTransfer.files]);
-            }}
-          >
-            {photos.map((src, i) => (
-              <li key={i}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={src} alt={`Photo ${i + 1}`} />
-                <button type="button" className="sell-thumb-x" aria-label={`Remove photo ${i + 1}`} onClick={() => setPhotos(photos.filter((_, k) => k !== i))}>
-                  <Icon name="x" size={14} />
-                </button>
-              </li>
-            ))}
-            {room > 0 && (
-              <li>
-                <label className="sell-add">
-                  <Icon name="plus" size={22} />
-                  <span className="small">Add more</span>
-                  <input type="file" accept="image/*,.heic,.heif" multiple className="sr-only" onChange={(e) => void add([...(e.target.files ?? [])])} />
-                </label>
-              </li>
-            )}
-          </ul>
-        )}
-        {photos.length === 0 && (
-          <button
-            type="button"
-            className="link-button small sell-samples"
-            onClick={async () => {
-              const files = await Promise.all(SAMPLES.map(async (src) => new File([await (await fetch(src)).blob()], src.split('/').pop()!, { type: 'image/webp' })));
-              await add(files);
-            }}
-          >
-            No photos at hand? Use sample photos
-          </button>
-        )}
-        {unread > 0 &&<p className="small error">{unread === 1 ? "One photo couldn't be read here" : `${unread} photos couldn't be read here`}; try a JPEG or PNG.</p>}
-      </div>
+      <PhotoDrop photos={photos} setPhotos={setPhotos} max={MAX_ONBOARDING_PHOTOS} samples />
 
       <div className="sell-details">
         <div className="field">
