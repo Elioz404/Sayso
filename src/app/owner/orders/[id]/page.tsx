@@ -1,6 +1,7 @@
 // One order: what was bought, where it ships, and every money movement on it, in order.
 import type { Metadata } from 'next';
 import { CopyField } from '@/app/_components/client-ui.tsx';
+import { LabelScanner } from '@/app/_components/phone.tsx';
 import { When } from '@/app/_components/time.tsx';
 import { actionLabel, Icon, Status, toneOf } from '@/app/_components/ui.tsx';
 import { HttpError } from '@/core/errors.ts';
@@ -102,6 +103,14 @@ export default async function OrderDetail({ params }: { params: Promise<{ id: st
             </table>
           </div>
         </section>
+
+        {order.status === 'paid' && !order.tracking && (
+          <section className="block block-ship" aria-labelledby="ship">
+            <h2 id="ship">Shipped it?</h2>
+            <p className="small soft">Snap the label: Sayso reads the carrier and tracking number, you check them, and PayPal shows the buyer where the parcel is.</p>
+            <LabelScanner orderId={order.id} />
+          </section>
+        )}
 
         <section className="block" aria-labelledby="buyer">
           <h2 id="buyer">Buyer and delivery</h2>

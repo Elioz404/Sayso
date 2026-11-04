@@ -20,12 +20,14 @@ import { links, type Links } from '@/core/links.ts';
 import { MarketPrices } from '@/core/market.ts';
 import { MemoryMediaStore, type MediaStore } from '@/core/media.ts';
 import { Orders } from '@/core/orders.ts';
+import { MemoryPasskeyStore, Passkeys } from '@/core/passkeys.ts';
 import { Payouts } from '@/core/payouts.ts';
 import { PayPalClient } from '@/core/paypal/client.ts';
 import { MemoryJobStore, Production, type JobStore } from '@/core/production.ts';
 import { captureExecutor, refundExecutor, voidExecutor } from '@/core/paypal/executors.ts';
 import { invoiceExecutor } from '@/core/paypal/invoices.ts';
 import { policyLookup } from '@/core/policies.ts';
+import { MemoryPushStore, paidOrderMessage, Push, sayNeededMessage } from '@/core/push.ts';
 import { SaySo } from '@/core/say-so.ts';
 import { MemorySellerStore, Sellers } from '@/core/sellers.ts';
 import { MemoryTourStore, Tours } from '@/core/tour.ts';
@@ -34,7 +36,8 @@ import { MemoryCartStore, MemoryCatalogStore, type CartStore, type CatalogStore 
 import type { ToolServices } from '@/core/tools/registry.ts';
 import { MemoryWalletStore, walletCheckoutExecutor, Wallets, type WalletStore } from '@/core/wallets.ts';
 import { notifyOwner } from './notify.ts';
-import { Db, PgAccessStore, PgCartStore, PgCatalogStore, PgGuardStore, PgJobStore, PgMediaStore, PgPolicyStore, PgSellerStore, PgTourStore, PgWalletStore } from './pg-stores.ts';
+import { Db, PgAccessStore, PgCartStore, PgCatalogStore, PgGuardStore, PgJobStore, PgMediaStore, PgPasskeyStore, PgPolicyStore, PgPushStore, PgSellerStore, PgTourStore, PgWalletStore } from './pg-stores.ts';
+import { vapidFrom, webPushSender } from './push-sender.ts';
 
 export interface Context {
   carts: CartStore;
@@ -61,6 +64,12 @@ export interface Context {
   market?: MarketPrices;
   tools: ToolServices;
   links: Links;
+  /** The owner's passkeys; once a shop has one, approvals are signed with it. */
+  passkeys: Passkeys;
+  /** Notifications on the owner's phone. */
+  push: Push;
+  /** What browsers subscribe to push with (the VAPID public key). */
+  pushKey: string;
 }
 
 const globalForSayso = globalThis as unknown as { sayso?: Promise<Context> };
@@ -101,11 +110,15 @@ async function create(): Promise<Context> {
   const accessStore: AccessStore = db ? new PgAccessStore(db) : new MemoryAccessStore();
   const walletStore: WalletStore = db ? new PgWalletStore(db) : new MemoryWalletStore();
   const jobs: JobStore = db ? new PgJobStore(db) : new MemoryJobStore();
-  const access = new Access(accessStore, sessionSecret());
+  const secret = sessionSecret();
+  const access = new Access(accessStore, secret);
   const ai = modelFromEnv();
   const model = ai?.model;
   const site = siteLinks();
   const policyFor = policyLookup(policies, catalogs);
+  const vapid = vapidFrom(secret);
+  const push = new Push({ store: db ? new PgPushStore(db) : new MemoryPushStore(), send: webPushSender(vapid, site.base) });
+  const passkeys = new Passkeys({ store: db ? new PgPasskeyStore(db) : new MemoryPasskeyStore(), access, origin: new URL(site.base).origin });
   const payouts = new Payouts({ paypal, catalogs, links: site, partnerMerchantId: process.env.PAYPAL_PARTNER_MERCHANT_ID || undefined });
 
   const guard = new Guard({
@@ -118,7 +131,14 @@ async function create(): Promise<Context> {
       'invoice.send': invoiceExecutor(paypal),
     },
     policyFor,
-    onApprovalNeeded: (record) => notifyOwner(record, site.approve(record.id)),
+    onApprovalNeeded: async (record) => {
+      await notifyOwner(record, site.approve(record.id));
+      void push.notify(record.action.ownerId, sayNeededMessage(record, site)); // never keeps the agent waiting
+    },
+  });
+  guard.subscribe(async (record) => {
+    const message = paidOrderMessage(record, site);
+    if (message) void push.notify(record.action.ownerId, message);
   });
   const commerce = new Commerce({ paypal, carts, catalogs, guard, links: site });
   // A buyer's saved-PayPal purchase goes through the buyer's own Guard (their limits) and needs Commerce.
@@ -130,7 +150,7 @@ async function create(): Promise<Context> {
   const shops = new Shops({ catalogs, access, paypal, model, links: site, media, market });
   const sellers = new Sellers({ store: db ? new PgSellerStore(db) : new MemorySellerStore(), catalogs });
   const orders = new Orders({ carts, guard, paypal });
-  const saySo = new SaySo({ guard, policyFor, shops, model });
+  const saySo = new SaySo({ guard, policyFor, shops, model, passkeys });
   const invoicing = new Invoicing({ guard, carts, shops, paypal });
   const production = new Production({ carts, catalogs, guard, invoicing, jobs });
   const wallets = new Wallets({ store: walletStore, policies, guard, commerce, paypal, links: site });
@@ -154,7 +174,7 @@ async function create(): Promise<Context> {
 
   await seedDemo(catalogs, policies, access);
   const paypalLogin = paypalLoginEnabled();
-  return { carts, catalogs, access, model, aiBudget: ai?.budget, guard, commerce, shops, media, sellers, payouts, paypal, paypalLogin, orders, saySo, invoicing, production, tours, wallets, market, tools, links: site };
+  return { carts, catalogs, access, model, aiBudget: ai?.budget, guard, commerce, shops, media, sellers, payouts, paypal, paypalLogin, orders, saySo, invoicing, production, tours, wallets, market, tools, links: site, passkeys, push, pushKey: vapid.publicKey };
 }
 
 function sessionSecret(): string {

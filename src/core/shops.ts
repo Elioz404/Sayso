@@ -7,7 +7,7 @@
 import type { Access } from './access.ts';
 import { draftCatalog, type OnboardingInput } from './ai/onboarding.ts';
 import type { ChatModel } from './ai/llm.ts';
-import { findVariant, pricesToConfirm, type Catalog, type PriceSuggestion } from './catalog.ts';
+import { findVariant, pricesToConfirm, type Catalog, type PriceSuggestion, type Product } from './catalog.ts';
 import { fromLlmError, HttpError, notFound } from './errors.ts';
 import type { Links } from './links.ts';
 import type { MarketPrices } from './market.ts';
@@ -31,6 +31,8 @@ export interface ShopsDeps {
 
 /** Products whose missing prices are looked up in the market, per new shop (each lookup costs a search). */
 const SUGGESTED_PRODUCTS = 6;
+/** Drafts a shop keeps waiting at once; the oldest go first. */
+const MAX_DRAFTS = 12;
 
 export interface OnboardResult {
   catalog: Catalog;
@@ -111,6 +113,94 @@ export class Shops {
     });
     if (!updated) throw notFound(`Variant ${variantId}`);
     return updated;
+  }
+
+  /**
+   * Photos from the owner's phone -> draft products for a shop that already exists: named, described,
+   * with the photo and a market price suggestion. They wait in `drafts` until the owner puts them on sale.
+   */
+  async draftFromPhotos(shopId: string, images: string[], note = ''): Promise<Product[]> {
+    if (!this.deps.model) throw new HttpError(503, 'Drafting from photos needs an AI key (OPENAI_API_KEY or DEEPSEEK_API_KEY) on the server');
+    if (!images.length) throw new HttpError(400, 'Add at least one photo');
+    const { shop } = await this.get(shopId);
+    const text = note.trim() || 'New items for this shop. One product per photo, unless several photos show the same item.';
+    const { catalog: draft, photoOf } = await draftCatalog(this.deps.model, { text, images: images.slice(0, 6), currency: shop.currency, country: shop.country, shopName: shop.name }).catch((err: unknown) => {
+      throw fromLlmError(err, 'Could not read those photos');
+    });
+    draft.shop = { ...draft.shop, id: shopId, currency: shop.currency };
+    await this.keepPhotos(draft, images, photoOf);
+    await this.suggestPrices(draft);
+
+    let added: Product[] = [];
+    await this.deps.catalogs.modify(shopId, (catalog) => {
+      const taken = new Set([...catalog.products, ...(catalog.drafts ?? [])].flatMap((p) => [p.id, ...p.variants.map((v) => v.id)]));
+      const unique = (id: string) => {
+        let next = id;
+        for (let n = 2; taken.has(next); n++) next = `${id}_${n}`;
+        taken.add(next);
+        return next;
+      };
+      added = draft.products.map((p) => {
+        const id = unique(p.id);
+        return { ...p, id, shopId, variants: p.variants.map((v) => ({ ...v, id: unique(v.id), productId: id, priceToConfirm: v.priceToConfirm ?? {} })) };
+      });
+      catalog.drafts = [...(catalog.drafts ?? []), ...added].slice(-MAX_DRAFTS);
+      return true;
+    });
+    return added;
+  }
+
+  /**
+   * Put a draft on sale at the owner's prices and stock (minor units, per variant). On a live shop it is
+   * registered with PayPal's catalog like every other product.
+   */
+  async releaseDraft(shopId: string, productId: string, variants: { id: string; price: number; inventory: number }[], name?: string): Promise<Catalog> {
+    for (const v of variants) {
+      if (!Number.isSafeInteger(v.price) || v.price <= 0) throw new HttpError(400, 'Every price must be a positive amount');
+      if (!Number.isSafeInteger(v.inventory) || v.inventory < 0) throw new HttpError(400, 'Stock must be a whole number, 0 or more');
+    }
+    let released: Product | undefined;
+    const updated = await this.deps.catalogs.modify(shopId, (catalog) => {
+      const draft = catalog.drafts?.find((p) => p.id === productId);
+      if (!draft) return false;
+      for (const variant of draft.variants) {
+        const set = variants.find((v) => v.id === variant.id);
+        if (!set) return false;
+        variant.price = set.price;
+        variant.inventory = set.inventory;
+        delete variant.priceToConfirm;
+      }
+      if (name?.trim()) draft.name = name.trim().slice(0, 120);
+      catalog.drafts = catalog.drafts!.filter((p) => p.id !== productId);
+      catalog.products.push(draft);
+      released = draft;
+      return true;
+    });
+    if (!updated || !released) throw new HttpError(409, 'Set a price and stock for every option of that draft');
+    if ((updated.shop.status ?? 'live') !== 'live') return updated;
+    const product = released as Product;
+    try {
+      const created = await createCatalogProduct(
+        this.deps.paypal,
+        { name: product.name, description: product.description, imageUrl: product.imageUrl && this.deps.links.asset(product.imageUrl), homeUrl: this.deps.links.shopPage(updated.shop.slug) },
+        `${shopId}-${product.id}-catalog`,
+      );
+      return (await this.deps.catalogs.modify(shopId, (catalog) => {
+        const p = catalog.products.find((x) => x.id === product.id);
+        if (p) p.paypalProductId ??= created.id;
+        return Boolean(p);
+      })) ?? updated;
+    } catch {
+      return updated; // checkout doesn't depend on PayPal's catalog; the next publish retries it
+    }
+  }
+
+  async discardDraft(shopId: string, productId: string): Promise<void> {
+    await this.deps.catalogs.modify(shopId, (catalog) => {
+      const before = catalog.drafts?.length ?? 0;
+      catalog.drafts = catalog.drafts?.filter((p) => p.id !== productId);
+      return (catalog.drafts?.length ?? 0) !== before;
+    });
   }
 
   /** Each product gets the photo the model said shows it, stored and served from this site. */

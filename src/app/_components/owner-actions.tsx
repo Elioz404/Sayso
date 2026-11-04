@@ -7,8 +7,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { callApi } from './api.ts';
 import { CopyField } from './client-ui.tsx';
+import { signChallenge, usePasskeyChallenge } from './phone.tsx';
 import { Icon } from './ui.tsx';
-
 
 /** What PayPal sign-in came back with, as /owner?signin=... */
 const SIGN_IN_OUTCOMES: Record<string, string> = {
@@ -134,20 +134,28 @@ export function SignOut() {
   );
 }
 
-export function Decision({ id, big = false }: { id: string; big?: boolean }) {
+/** `passkey`: the shop approves with a passkey, so "Say OK" opens the fingerprint/face prompt first. */
+export function Decision({ id, big = false, passkey = false }: { id: string; big?: boolean; passkey?: boolean }) {
   const router = useRouter();
   const [busy, setBusy] = useState<'approve' | 'reject'>();
   const [error, setError] = useState<string>();
   const [note, setNote] = useState('');
+  const signing = usePasskeyChallenge(passkey ? 'approve' : undefined, id);
 
   async function decide(decision: 'approve' | 'reject') {
     setBusy(decision);
     setError(undefined);
     try {
-      await callApi(`/api/guard/${id}`, 'POST', { decision, note: note || undefined });
+      let proof;
+      if (decision === 'approve' && passkey) {
+        if (!signing.challenge) throw new Error(signing.error ?? 'Getting the passkey ready, try again in a second');
+        proof = await signChallenge(signing.challenge);
+      }
+      await callApi(`/api/guard/${id}`, 'POST', { decision, note: note || undefined, passkey: proof });
       router.refresh();
     } catch (err) {
       setError((err as Error).message);
+      if (passkey) void signing.reload();
       setBusy(undefined);
     }
   }
@@ -162,13 +170,14 @@ export function Decision({ id, big = false }: { id: string; big?: boolean }) {
       )}
       <div className={`decide${big ? ' decide-big' : ''}`}>
         <button className={`btn btn-primary${big ? ' btn-big' : ''}`} disabled={Boolean(busy)} onClick={() => void decide('approve')}>
-          <Icon name="check" size={18} />
-          {busy === 'approve' ? 'Approving...' : 'Say OK'}
+          <Icon name={passkey ? 'fingerprint' : 'check'} size={18} />
+          {busy === 'approve' ? (passkey ? 'Waiting for your passkey...' : 'Approving...') : 'Say OK'}
         </button>
         <button className={`btn btn-danger${big ? ' btn-big' : ''}`} disabled={Boolean(busy)} onClick={() => void decide('reject')}>
           {busy === 'reject' ? 'Rejecting...' : 'Reject'}
         </button>
       </div>
+      {passkey && big && <p className="small muted">Confirm with your fingerprint, face or PIN. Your device signs this exact request.</p>}
       {error && <p className="error small">{error}</p>}
     </div>
   );

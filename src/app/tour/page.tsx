@@ -104,7 +104,7 @@ export default async function TourPage({ searchParams }: { searchParams: Promise
   }
   if (!view || !tour) return <Intro />;
 
-  const steps = await stepViews(view, tour);
+  const [steps, passkey] = await Promise.all([stepViews(view, tour), view.passkeys.required(view.shopId)]);
   const asked = (await searchParams).step;
   const firstOpen = steps.findIndex((s) => s.state !== 'done' && s.state !== 'unavailable');
   const index = asked === 'end' ? steps.length : asked && /^[1-5]$/.test(asked) ? Number(asked) - 1 : firstOpen === -1 ? steps.length : firstOpen;
@@ -144,7 +144,7 @@ export default async function TourPage({ searchParams }: { searchParams: Promise
       </nav>
 
       {current ? (
-        <StepScreen view={current} n={index + 1} total={steps.length} redact={view.redact} />
+        <StepScreen view={current} n={index + 1} total={steps.length} redact={view.redact} passkey={passkey} />
       ) : (
         <WrapUp steps={steps} mcpUrl={links.shopMcp(tour.slug)} portal={developerPortalBuilt() ? links.developers : undefined} />
       )}
@@ -189,7 +189,7 @@ function Intro() {
   );
 }
 
-function StepScreen({ view, n, total, redact }: { view: StepView; n: number; total: number; redact: (text: string) => string }) {
+function StepScreen({ view, n, total, redact, passkey }: { view: StepView; n: number; total: number; redact: (text: string) => string; passkey: boolean }) {
   const { step, state } = view;
   const info = STEP[step];
   const nextHref = n === total ? '?step=end' : `?step=${n + 1}`;
@@ -228,7 +228,7 @@ function StepScreen({ view, n, total, redact }: { view: StepView; n: number; tot
                         <b>{describe(r)}</b>
                         <span className="small soft">{r.decision?.hits.map((h) => h.message).join(' ')}</span>
                       </span>
-                      <Decision id={r.id} />
+                      <Decision id={r.id} passkey={passkey} />
                     </li>
                   ))}
                 </ul>
@@ -353,7 +353,7 @@ async function earnView(view: OwnerView, tour: Tour, result: StepResult | undefi
 }
 
 function describe(r: GuardRecord): string {
-  const amount = r.action.amount !== undefined ? formatMoney(r.action.amount, r.action.currency ?? DEFAULT_CURRENCY) : '';
+  const amount = r.action.amount !== undefined && r.action.kind !== 'policy.update' ? formatMoney(r.action.amount, r.action.currency ?? DEFAULT_CURRENCY) : '';
   const what = { 'refund.create': 'Refund', 'invoice.send': 'Invoice', 'policy.update': 'New rules', 'payment.capture': 'Charge', 'payment.void': 'Release', 'checkout.create': 'Purchase' }[r.action.kind];
   return [what, amount].filter(Boolean).join(' ');
 }
@@ -454,6 +454,10 @@ function WrapUp({ steps, mcpUrl, portal }: { steps: StepView[]; mcpUrl: string; 
         <div className="stack" style={{ gap: 'var(--s4)' }}>
           <h3>Go deeper, with the sandbox accounts from the testing instructions</h3>
           <div className="tour-deeper">
+            <a href="/owner/phone">
+              <b>Take it to your phone</b>
+              <span className="small soft">Scan a QR code, install Sayso, get pinged and approve the next request with your fingerprint or face. The signature lands in the audit.</span>
+            </a>
             <a href="/start">
               <b>Open a shop from one photo</b>
               <span className="small soft">AI names and describes it; Channel3 suggests a price you confirm before publishing.</span>

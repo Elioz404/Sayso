@@ -102,10 +102,13 @@ export class Guard {
     return this.run(record);
   }
 
-  /** A person gives their say-so. Only pending records can be approved, and only once. */
-  async approve(recordId: string, approver: string): Promise<GuardRecord> {
+  /**
+   * A person gives their say-so. Only pending records can be approved, and only once. `evidence` (a
+   * passkey signature, say) is kept in the "approved" event, inside the hash chain.
+   */
+  async approve(recordId: string, approver: string, evidence?: Record<string, unknown>): Promise<GuardRecord> {
     const record = await this.pending(recordId);
-    append(record, 'approved', approver, undefined, this.now());
+    append(record, 'approved', approver, evidence, this.now());
     record.status = 'executing';
     if (!(await this.deps.store.updateIf(record, 'pending_approval'))) throw new Error(`Record ${recordId} was already decided`);
     return this.run(record);

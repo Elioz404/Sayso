@@ -183,3 +183,46 @@ export function CopyField({ value, secret = false }: { value: string; secret?: b
     </div>
   );
 }
+
+/** Registers the service worker once per page load (notifications and photo sharing need it). */
+export function ServiceWorker() {
+  useEffect(() => {
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => undefined);
+  }, []);
+  return null;
+}
+
+/**
+ * The owner's thumb bar on phones: what waits for them, orders, the camera, rules and the phone setup,
+ * one tap each. The full menu stays in the top bar.
+ */
+export function TabBar({ waiting }: { waiting: number }) {
+  const path = usePathname();
+  const items = [
+    { href: '/owner', label: 'Waiting', icon: 'home', exact: true },
+    { href: '/owner/orders', label: 'Orders', icon: 'list' },
+    { href: '/owner/catalog/new', label: 'Add', icon: 'camera', primary: true },
+    { href: '/owner/rules', label: 'Rules', icon: 'shield' },
+    { href: '/owner/phone', label: 'Phone', icon: 'phone' },
+  ];
+  return (
+    <nav className="tabbar" aria-label="Quick">
+      {items.map((item) => {
+        const current = item.exact ? path === item.href : path.startsWith(item.href);
+        return (
+          <a key={item.href} href={item.href} className={item.primary ? 'tabbar-add' : undefined} aria-current={current ? 'page' : undefined}>
+            <span className="tabbar-icon">
+              <Icon name={item.icon} size={item.primary ? 24 : 22} />
+              {item.exact && waiting > 0 && (
+                <span className="tabbar-badge" aria-label={`${waiting} waiting`}>
+                  {waiting}
+                </span>
+              )}
+            </span>
+            <span className="tabbar-label">{item.label}</span>
+          </a>
+        );
+      })}
+    </nav>
+  );
+}

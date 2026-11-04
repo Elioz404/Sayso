@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import localFont from 'next/font/local';
-import { NavLinks } from '@/app/_components/client-ui.tsx';
+import { NavLinks, ServiceWorker } from '@/app/_components/client-ui.tsx';
 import { Mark } from '@/app/_components/ui.tsx';
 import { ABOUT } from '@/core/about.ts';
 import './globals.css';
@@ -39,6 +39,8 @@ export const metadata: Metadata = {
   description: DESCRIPTION,
   openGraph: { siteName: 'Sayso', title: 'Sayso', description: DESCRIPTION, type: 'website' },
   twitter: { card: 'summary_large_image', title: 'Sayso', description: DESCRIPTION },
+  // Added to the home screen, Sayso opens full screen like an app (and can get notifications on iPhone).
+  appleWebApp: { capable: true, title: 'Sayso', statusBarStyle: 'default' },
 };
 
 export const viewport: Viewport = {
@@ -56,6 +58,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${bricolage.variable} ${figtree.variable} ${plexMono.variable}`}>
       <body>
+        <ServiceWorker />
         <header className="site-header">
           <div className="wrap">
             <a href="/" className="brand" aria-label="Sayso home">

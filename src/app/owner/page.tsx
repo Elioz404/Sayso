@@ -1,7 +1,7 @@
 // Overview: the one job first (what's waiting for the owner), then a single row of figures and the
 // latest orders. Everything else lives in its own view.
 import { ConnectPayouts, Decision, KeepPrice, PublishButton } from '@/app/_components/owner-actions.tsx';
-import { actionLabel, Status, Who } from '@/app/_components/ui.tsx';
+import { actionLabel, Icon, Status, Who } from '@/app/_components/ui.tsx';
 import { Ago } from '@/app/_components/time.tsx';
 import { pricesToConfirm } from '@/core/catalog.ts';
 import { formatMoney, toMoney } from '@/core/money.ts';
@@ -21,7 +21,8 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const { shop, shopId, orders: shopOrders, catalog, redact, saySo, payouts, demo } = view;
   const outcome = PAYOUT_OUTCOMES[(await searchParams).payouts ?? ''];
   const onTour = shop.visibility === 'private';
-  const [approvals, orders, { suggestions }] = await Promise.all([pendingFor(shopId), shopOrders.list(shopId), saySo.autonomy(shopId)]);
+  const [approvals, orders, { suggestions }, passkey, devices] = await Promise.all([pendingFor(shopId), shopOrders.list(shopId), saySo.autonomy(shopId), view.passkeys.required(shopId), view.push.list(shopId)]);
+  const drafts = catalog.drafts?.length ?? 0;
   const money = (minor: number) => formatMoney(minor, shop.currency);
   const unconfirmed = pricesToConfirm(catalog);
   const paid = orders.filter((o) => o.status === 'paid');
@@ -38,6 +39,35 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           <p className="sub">{shop.name}</p>
         </div>
       </div>
+
+      {!demo && (!passkey || devices.length === 0) && (
+        <div className="callout callout-phone">
+          <Icon name="phone" size={22} />
+          <div className="stack" style={{ gap: 2 }}>
+            <b>Take your shop to your phone</b>
+            <span className="small soft">
+              {passkey ? 'Turn on notifications so you know the moment an agent needs you.' : 'Get a ping when an agent needs you, and approve with your fingerprint or face, so no one else can say OK for you.'}
+            </span>
+          </div>
+          <a className="btn btn-small" href="/owner/phone">
+            Set it up
+          </a>
+        </div>
+      )}
+
+      {drafts > 0 && (
+        <div className="callout">
+          <span className="small">
+            <b>
+              {drafts} product{drafts === 1 ? '' : 's'} from your photos {drafts === 1 ? 'is' : 'are'} waiting for a price.
+            </b>{' '}
+            Buyers don’t see {drafts === 1 ? 'it' : 'them'} yet.
+          </span>
+          <a className="btn btn-small" href="/owner/catalog/new">
+            Set prices
+          </a>
+        </div>
+      )}
 
       {(shop.status ?? 'live') === 'draft' && (
         <div className="callout">
@@ -142,7 +172,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                   <p className="ask-why">{redact(r.decision?.hits.map((h) => h.message).join(' ') ?? '')}</p>
                 </div>
                 <div className="ask-side">
-                  <Decision id={r.id} />
+                  <Decision id={r.id} passkey={passkey} />
                   <a className="small" href={`/approve/${r.id}`}>
                     See details
                   </a>

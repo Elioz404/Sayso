@@ -10,6 +10,7 @@ import { Invoicing } from '../src/core/invoicing.ts';
 import { links } from '../src/core/links.ts';
 import { handleMcp } from '../src/core/mcp.ts';
 import { Orders } from '../src/core/orders.ts';
+import { MemoryPasskeyStore, Passkeys } from '../src/core/passkeys.ts';
 import { Payouts } from '../src/core/payouts.ts';
 import { PayPalClient } from '../src/core/paypal/client.ts';
 import { captureExecutor, refundExecutor, voidExecutor } from '../src/core/paypal/executors.ts';
@@ -53,7 +54,8 @@ export async function stack(model?: ChatModel) {
   const wallets = new Wallets({ store: walletStore, policies, guard, commerce, paypal, links: site });
   const shops = new Shops({ catalogs, access, paypal, model, links: site });
   const orders = new Orders({ carts, guard, paypal });
-  const saySo = new SaySo({ guard, policyFor, shops, model });
+  const passkeys = new Passkeys({ store: new MemoryPasskeyStore(), access, origin: 'https://sayso.test' });
+  const saySo = new SaySo({ guard, policyFor, shops, model, passkeys });
   const invoicing = new Invoicing({ guard, carts, shops, paypal, statusTtlMs: 0 }); // tests change PayPal state between reads
   const production = new Production({ carts, catalogs, guard, invoicing, jobs: new MemoryJobStore() });
   const services: ToolServices = { commerce, orders, saySo, invoicing, production, shops, catalogs, wallets, links: site };
@@ -72,7 +74,7 @@ export async function stack(model?: ChatModel) {
   const buyer: Partial<ToolContext> = { shopSlug: 'maya-ceramics' };
   const owner: Partial<ToolContext> = { agent: { shopId: demoCatalog.shop.id, keyId: key.id, label: key.label } };
 
-  return { pp, paypal, payouts, carts, catalogs, guardStore, policies, access, guard, commerce, shops, orders, saySo, invoicing, production, wallets, services, approvals, call, buyer, owner };
+  return { pp, paypal, passkeys, payouts, carts, catalogs, guardStore, policies, access, guard, commerce, shops, orders, saySo, invoicing, production, wallets, services, approvals, call, buyer, owner };
 }
 
 export const address = { country_code: 'US', admin_area_1: 'TX', admin_area_2: 'Austin', postal_code: '78701', address_line_1: '100 Congress Ave' };

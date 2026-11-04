@@ -3,7 +3,7 @@
 import type { Metadata } from 'next';
 import { connection } from 'next/server';
 import { Decision, LoginForm } from '@/app/_components/owner-actions.tsx';
-import { actionLabel, Status, Who } from '@/app/_components/ui.tsx';
+import { actionLabel, Icon, Status, Who } from '@/app/_components/ui.tsx';
 import { When } from '@/app/_components/time.tsx';
 import { DEFAULT_CURRENCY, formatMoney } from '@/core/money.ts';
 import { paypalLoginEnabled } from '@/server/context.ts';
@@ -42,6 +42,7 @@ export default async function Approve({ params }: { params: Promise<{ id: string
 
   const { action } = record;
   const pending = record.status === 'pending_approval';
+  const [passkey, signed] = await Promise.all([view.passkeys.required(view.shopId), view.passkeys.checkApproval(record)]);
   const decided = record.events.find((e) => e.type === 'approved' || e.type === 'rejected');
   const note = decided?.data?.note;
   const effects = (record.simulation?.effects ?? []).map((e) => redact(e.replace(/^- /, '')));
@@ -57,8 +58,14 @@ export default async function Approve({ params }: { params: Promise<{ id: string
         </div>
 
         <div className="stack" style={{ gap: 6 }}>
-          <span className="soft">{actionLabel(action.kind)}</span>
-          {action.amount !== undefined ? <span className="amount">{formatMoney(action.amount, action.currency ?? DEFAULT_CURRENCY)}</span> : <h1>{actionLabel(action.kind)}</h1>}
+          {action.amount !== undefined && action.kind !== 'policy.update' ? (
+            <>
+              <span className="soft">{actionLabel(action.kind)}</span>
+              <span className="amount">{formatMoney(action.amount, action.currency ?? DEFAULT_CURRENCY)}</span>
+            </>
+          ) : (
+            <h1>{actionLabel(action.kind)}</h1>
+          )}
           {action.counterparty && <span className="small soft">to {redact(action.counterparty)}</span>}
         </div>
 
@@ -84,7 +91,7 @@ export default async function Approve({ params }: { params: Promise<{ id: string
         </ul>
 
         {pending ? (
-          <Decision id={record.id} big />
+          <Decision id={record.id} big passkey={passkey} />
         ) : (
           <div className="stack" style={{ gap: 14, alignItems: 'flex-start' }}>
             {decided ? (
@@ -96,6 +103,12 @@ export default async function Approve({ params }: { params: Promise<{ id: string
               </span>
             ) : (
               <Status value={record.status} />
+            )}
+            {signed && (
+              <p className={`small signed ${signed.ok ? 'signed-ok' : 'signed-bad'}`}>
+                <Icon name="fingerprint" size={16} />
+                {signed.ok ? `Signed with the passkey on ${signed.label}. The signature matches this exact request.` : `The passkey signature${signed.label ? ` from ${signed.label}` : ''} does not match this request as stored.`}
+              </p>
             )}
             {typeof note === 'string' && <p className="small soft">Your note: {note}</p>}
             {record.verification && <p className="small soft">{record.verification.detail}</p>}

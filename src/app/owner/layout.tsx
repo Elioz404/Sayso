@@ -1,7 +1,7 @@
 // The owner area: a side rail with one view per job. Signed-out visitors get the sign-in screen.
 import type { Metadata } from 'next';
 import { connection } from 'next/server';
-import { RailDrawer, RailNav } from '@/app/_components/client-ui.tsx';
+import { RailDrawer, RailNav, TabBar } from '@/app/_components/client-ui.tsx';
 import { LoginForm, ShopSwitcher, SignOut } from '@/app/_components/owner-actions.tsx';
 import { Icon, Mark, Status } from '@/app/_components/ui.tsx';
 import { paypalLoginEnabled } from '@/server/context.ts';
@@ -58,6 +58,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
               { href: '/owner/rules', label: 'Rules', icon: 'shield' },
               { href: '/owner/agents', label: 'Agents', icon: 'agent' },
               { href: '/owner/activity', label: 'Activity', icon: 'activity' },
+              { href: '/owner/phone', label: 'On your phone', icon: 'phone' },
             ]}
           />
           <div className="rail-foot">
@@ -85,6 +86,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
           {children}
         </div>
       </main>
+      <TabBar waiting={pending} />
     </div>
   );
 }

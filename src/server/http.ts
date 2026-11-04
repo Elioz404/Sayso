@@ -39,6 +39,18 @@ export async function requireOwner(request: Request): Promise<string> {
   return shopId;
 }
 
+/**
+ * Like requireOwner, but not in the shared public demo session: things tied to one person's device
+ * (passkeys, notifications, signing in on a phone) would otherwise be shared by every visitor.
+ */
+export async function requireOwnDevice(request: Request): Promise<{ shopId: string; kind: OwnerSession['kind'] }> {
+  assertSameOrigin(request);
+  const session = await ownerSession();
+  if (!session) throw new HttpError(401, 'Sign in as the shop owner first');
+  if (session.kind === 'demo') throw new HttpError(403, "The shared demo shop can't be tied to your phone. Start the judges' tour for a shop of your own.");
+  return session;
+}
+
 /** Owner actions are cookie-authenticated, so refuse cross-site requests outright. */
 export function assertSameOrigin(request: Request): void {
   const origin = request.headers.get('origin');
@@ -87,3 +99,6 @@ export async function readJson<T>(request: Request): Promise<T> {
     throw new HttpError(400, 'Request body must be JSON');
   }
 }
+
+/** What signs the ten-minute "continue on your phone" link. */
+export const HANDOFF_PURPOSE = 'owner-handoff';

@@ -13,6 +13,8 @@ import type { Tour, TourStore } from '@/core/tour.ts';
 import type { GuardRecord, GuardStore, RecordQuery, RecordStatus } from '@/core/guard/types.ts';
 import type { CartStore, CatalogStore, StoredCart } from '@/core/stores.ts';
 import type { MediaStore, StoredPhoto } from '@/core/media.ts';
+import type { Passkey, PasskeyStore } from '@/core/passkeys.ts';
+import type { PushStore, PushSubscriptionRecord } from '@/core/push.ts';
 import type { Seller, SellerStore } from '@/core/sellers.ts';
 import type { Wallet, WalletStore } from '@/core/wallets.ts';
 
@@ -32,7 +34,7 @@ create unique index if not exists sayso_docs_slug on sayso_docs (kind, slug) whe
 create index if not exists sayso_docs_hash on sayso_docs (kind, hash) where hash is not null;
 `;
 
-type Kind = 'catalog' | 'cart' | 'guard' | 'owner' | 'key' | 'policy' | 'wallet' | 'wallet-key' | 'jobs' | 'tour' | 'seller' | 'media';
+type Kind = 'catalog' | 'cart' | 'guard' | 'owner' | 'key' | 'policy' | 'wallet' | 'wallet-key' | 'jobs' | 'tour' | 'seller' | 'media' | 'passkey' | 'push';
 type Queryable = pg.Pool | pg.PoolClient;
 
 interface Doc {
@@ -342,5 +344,40 @@ export class PgMediaStore implements MediaStore {
   }
   async put(photo: StoredPhoto) {
     await this.db.put({ kind: 'media', id: photo.id, createdAt: photo.createdAt, data: photo });
+  }
+}
+
+export class PgPasskeyStore implements PasskeyStore {
+  private readonly db: Db;
+  constructor(db: Db) {
+    this.db = db;
+  }
+  list(shopId: string) {
+    return this.db.list<Passkey>('passkey', shopId, { limit: 20 });
+  }
+  get(id: string) {
+    return this.db.get<Passkey>('passkey', id);
+  }
+  async put(passkey: Passkey) {
+    await this.db.put({ kind: 'passkey', id: passkey.id, owner: passkey.shopId, createdAt: passkey.createdAt, data: passkey });
+  }
+  async remove(id: string) {
+    await this.db.pool.query("delete from sayso_docs where kind = 'passkey' and id = $1", [id]);
+  }
+}
+
+export class PgPushStore implements PushStore {
+  private readonly db: Db;
+  constructor(db: Db) {
+    this.db = db;
+  }
+  list(shopId: string) {
+    return this.db.list<PushSubscriptionRecord>('push', shopId, { limit: 20 });
+  }
+  async put(subscription: PushSubscriptionRecord) {
+    await this.db.put({ kind: 'push', id: subscription.id, owner: subscription.shopId, createdAt: subscription.createdAt, data: subscription });
+  }
+  async remove(id: string) {
+    await this.db.pool.query("delete from sayso_docs where kind = 'push' and id = $1", [id]);
   }
 }

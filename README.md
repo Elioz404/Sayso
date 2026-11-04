@@ -66,6 +66,15 @@ Guard keeps every say-so the owner gives. When they have approved three requests
 
 Agents can't loosen their own rules (step 3 of the tour); they earn it, one decision at a time. Deterministic and explainable on purpose: no model decides how much autonomy an agent gets.
 
+## On the owner's phone
+
+Agents work all day; the owner is out at the market. Sayso is built to be run from a phone.
+
+- **Installs like an app.** Add it to the home screen (no app store): it opens full screen on the shop, with a thumb bar for what's waiting, orders, the camera, rules and phone settings. On a computer, `/owner/phone` shows a QR code that signs the phone in to the same shop for ten minutes.
+- **A ping when an agent needs you.** Web Push notifications when a request waits for the owner's say-so (tap it and you're on the decision) and when an order is paid. Messages are end-to-end encrypted to the device; the server's push keys are derived from its secret, so there's nothing extra to configure.
+- **Approve with a fingerprint or face.** Once the owner adds a passkey, every OK is a WebAuthn signature from their device over a challenge built from the exact request (its id and a hash of the action). A stolen session, someone holding the unlocked phone, or an agent can't produce it. The signature goes into the record's hash-chained audit trail, and the approval page re-checks it against the stored public key. Saying no never needs the passkey. Verified with `node:crypto` alone (CBOR, COSE keys, ES256/EdDSA/RS256), and tested with a software authenticator, including forged signatures, another site's passkey and a signature for a different request.
+- **The camera does the typing.** Snap a product (or share photos to Sayso from the gallery on Android): the AI names and describes it, Channel3 suggests a price, and it waits as a draft buyers can't see until the owner sets the price and puts it on sale. Snap a shipping label on a paid order: the AI reads the carrier and tracking number, the owner checks them, and Sayso adds the tracking to the PayPal order.
+
 ## Sellers sign in with PayPal and are paid directly
 
 - **Sign in with PayPal.** The browser that drafts a shop claims it through Log in with PayPal (a signed, hour-long claim), and the owner signs back in the same way. The OAuth `state` is tied to the browser, codes work once, and a shop that is someone else's or a judge's tour copy can't be claimed. Deployments without PayPal sign-in fall back to an owner secret.
@@ -208,6 +217,7 @@ tests/                 Unit and end-to-end tests (see tests/money-safety.test.ts
 - **Sign-in can't be replayed or redirected.** Log in with PayPal checks an OAuth `state` bound to the browser, each code works once, claims and seller sessions are signed tokens bound to their purpose, and the page to land on afterwards is a path on Sayso only.
 - **Keys die for good.** Disconnecting saved PayPal retires every key and personal URL issued for it, so a leaked one can't spend again after a reconnect.
 - **The public demo is shared, so it's masked.** The demo owner session sees buyers' emails masked and their town instead of their street; phone pushes carry the kind of request and a link, never buyer details.
+- **Approvals can be signed.** With a passkey, approving needs a WebAuthn signature over the exact request; passkeys can only be added or removed by confirming with one the shop already has. Push subscriptions are only accepted for real browser push services, so the server can't be pointed at other addresses.
 - **Abuse limits.** Onboarding is limited per address, rule drafting and market searches per shop, and all AI calls share a daily budget; market results are cached.
 
 ## Run it locally

@@ -21,3 +21,5 @@ export function clientAddress(request: Request): string {
   const hops = request.headers.get('x-forwarded-for')?.split(',').map((h) => h.trim()).filter(Boolean) ?? [];
   return hops.at(-1) ?? 'local';
 }
+/** Photo reads per shop per hour (drafting products, reading shipping labels): each is an AI call. */
+export const photoReads = new RateLimit(30, 3_600_000);

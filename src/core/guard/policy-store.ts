@@ -53,7 +53,7 @@ export function policyUpdateExecutor(store: PolicyStore, current: (ownerId: stri
       return {
         ok: blockers.length === 0,
         blockers,
-        amount: 0,
+        // No amount: a rule change moves no money, so it shows without one.
         effects: [`Replace ${now.rules.length} rule(s) with ${next.rules.length}:`, ...next.rules.map((r) => `- ${describeRule(r, next.currency)}`)],
         observed: { current_rules: now.rules.length },
       };

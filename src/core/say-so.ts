@@ -10,6 +10,7 @@ import { verifyAuditChain, type Guard } from './guard/engine.ts';
 import type { Policy } from './guard/policy.ts';
 import { describeRule, policyVersion } from './guard/policy-store.ts';
 import type { Actor, GuardRecord } from './guard/types.ts';
+import type { PasskeyProof, Passkeys } from './passkeys.ts';
 import type { PolicyLookup } from './policies.ts';
 import { RateLimit } from './rate-limit.ts';
 import type { Shops } from './shops.ts';
@@ -19,6 +20,8 @@ export interface SaySoDeps {
   policyFor: PolicyLookup;
   shops: Shops;
   model?: ChatModel;
+  /** Once a shop has a passkey, approving needs a signature from it. */
+  passkeys?: Passkeys;
 }
 
 export type AuditedRecord = GuardRecord & { chainIntact: boolean };
@@ -97,11 +100,21 @@ export class SaySo {
    * The owner's say-so. Callers must have authenticated the owner of `shopId`. What follows from the
    * decision (charging the order, or releasing it and its stock) happens in Commerce when Guard settles.
    */
-  async decide(shopId: string, recordId: string, decision: 'approve' | 'reject', approver: string, note?: string): Promise<GuardRecord> {
+  async decide(shopId: string, recordId: string, decision: 'approve' | 'reject', approver: string, note?: string, proof?: PasskeyProof): Promise<GuardRecord> {
     if (!approver.startsWith('owner:')) throw new HttpError(403, 'Only the owner can decide');
-    await this.record(shopId, recordId);
+    const record = await this.record(shopId, recordId);
+    // Saying no is always safe; saying yes is signed by the owner's device once they have a passkey.
+    let evidence: Record<string, unknown> | undefined;
+    if (decision === 'approve' && this.deps.passkeys && (await this.deps.passkeys.required(shopId))) {
+      if (!proof) throw new HttpError(428, 'This shop approves with a passkey: confirm with your fingerprint, face or PIN');
+      if (record.status !== 'pending_approval') throw new HttpError(409, `Record ${recordId} was already decided`);
+      evidence = { passkey: await this.deps.passkeys.signApproval(shopId, record, proof) };
+      if (typeof note === 'string' && note) evidence.note = note;
+    } else if (decision === 'approve' && note) {
+      evidence = { note };
+    }
     try {
-      return decision === 'approve' ? await this.deps.guard.approve(recordId, approver) : await this.deps.guard.reject(recordId, approver, note);
+      return decision === 'approve' ? await this.deps.guard.approve(recordId, approver, evidence) : await this.deps.guard.reject(recordId, approver, note);
     } catch (err) {
       throw new HttpError(409, err instanceof Error ? err.message : 'Could not decide');
     }

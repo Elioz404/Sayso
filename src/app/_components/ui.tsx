@@ -83,6 +83,30 @@ const PATHS: Record<string, ReactNode> = {
       <path d="M10 12h4" />
     </>
   ),
+  phone: (
+    <>
+      <rect x="7" y="3" width="10" height="18" rx="2.5" />
+      <path d="M11 17.5h2" />
+    </>
+  ),
+  bell: <path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15L6 16zM10 20.5a2 2 0 0 0 4 0" />,
+  fingerprint: <path d="M8.5 19.5c1.3-2 2-4.5 2-7a1.5 1.5 0 0 1 3 0c0 3-.6 5.7-1.8 8M5 15.5c.7-1 1-2.2 1-3.5a6 6 0 0 1 9.5-4.9M18 12c0 2.6-.4 5-1.2 7.2M15.6 20.5c.2-.5.4-1 .5-1.5M7.2 5.5A8.5 8.5 0 0 1 20.5 12" />,
+  plus: <path d="M12 5v14M5 12h14" />,
+  truck: (
+    <>
+      <path d="M3 6h11v10H3zM14 9h4l3 3.5V16h-7" />
+      <circle cx="7" cy="17.5" r="1.8" />
+      <circle cx="17" cy="17.5" r="1.8" />
+    </>
+  ),
+  qr: (
+    <>
+      <rect x="4" y="4" width="6" height="6" rx="1" />
+      <rect x="14" y="4" width="6" height="6" rx="1" />
+      <rect x="4" y="14" width="6" height="6" rx="1" />
+      <path d="M14 14h2v2h-2zM18 18h2v2h-2zM14 18h2M18 14h2" />
+    </>
+  ),
 };
 
 export function Icon({ name, size = 18, label }: { name: keyof typeof PATHS | string; size?: number; label?: string }) {

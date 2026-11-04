@@ -108,6 +108,11 @@ export interface Payout {
 export interface Catalog {
   shop: Shop;
   products: Product[];
+  /**
+   * Products drafted from the owner's photos after the shop opened. Buyers never see these: a draft
+   * joins `products` only when the owner confirms its price and puts it on sale.
+   */
+  drafts?: Product[];
 }
 
 export function findVariant(catalog: Catalog, variantId: string): { product: Product; variant: Variant } | undefined {
