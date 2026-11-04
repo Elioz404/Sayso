@@ -718,3 +718,21 @@ body:has(.owner) .site-header, body:has(.owner) .site-footer { display: none; }
 .good-body { grid-template-rows: auto 1fr auto; height: 100%; }
 .good { height: 100%; }
 .good-buy { justify-self: start; }
+
+/* Shop with AI as a side panel on the buyer's pages; a sheet from the bottom on phones */
+.dock { position: fixed; z-index: 60; top: 0; right: 0; bottom: 0; width: min(440px, 100vw); display: flex; flex-direction: column; background: var(--paper); border-left: 1px solid var(--rule); box-shadow: -24px 0 60px -40px rgb(34 28 23 / 0.5); transform: translateX(100%); transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1); padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+.dock.dock-on { transform: none; }
+.dock-head { display: flex; justify-content: space-between; align-items: center; gap: var(--s3); padding: var(--s4) var(--s4) var(--s3) var(--s5); border-bottom: 1px solid var(--rule); }
+.dock-body { flex: 1; min-height: 0; display: flex; padding: var(--s3) var(--s4); }
+.dock-foot { display: flex; justify-content: space-between; gap: var(--s3); padding: var(--s3) var(--s5); border-top: 1px solid var(--rule); }
+.dock-scrim { position: fixed; inset: 0; z-index: 59; background: rgb(20 17 16 / 0.28); opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+.dock-scrim.dock-on { opacity: 1; pointer-events: auto; }
+.dock-fab { position: fixed; z-index: 58; right: max(20px, env(safe-area-inset-right, 0px)); bottom: max(20px, env(safe-area-inset-bottom, 0px)); display: inline-flex; gap: 8px; align-items: center; min-height: 48px; padding: 0 20px; border: 0; border-radius: 99px; background: var(--say); color: var(--say-ink); font: 650 var(--t-base) var(--font-body); box-shadow: 0 12px 30px -12px rgb(176 74 34 / 0.65); cursor: pointer; }
+.dock-fab:hover { background: var(--say-hover); }
+.shopper-compact { flex: 1; min-height: 0; }
+.shopper-compact .shopper-log { flex: 1; min-height: 0; max-height: none; }
+@media (min-width: 1200px) { .dock-scrim.dock-on { background: transparent; } html.dock-open .storefront, html.dock-open main.wrap, html.dock-open .site-header .wrap { padding-right: 440px; transition: padding 0.28s; } }
+@media (max-width: 640px) {
+  .dock { top: auto; width: 100vw; height: 88dvh; border-left: 0; border-top: 1px solid var(--rule); border-radius: 18px 18px 0 0; transform: translateY(100%); }
+  html.dock-open { overflow: hidden; }
+}

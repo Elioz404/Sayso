@@ -1,3 +1,4 @@
+import { ShopperDock } from '@/app/_components/shopper-dock.tsx';
 import type { Metadata, Viewport } from 'next';
 import localFont from 'next/font/local';
 import { NavLinks, ServiceWorker } from '@/app/_components/client-ui.tsx';
@@ -69,6 +70,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </div>
         </header>
         {children}
+        <ShopperDock paypalClientId={process.env.PAYPAL_CLIENT_ID || undefined} />
         <footer className="site-footer">
           <div className="wrap footer-grid">
             <div className="footer-about">

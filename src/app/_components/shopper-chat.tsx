@@ -144,7 +144,11 @@ function Rich({ text }: { text: string }) {
   );
 }
 
-export function ShopperChat({ paypalClientId, ask }: { paypalClientId?: string; ask?: string }) {
+/**
+ * `ask`: a request from a "Buy with AI" link that opened this page; it starts a fresh conversation.
+ * `request`: one sent from elsewhere on the page (the side panel); it continues the conversation.
+ */
+export function ShopperChat({ paypalClientId, ask, request, compact = false }: { paypalClientId?: string; ask?: string; request?: { text: string; id: number }; compact?: boolean }) {
   const [history, setHistory] = useState<unknown[]>([]);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [text, setText] = useState('');
@@ -175,6 +179,11 @@ export function ShopperChat({ paypalClientId, ask }: { paypalClientId?: string; 
     // Runs once on arrival; `send` is this render's.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  useEffect(() => {
+    if (request) void send(request.text);
+    // A new request is a new id; `send` is this render's.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request?.id]);
   function remember(nextHistory: unknown[], nextTurns: Turn[]) {
     try {
       localStorage.setItem(SAVED, JSON.stringify({ history: nextHistory, turns: nextTurns }));
@@ -240,7 +249,7 @@ export function ShopperChat({ paypalClientId, ask }: { paypalClientId?: string; 
   }
 
   return (
-    <div className="shopper">
+    <div className={compact ? 'shopper shopper-compact' : 'shopper'}>
       <div className="shopper-log" aria-live="polite" ref={log}>
         {turns.length === 0 && (
           <div className="shopper-empty">
@@ -296,7 +305,7 @@ export function ShopperChat({ paypalClientId, ask }: { paypalClientId?: string; 
           void send(text);
         }}
       >
-        <input value={text} onChange={(e) => setText(e.target.value)} maxLength={600} placeholder="What are you looking for?" aria-label="Message the shopping assistant" disabled={busy} />
+        <input className="shopper-input" value={text} onChange={(e) => setText(e.target.value)} maxLength={600} placeholder="What are you looking for?" aria-label="Message the shopping assistant" disabled={busy} />
         <button className="btn btn-primary" disabled={busy || !text.trim()}>
           Send
         </button>
