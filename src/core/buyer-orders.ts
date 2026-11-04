@@ -11,10 +11,6 @@ import { carrierName, trackingLink } from './shipping.ts';
 import type { CartStore, CatalogStore, PayerRef, StoredCart } from './stores.ts';
 import { PAYMENT_FOR_BUYER, refundRequestForBuyer } from './tools/views.ts';
 
-/** The channel a buyer's own requests from their order page carry (a refund they ask for, say). */
-export const ORDER_PAGE_CHANNEL = 'sayso-order';
-export const ORDER_PAGE_ACTOR = `buyer-agent:${ORDER_PAGE_CHANNEL}`;
-
 export interface BuyerOrderDeps {
   carts: CartStore;
   catalogs: CatalogStore;

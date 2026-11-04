@@ -11,6 +11,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { itemCount, OPEN_CART_EVENT, useCarts } from './cart-store.ts';
 import { CartPanel } from './cart-panel.tsx';
 import { DOCK_OPEN_KEY as OPEN_KEY, NOT_HERE } from './dock-restore.ts';
+import { OrdersPanel } from './orders-panel.tsx';
 import { ShopperChat } from './shopper-chat.tsx';
 
 /** The floating button is the way in; not on the seller's onboarding, which is about something else. */
@@ -21,7 +22,7 @@ export function ShopperDock({ paypalClientId }: { paypalClientId?: string }) {
   const here = !NOT_HERE.test(path);
   const [open, setOpen] = useState(false);
   const [request, setRequest] = useState<{ text: string; id: number }>();
-  const [tab, setTab] = useState<'ai' | 'cart'>('ai');
+  const [tab, setTab] = useState<'ai' | 'cart' | 'orders'>('ai');
   const items = itemCount(useCarts());
   const panel = useRef<HTMLElement>(null);
   const opener = useRef<HTMLElement | null>(null);
@@ -129,6 +130,9 @@ export function ShopperDock({ paypalClientId }: { paypalClientId?: string }) {
             <button type="button" role="tab" aria-selected={tab === 'cart'} className="dock-tab" onClick={() => setTab('cart')}>
               Cart{items > 0 && <span className="dock-tab-count">{items}</span>}
             </button>
+            <button type="button" role="tab" aria-selected={tab === 'orders'} className="dock-tab" onClick={() => setTab('orders')}>
+              Orders
+            </button>
           </div>
           <button type="button" className="btn btn-quiet btn-small" onClick={() => setOpen(false)} aria-label="Close">
             ✕
@@ -139,10 +143,13 @@ export function ShopperDock({ paypalClientId }: { paypalClientId?: string }) {
           <ShopperChat paypalClientId={paypalClientId} request={request} compact />
         </div>
         <div className="dock-body dock-scroll" role="tabpanel" hidden={tab !== 'cart'}>
-          <CartPanel paypalClientId={paypalClientId} onAskAi={() => setTab('ai')} />
+          <CartPanel paypalClientId={paypalClientId} onAskAi={() => setTab('ai')} onOrders={() => setTab('orders')} />
+        </div>
+        <div className="dock-body dock-scroll" role="tabpanel" hidden={tab !== 'orders'}>
+          <OrdersPanel active={open && tab === 'orders'} />
         </div>
         <footer className="dock-foot small">
-          <span className="muted">{tab === 'ai' ? 'Only shopping at Sayso shops.' : 'Each shop prices its cart; you pay with PayPal.'}</span>
+          <span className="muted">{tab === 'ai' ? 'Only shopping at Sayso shops.' : tab === 'cart' ? 'Each shop prices its cart; you pay with PayPal.' : 'Your PayPal is your account here.'}</span>
           <a href="/docs#chatgpt">Use your own assistant</a>
         </footer>
       </aside>

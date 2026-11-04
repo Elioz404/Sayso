@@ -93,8 +93,9 @@ export default async function Docs() {
               </li>
               <li>
                 <span>
-                  Every order gets its own page: where it is (paid, preparing, shipped, with the parcel&apos;s tracking), refunds, and a way to ask for
-                  one; the shop owner decides. Your receipt links to it, and the assistant can tell you too.
+                  Every order gets its own page: where it is (paid, preparing, shipped, with the parcel&apos;s tracking) and its refunds. To ask for one,
+                  the assistant takes your reason to the shop, and the owner decides. Your receipt links to the page, and the panel&apos;s{' '}
+                  <b>Orders</b> tab lists your orders wherever you are on the site.
                 </span>
               </li>
               <li>

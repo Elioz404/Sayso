@@ -4,8 +4,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buyerOrder, buyerOrders, ordersForAssistant, ORDER_PAGE_CHANNEL } from '../src/core/buyer-orders.ts';
-import { askerOf } from '../src/core/guard/describe.ts';
+import { buyerOrder, buyerOrders, ordersForAssistant } from '../src/core/buyer-orders.ts';
 import { links } from '../src/core/links.ts';
 import { trackingLink } from '../src/core/shipping.ts';
 import { paidByPayer } from '../src/core/stores.ts';
@@ -65,15 +64,13 @@ test('an order at its link: where it stands, then shipped, then a refund the buy
   assert.equal(shipped.tracking?.url, trackingLink('USPS', '9400100000000000000000'));
   assert.ok(shipped.steps.every((st) => st.done));
 
-  // The buyer asks from their order page: it waits for the owner, and the owner sees it came from the buyer.
-  const asked = await s.call('request_refund', { cart_id: id, reason: 'The handle arrived cracked.' }, { channel: ORDER_PAGE_CHANNEL, marketplace: true });
+  // The buyer asks through Sayso's assistant (the order page hands it the request): it waits for the owner.
+  const asked = await s.call('request_refund', { cart_id: id, reason: 'The handle arrived cracked.' }, { channel: 'sayso-assistant', marketplace: true });
   assert.ok(!asked.isError, asked.text);
   assert.equal(asked.data.status, 'waiting for the shop owner');
   const waiting = (await buyerOrder(deps, id))!;
   assert.equal(waiting.refundRequests.length, 1);
   assert.ok(!waiting.canAskRefund, 'one request at a time');
-  const record = (await s.guardStore.list(s.owner.agent!.shopId, { kind: 'refund.create' }))[0];
-  assert.equal(askerOf(record.action), 'The buyer');
 
   assert.match(ordersForAssistant([waiting]), new RegExp(`${waiting.number} from Maya Ceramics \\(cart_id ${id}`));
 });

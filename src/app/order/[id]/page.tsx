@@ -4,9 +4,9 @@
 import type { Metadata } from 'next';
 import { connection } from 'next/server';
 import { OrderState, OrderSteps } from '@/app/_components/order-view.tsx';
-import { RefundAsk } from '@/app/_components/refund-ask.tsx';
 import { When } from '@/app/_components/time.tsx';
 import { buyerOrder } from '@/core/buyer-orders.ts';
+import { buyerSession } from '@/server/buyer-session.ts';
 import { ready } from '@/server/context.ts';
 
 export const metadata: Metadata = { title: 'Your order', robots: { index: false, follow: false } };
@@ -15,6 +15,7 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   await connection();
   const { carts, catalogs, orders, links } = await ready();
   const order = await buyerOrder({ carts, catalogs, orders, links }, (await params).id);
+  const signedIn = Boolean(await buyerSession());
   if (!order) {
     return (
       <main className="wrap wrap-narrow page stack">
@@ -127,14 +128,23 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
               ))}
             </ul>
           )}
-          {order.canAskRefund && <RefundAsk orderId={order.id} total={order.total} />}
+          {order.canAskRefund && (
+            <div className="order-ask">
+              {/* Opens Sayso's assistant with this order: it asks what happened and takes it to the shop. */}
+              <a className="btn" href={`/assistant?ask=${encodeURIComponent(`I'd like a refund for order ${order.number}.`)}`}>
+                Ask for a refund
+              </a>
+              <span className="small muted">The assistant asks what happened and sends it to the shop. The owner decides.</span>
+            </div>
+          )}
         </section>
       )}
 
-      <p className="small muted">
-        Keep this link to come back to your order, or <a href="/orders">sign in with PayPal</a> to see all your orders from any browser. You can also
-        ask Sayso&apos;s assistant where it is.
-      </p>
+      {!signedIn && (
+        <p className="small muted">
+          Want every order in one place, on any device? <a href="/orders">Log in with PayPal on My orders</a>.
+        </p>
+      )}
     </main>
   );
 }

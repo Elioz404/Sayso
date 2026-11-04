@@ -197,7 +197,6 @@ export function Who({ actor }: { actor: { type: 'agent' | 'human'; id: string; s
 export function actorName(actor: { type: 'agent' | 'human'; id: string; side?: 'buyer' | 'merchant' }): string {
   if (actor.type !== 'agent') return actor.id.startsWith('owner:') ? 'You' : actor.id;
   if (actor.id === OPS_AGENT.id) return 'Sayso checkout';
-  if (actor.id === 'buyer-agent:sayso-order') return 'The buyer (order page)';
   const label = actor.id.split(':')[1] ?? actor.id;
   return actor.side === 'buyer' ? `Buyer's assistant (${label})` : label;
 }

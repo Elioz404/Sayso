@@ -733,13 +733,17 @@ html.dock-instant *, html.dock-instant *::before, html.dock-instant *::after { t
 .dock-fab:hover { background: var(--say-hover); }
 .shopper-compact { flex: 1; min-height: 0; }
 .shopper-compact .shopper-log { flex: 1; min-height: 0; max-height: none; }
-/* Wide screens: the page makes room for the panel instead of going under it. The transition is on the
-   resting state too, so closing is as smooth as opening, and the grids keep their three columns while
-   the page narrows, so cards shrink smoothly instead of jumping to a new layout mid-way. */
+/* Wide screens: the panel takes the free space beside the page's column, as wide as that space allows
+   (360 to 440px), and the page keeps its size: it only slides over by what the panel still needs, and
+   narrows only on screens too small for both. No scrim, so the page stays usable with the panel open,
+   and the panel stays open from page to page. */
 @media (min-width: 1200px) {
-  .dock-scrim.dock-on { background: transparent; }
-  .storefront, main.wrap, .site-header .wrap { transition: padding-right var(--dock-time) var(--dock-ease); }
-  html.dock-open .storefront, html.dock-open main.wrap, html.dock-open .site-header .wrap { padding-right: 456px; }
+  :root { --dock-room: calc((100vw - 1180px) / 2); --dock-w: clamp(360px, calc(var(--dock-room) - 16px), 440px); }
+  .dock { width: var(--dock-w); }
+  .dock-scrim { display: none; }
+  body { transition: padding-right var(--dock-time) var(--dock-ease); }
+  /* Slide by what the panel needs; where the column can't keep its width, it narrows only to the panel's edge. */
+  html.dock-open body { padding-right: clamp(0px, calc(2 * (var(--dock-w) + 16px - var(--dock-room))), calc(var(--dock-w) + 16px)); }
   .goods, .shops { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 640px) {
@@ -914,8 +918,7 @@ html.dock-instant *, html.dock-instant *::before, html.dock-instant *::after { t
 .order-requests { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s3); }
 .order-requests li { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--s3); flex-wrap: wrap; }
 .order-signin { flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; }
-.refund-ask summary { cursor: pointer; font-weight: 600; color: var(--say); }
-.refund-ask[open] summary { margin-bottom: var(--s3); }
+.order-ask { display: flex; align-items: center; gap: var(--s3); flex-wrap: wrap; }
 .osteps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s2); }
 .osteps li { position: relative; display: flex; flex-direction: column; gap: var(--s2); }
 .osteps li:not(:last-child)::after { content: ''; position: absolute; top: 12px; left: 34px; right: 6px; height: 2px; border-radius: 2px; background: var(--rule-strong); }
@@ -937,3 +940,7 @@ html.dock-instant *, html.dock-instant *::before, html.dock-instant *::after { t
 .purchase-track { font-size: var(--t-sm); font-weight: 600; }
 @media (max-width: 480px) { .osteps-label small { display: none; } .order-card { padding: var(--s4); } }
 .cart-orders { align-self: flex-start; font-weight: 600; }
+.orders-panel { display: flex; flex-direction: column; gap: var(--s4); padding: var(--s4) var(--s5); width: 100%; }
+.orders-panel .orow { grid-template-columns: 44px minmax(0, 1fr) auto; padding: var(--s3); }
+.orders-panel .orow-photo { width: 44px; height: 44px; }
+.orders-signin { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s2); padding: var(--s3) var(--s4); border: 1px solid var(--rule); border-radius: var(--radius); background: var(--sheet); }

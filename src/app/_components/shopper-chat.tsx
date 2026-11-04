@@ -137,6 +137,12 @@ function Rich({ text }: { text: string }) {
   );
 }
 
+/** Orders the assistant should know about: the one on this page (an order page), then those paid in this browser. */
+function ordersInView(): string[] {
+  const onPage = window.location.pathname.match(/^\/order\/([\w-]{6,60})$/)?.[1];
+  return [...new Set([...(onPage ? [onPage] : []), ...ordersInThisBrowser()])].slice(0, 10);
+}
+
 /** `request`: a message sent from elsewhere on the page ("Buy with AI"); it continues the conversation. */
 export function ShopperChat({ paypalClientId, request, compact = false }: { paypalClientId?: string; request?: { text: string; id: number }; compact?: boolean }) {
   const [history, setHistory] = useState<unknown[]>([]);
@@ -213,7 +219,7 @@ export function ShopperChat({ paypalClientId, request, compact = false }: { payp
     const told = untold;
     const note = told.length ? `(I cancelled ${told.length === 1 ? 'the cart' : 'the carts'} ${told.join(', ')} before paying; don't offer ${told.length === 1 ? 'it' : 'them'} again unless I ask.) ` : '';
     try {
-      const reply = await callApi<{ messages: unknown[]; steps: Step[] }>('/api/shopper', 'POST', { messages: history, text: (note + said).slice(0, 600), orders: ordersInThisBrowser().slice(0, 10) });
+      const reply = await callApi<{ messages: unknown[]; steps: Step[] }>('/api/shopper', 'POST', { messages: history, text: (note + said).slice(0, 600), orders: ordersInView() });
       if (told.length) setUntold((u) => u.filter((id) => !told.includes(id)));
       setHistory(reply.messages);
       setTurns((t) => [...t.slice(0, -1), { user: said, steps: reply.steps, ...(hidden ? { hidden } : {}) }]);

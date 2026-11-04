@@ -98,8 +98,6 @@ export function channelName(channel?: string): string {
       return 'Shop with AI on Sayso';
     case 'sayso-cart':
       return 'Cart on Sayso';
-    case 'sayso-order':
-      return "The buyer's order page";
     case 'owner-agent':
       return 'Your agent';
     case 'paypal-platform':
