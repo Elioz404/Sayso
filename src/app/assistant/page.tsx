@@ -28,10 +28,11 @@ export default async function AssistantPage() {
         <p className="small soft">Add Sayso to ChatGPT, Cursor or any MCP client as a connector. No key needed for shopping.</p>
         <CopyField value={links.shoppingMcp} />
         <ol className="small soft shopper-steps">
-          <li>In ChatGPT: Settings, Apps &amp; Connectors, turn on developer mode, then create a connector with this URL and no authentication.</li>
-          <li>Ask it for a handmade mug. It finds Maya Ceramics, builds the cart and sends you a PayPal link.</li>
-          <li>To pay without a link each time, ask it to set up PayPal: you choose your own limits.</li>
+          <li>In ChatGPT: Settings, Apps (Connectors or Plugins in some versions), then create a custom MCP connector.</li>
+          <li>Name it Sayso, choose No authentication, paste this URL, tick that you trust it and press Create.</li>
+          <li>In a new chat: &ldquo;Use Sayso to find me a handmade mug under $40.&rdquo;</li>
         </ol>
+        <a className="small" href="/docs#chatgpt">Step by step, in the docs</a>
         <p className="small muted">Shop owners get their own MCP URL, with a key, under Agents. Their agent can run the shop, but money and rule changes wait for the owner.</p>
       </aside>
     </main>

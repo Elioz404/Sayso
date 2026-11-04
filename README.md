@@ -97,7 +97,7 @@ The wrap-up lists what happened, the PayPal ids to look up in the sandbox, and w
 
 The demo shop is **Maya Ceramics**, a one-person studio selling mugs, bowls and made-to-order vases. Pay with a PayPal sandbox **personal** account.
 
-1. **Shop as a buyer's assistant.** Add `https://<host>/api/shopping/mcp` as a connector in ChatGPT or any MCP client and ask it to buy two speckled mugs. There's only one in stock: the cart comes back with resolution options the assistant applies on its own, then a PayPal link.
+1. **Shop as a buyer's assistant.** Add `https://<host>/api/shopping/mcp` as a connector in ChatGPT ([how](#add-sayso-to-chatgpt)) or any MCP client and ask it to buy two speckled mugs. No connector? Use **Shop with AI** at `https://<host>/assistant`, the same tools in the browser. There's only one in stock: the cart comes back with resolution options the assistant applies on its own, then a PayPal link.
 2. **Be the owner.** Open `https://<host>/owner` and press **Open the demo shop**. The order is there; the catalog is an editable grid; **Making** shows made-to-order work gated by PayPal payments.
 3. **Run the shop as the owner's agent.**
    ```bash
@@ -107,6 +107,15 @@ The demo shop is **Maya Ceramics**, a one-person studio selling mugs, bowls and 
    ```
    Approve it on the owner page; `sayso check <id>` flips to done.
 4. **Open your own shop** at `https://<host>/start`: add photos of what you sell (notes or a price list help too). Sayso names and describes each piece, keeps your photo on it, and where you gave no price suggests one from what similar items sell for (Channel3); every suggested price waits for you to keep it or change it before the shop can be published. Claim it with **Continue with PayPal** (a sandbox business account), publish, then **Connect your PayPal** on the overview: from then on every sale lands in that account. Your agent's key is shown once.
+
+### Add Sayso to ChatGPT
+
+1. In ChatGPT open **Settings → Apps** (called Connectors or Plugins in some versions and languages). Turn on **Developer mode** under Advanced if it asks, then create a custom MCP connector.
+2. **Name:** `Sayso`. **Authentication:** No authentication. **MCP server URL:** `https://sayso-ovph.onrender.com/api/shopping/mcp`.
+3. Tick the box confirming you trust the connector and press **Create**.
+4. In a new chat: *"Use Sayso to find me a handmade mug under $40."* It searches every shop, builds the cart with the shop's prices and hands you a PayPal link.
+
+The owner's agent connects the same way with the personal URL from **Agents** (`/api/mcp/<sk_agent_...>`, key in the path, so no authentication).
 
 ## How it uses PayPal
 

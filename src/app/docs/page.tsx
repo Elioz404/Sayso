@@ -75,7 +75,7 @@ export default async function Docs() {
             <ol className="steps">
               <li>
                 <span>
-                  Add it as a connector in your assistant: in ChatGPT, a custom connector or app with developer mode on; in any other MCP client, a
+                  Add it as a connector in your assistant: in ChatGPT, follow <a href="#chatgpt">the steps below</a>; in any other MCP client, add a
                   remote server with this URL.
                 </span>
               </li>
@@ -92,6 +92,40 @@ export default async function Docs() {
                 </span>
               </li>
             </ol>
+          </section>
+
+          <section id="chatgpt" className="doc-section">
+            <h2>Add Sayso to ChatGPT</h2>
+            <p>About a minute, once. After that any chat can shop at Sayso&apos;s shops.</p>
+            <ol className="steps">
+              <li>
+                <span>
+                  In ChatGPT, open <b>Settings</b>, then <b>Apps</b> (called Connectors or Plugins in some versions and languages). Turn on{' '}
+                  <b>Developer mode</b> under Advanced if it asks, then choose <b>Create</b> or <b>Add</b> a custom MCP connector.
+                </span>
+              </li>
+              <li>
+                <span>
+                  Name it <b>Sayso</b>, set authentication to <b>No authentication</b>, and paste this as the MCP server URL:
+                </span>
+              </li>
+            </ol>
+            <CopyField value={links.shoppingMcp} />
+            <ol className="steps" start={3} style={{ counterReset: 'step 2' }}>
+              <li>
+                <span>Tick the box that says you trust the connector, then press <b>Create</b>.</span>
+              </li>
+              <li>
+                <span>
+                  In a new chat, ask it to use Sayso: &ldquo;Use Sayso to find me a handmade mug under $40.&rdquo; It searches every shop, builds the cart
+                  and gives you a PayPal link.
+                </span>
+              </li>
+            </ol>
+            <p className="small soft">
+              Shop owners connect their own agent the same way, with the personal MCP URL from <b>Agents</b> in their dashboard (the key is in the URL, so
+              again no authentication). Rather not set anything up? <a href="/assistant">Shop with the assistant on this site</a>.
+            </p>
           </section>
 
           <section id="pay" className="doc-section">
