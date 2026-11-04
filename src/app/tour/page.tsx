@@ -10,7 +10,7 @@ import { connection } from 'next/server';
 import { CopyField } from '@/app/_components/client-ui.tsx';
 import { Decision, FlashNotice } from '@/app/_components/owner-actions.tsx';
 import { SEEN_COOKIE } from '@/app/_components/judges-seen.ts';
-import { JudgesRefresh, OpenDemoShop, RunStep, SeenLink, SwitchToShop } from '@/app/_components/tour-actions.tsx';
+import { JudgesRefresh, OpenDemoShop, ResetJudges, RunStep, SeenLink, SwitchToShop } from '@/app/_components/tour-actions.tsx';
 import { Icon, Status } from '@/app/_components/ui.tsx';
 import { buyerOrder, type BuyerOrder } from '@/core/buyer-orders.ts';
 import { isLive } from '@/core/catalog.ts';
@@ -181,7 +181,10 @@ export default async function JudgesPage({ searchParams }: { searchParams: Promi
   return (
     <main className="wrap page judges">
       <header className="judges-head">
-        <span className="small soft">For Judges</span>
+        <span className="judges-top">
+          <span className="small soft">For Judges</span>
+          {(order || mine || drafting || [...seen].some(Boolean)) && <ResetJudges />}
+        </span>
         <h1>Try Sayso for real</h1>
         <p className="lede">Buy like a shopper, or open a shop and run it with your own agent. Everything runs on the PayPal sandbox; no real money moves.</p>
         {!accounts && (

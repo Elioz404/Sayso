@@ -67,6 +67,11 @@ export async function rememberPublish(shopId: string): Promise<void> {
   await setCookie(PUBLISH_COOKIE, (await ready()).access.signValue('publish', shopId, HOUR), HOUR);
 }
 
+/** Nothing to publish on the next sign-in. */
+export async function forgetPublish(): Promise<void> {
+  (await cookies()).delete(PUBLISH_COOKIE);
+}
+
 /** The shop to publish on this sign-in, consumed by reading it. */
 export async function takePublish(): Promise<string | undefined> {
   const jar = await cookies();

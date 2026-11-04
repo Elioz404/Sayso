@@ -139,3 +139,52 @@ export function JudgesRefresh() {
   }, [router]);
   return null;
 }
+
+/** What this browser keeps for the shopping panel: the conversation, the cart, its receipts. */
+const KEPT = ['sayso-shopper-v1', 'sayso-receipts-v1', 'sayso-cart-v1'];
+
+/** For Judges from the start, in this browser, after a second "yes". */
+export function ResetJudges() {
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  if (!asking) {
+    return (
+      <button type="button" className="btn btn-quiet btn-small" onClick={() => setAsking(true)}>
+        Start over
+      </button>
+    );
+  }
+  return (
+    <span className="judges-reset">
+      <span className="small">Clear your progress, the chat and the cart, and sign out here?</span>
+      <button
+        type="button"
+        className="btn btn-small"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            await callApi('/api/tour/reset', 'POST');
+            try {
+              KEPT.forEach((key) => localStorage.removeItem(key));
+              sessionStorage.clear();
+            } catch {
+              // storage off: nothing kept here anyway
+            }
+            window.location.href = '/tour';
+          } catch (err) {
+            setError((err as Error).message);
+            setBusy(false);
+          }
+        }}
+      >
+        {busy ? 'Clearing…' : 'Yes, start over'}
+      </button>
+      <button type="button" className="btn btn-quiet btn-small" disabled={busy} onClick={() => setAsking(false)}>
+        Cancel
+      </button>
+      {error && <span className="small error">{error}</span>}
+    </span>
+  );
+}

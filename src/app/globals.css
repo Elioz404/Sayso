@@ -1003,3 +1003,7 @@ span.sell-qty { border-color: transparent; background: transparent; padding: 0; 
 .judges-accounts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s5); margin-bottom: calc(var(--s3) - var(--s6)); }
 .judges-account { display: flex; flex-direction: column; gap: var(--s2); padding: var(--s3) var(--s4); border: 1px dashed var(--rule-strong); border-radius: var(--radius); background: var(--paper); }
 @media (max-width: 860px) { .judges-accounts { grid-template-columns: minmax(0, 1fr); gap: var(--s3); } .judges-accounts > span:empty { display: none; } }
+.judges-top { display: flex; justify-content: space-between; align-items: center; gap: var(--s3); flex-wrap: wrap; min-height: 32px; }
+.judges-reset { display: inline-flex; align-items: center; gap: var(--s2); flex-wrap: wrap; justify-content: flex-end; }
+.judges-head { max-width: none; }
+.judges-head > :not(.judges-top) { max-width: 70ch; }

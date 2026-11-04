@@ -71,6 +71,11 @@ export async function rememberPaidHere(cartId: string): Promise<void> {
   await setCookie(PAID_HERE_COOKIE, (await ready()).access.signValue('paid-here', ids.join('~'), QUARTER), QUARTER);
 }
 
+/** This browser forgets which orders it paid for (they stay the buyer's through their PayPal sign-in). */
+export async function forgetPaidHere(): Promise<void> {
+  (await cookies()).delete(PAID_HERE_COOKIE);
+}
+
 /** Orders this browser paid for, newest first. */
 export async function paidHere(): Promise<string[]> {
   const value = (await ready()).access.verifyValue('paid-here', (await cookies()).get(PAID_HERE_COOKIE)?.value);
