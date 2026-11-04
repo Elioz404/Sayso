@@ -11,7 +11,8 @@
 // Someone who sends their connect link to another person never sees that code, so they can't spend
 // that person's PayPal. The personal URL on the same page is shown only to that person and works at once.
 
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { generateSecret, hashSecret } from './access.ts';
 import type { Commerce } from './commerce.ts';
 import { HttpError, notFound } from './errors.ts';
 import type { Guard } from './guard/engine.ts';
@@ -96,7 +97,9 @@ export interface WalletPayment {
   approvalUrl?: string;
 }
 
-const hashOf = (secret: string) => createHash('sha256').update(secret).digest('hex');
+const hashOf = hashSecret;
+/** A hash no key produces: retires every key a wallet had. */
+const unusableHash = () => hashSecret(randomBytes(24).toString('base64url'));
 
 export class Wallets {
   private readonly deps: WalletsDeps;
@@ -107,7 +110,7 @@ export class Wallets {
 
   /** A new wallet for an assistant. Returns the key once; the person finishes setup at `connectUrl`. */
   async create(label: string): Promise<{ wallet: Wallet; key: string; connectUrl: string }> {
-    const key = `sk_wallet_${randomBytes(24).toString('base64url')}`;
+    const key = generateSecret('sk_wallet');
     const wallet: Wallet = {
       id: `wal_${randomUUID().replace(/-/g, '').slice(0, 14)}`,
       hash: hashOf(key),
@@ -211,7 +214,7 @@ export class Wallets {
       pairing: { hash: hashOf(pairingCode), expiresAt: new Date(Date.now() + PAIRING_TTL_MS).toISOString(), attempts: 0 },
     };
     await this.deps.store.put(connected);
-    const connectorKey = `sk_wallet_${randomBytes(24).toString('base64url')}`;
+    const connectorKey = generateSecret('sk_wallet');
     await this.deps.store.addKey(wallet.id, hashOf(connectorKey));
     return { wallet: connected, connectorKey, pairingCode: `${pairingCode.slice(0, 4)}-${pairingCode.slice(4)}` };
   }
@@ -225,7 +228,7 @@ export class Wallets {
     if (source.status !== 'connected' || !source.paymentTokenId) throw new HttpError(409, 'The wallet to lend from is not connected to PayPal');
     const wallet: Wallet = {
       id: `wal_${randomUUID().replace(/-/g, '').slice(0, 14)}`,
-      hash: hashOf(randomBytes(24).toString('base64url')), // no key: only the lender's code uses it
+      hash: unusableHash(), // no key: only the lender's code uses it
       hint: '',
       label,
       status: 'connected',
@@ -252,7 +255,7 @@ export class Wallets {
     if (wallet.paymentTokenId && !wallet.sharedToken) await deletePaymentToken(this.deps.paypal, wallet.paymentTokenId).catch(() => undefined);
     // Every key issued so far stops working, so a leaked URL can't spend again after a later reconnect.
     // The hash is rotated to one no key produces; reconnecting issues fresh keys.
-    const off: Wallet = { ...wallet, status: 'disconnected', paymentTokenId: undefined, hash: hashOf(randomBytes(24).toString('base64url')) };
+    const off: Wallet = { ...wallet, status: 'disconnected', paymentTokenId: undefined, hash: unusableHash() };
     await this.deps.store.removeKeys(wallet.id);
     await this.deps.store.put(off);
     return off;

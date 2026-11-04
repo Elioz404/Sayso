@@ -4,6 +4,7 @@
 // blocked. The owner, or their agent, plans the work and marks it made; payments are facts from PayPal
 // and can't be moved. Cancelled, refunded or released work leaves the board on its own.
 
+import { mapLimit } from './concurrency.ts';
 import { findVariant, type Catalog } from './catalog.ts';
 import { addDays, dayOf, daysBetween, isDay, type Day } from './days.ts';
 import { HttpError, notFound } from './errors.ts';
@@ -107,7 +108,8 @@ export class Production {
     ]);
     const jobs = [
       ...carts.flatMap((cart) => orderJobs(cart, catalog, refunds)),
-      ...(await Promise.all(invoices.map((record) => this.invoiceJob(record)))).flatMap((job) => (job ? [job] : [])),
+      // Each invoice's status is read from PayPal: a few at a time, not a hundred at once.
+      ...(await mapLimit(invoices, 5, (record) => this.invoiceJob(record))).flatMap((job) => (job ? [job] : [])),
     ];
     return jobs
       .filter((job) => !notes[job.id]?.madeOn)

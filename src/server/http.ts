@@ -2,7 +2,7 @@ import 'server-only';
 import { cookies } from 'next/headers';
 import { SESSION_TTL_MS, type OwnerSession } from '@/core/access.ts';
 import { isLive, type Catalog } from '@/core/catalog.ts';
-import { HttpError, notFound } from '@/core/errors.ts';
+import { ConfigError, HttpError, notFound } from '@/core/errors.ts';
 import { check, type Infer, type JsonSchema } from '@/core/tools/schema.ts';
 import { PayPalError } from '@/core/paypal/client.ts';
 import { ready, siteLinks } from './context.ts';
@@ -92,7 +92,7 @@ export async function handle(fn: () => Promise<Response>): Promise<Response> {
       return Response.json({ name: 'PAYPAL_ERROR', message: err.message, debug_id: err.debugId }, { status: 502 });
     }
     logError('request', err);
-    const message = err instanceof Error && /PAYPAL_CLIENT_ID/.test(err.message) ? 'PayPal sandbox keys are not configured on this server' : 'Unexpected error';
+    const message = err instanceof ConfigError ? err.message : 'Unexpected error';
     return Response.json({ name: 'INTERNAL_SERVER_ERROR', message }, { status: 500 });
   }
 }

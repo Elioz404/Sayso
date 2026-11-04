@@ -2,6 +2,8 @@
 // PayPal-Request-Id idempotency on writes, and PayPal-Debug-Id captured on errors for the audit log.
 // Plain fetch, server-side only.
 
+import { ConfigError } from '../errors.ts';
+
 export type PayPalEnv = 'sandbox' | 'live';
 
 export interface PayPalConfig {
@@ -49,6 +51,7 @@ export class PayPalClient {
   private readonly config: PayPalConfig;
   private readonly base: string;
   private token?: { value: string; expiresAt: number };
+  private refreshing?: Promise<string>;
   /** Set on a client acting for a connected seller: shares the app's token, adds PayPal-Auth-Assertion. */
   private readonly onBehalf?: { parent: PayPalClient; assertion: string };
 
@@ -73,7 +76,7 @@ export class PayPalClient {
   static fromEnv(env: Record<string, string | undefined> = process.env): PayPalClient {
     const clientId = env.PAYPAL_CLIENT_ID;
     const clientSecret = env.PAYPAL_CLIENT_SECRET;
-    if (!clientId || !clientSecret) throw new Error('PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET must be set');
+    if (!clientId || !clientSecret) throw new ConfigError('PayPal sandbox keys are not configured on this server (PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET)');
     return new PayPalClient({ clientId, clientSecret, env: env.PAYPAL_ENV === 'live' ? 'live' : 'sandbox' });
   }
 
@@ -119,11 +122,14 @@ export class PayPalClient {
   async accessToken(): Promise<string> {
     if (this.onBehalf) return this.onBehalf.parent.accessToken();
     if (this.token && Date.now() < this.token.expiresAt) return this.token.value;
-    const { access_token, expires_in } = await this.tokenRequest<{ access_token: string; expires_in: number }>(
-      new URLSearchParams({ grant_type: 'client_credentials' }),
-    );
-    this.token = { value: access_token, expiresAt: Date.now() + (expires_in - 60) * 1000 };
-    return access_token;
+    // Requests that arrive together when the token expires share one refresh.
+    this.refreshing ??= this.tokenRequest<{ access_token: string; expires_in: number }>(new URLSearchParams({ grant_type: 'client_credentials' }))
+      .then(({ access_token, expires_in }) => {
+        this.token = { value: access_token, expiresAt: Date.now() + (expires_in - 60) * 1000 };
+        return access_token;
+      })
+      .finally(() => (this.refreshing = undefined));
+    return this.refreshing;
   }
 
   private async tokenRequest<T>(body: URLSearchParams): Promise<T> {

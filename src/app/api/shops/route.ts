@@ -64,7 +64,7 @@ export async function POST(request: Request) {
         owner_secret: result.ownerSecret,
         claim_url: paypalLogin ? links.paypalSignIn : undefined,
         agent_key: result.agentKey,
-        review_url: `${links.base}/owner`,
+        review_url: links.owner.home,
         mcp: { seller: links.sellerMcpFor(result.agentKey), buyer: links.shoppingMcp, this_shop: links.shopMcp(shop.slug) },
         cli_login: links.cliLogin(result.agentKey),
       },

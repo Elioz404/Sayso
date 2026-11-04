@@ -170,8 +170,8 @@ test('OpenAI: low-detail photos, capped output, and a daily budget that stops sp
   await model.json({ system: 's', user: 'u' }); // $0.60 spent: over the $0.50 cap now
   await assert.rejects(model.json({ system: 's', user: 'u' }), (e: LlmError) => e.status === 429 && /budget/.test(e.message));
   assert.equal(bodies.length, 2, 'the third call never reached the API');
-  assert.equal(budget.status().calls, 2);
-  assert.equal(budget.status(new Date(Date.now() + 86_400_000)).spentUsd, 0, 'resets the next day');
+  assert.equal((await budget.status()).calls, 2);
+  assert.equal((await budget.status(new Date(Date.now() + 86_400_000))).spentUsd, 0, 'resets the next day');
 });
 
 test('modelFromEnv prefers OpenAI, falls back to DeepSeek, and is off without keys', () => {

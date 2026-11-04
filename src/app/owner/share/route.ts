@@ -3,7 +3,7 @@
 // started yet: open the page so the owner picks the photos there.
 import { siteLinks } from '@/server/context.ts';
 
-const toPage = () => Response.redirect(`${siteLinks().base}/owner/catalog/new`, 303);
+const toPage = () => Response.redirect(siteLinks().owner.addProduct, 303);
 
 export const POST = toPage;
 export const GET = toPage;

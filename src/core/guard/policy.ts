@@ -142,18 +142,22 @@ function capitalize(s: string): string {
 }
 
 /** Sensible defaults for a new shop, in its currency, so Guard is useful before the owner writes anything. */
+/** The thresholds new shops and new buyers start with, in major units of their currency. */
+export const DEFAULT_LIMITS = { refundApproval: 50, refundDaily: 200, invoiceApproval: 200, buyerOrder: 100, buyerDaily: 250 } as const;
+
 export function defaultMerchantPolicy(ownerId: string, currency: string): Policy {
   const amount = (units: number) => majorUnits(units, currency);
   const money = (units: number) => formatMoney(amount(units), currency);
+  const d = DEFAULT_LIMITS;
   return {
     ownerId,
     currency,
-    source: `Default: refunds over ${money(50)} need my OK; invoices over ${money(200)} or to someone who has never paid me need my OK; never repeat a refund or an invoice within the hour.`,
+    source: `Default: refunds over ${money(d.refundApproval)} need my OK; invoices over ${money(d.invoiceApproval)} or to someone who has never paid me need my OK; never repeat a refund or an invoice within the hour.`,
     rules: [
-      { id: 'refund-cap', type: 'max_amount', kinds: ['refund.create'], limit: amount(50), then: 'require_approval' },
-      { id: 'refund-daily', type: 'daily_total', kinds: ['refund.create'], limit: amount(200), then: 'require_approval' },
+      { id: 'refund-cap', type: 'max_amount', kinds: ['refund.create'], limit: amount(d.refundApproval), then: 'require_approval' },
+      { id: 'refund-daily', type: 'daily_total', kinds: ['refund.create'], limit: amount(d.refundDaily), then: 'require_approval' },
       { id: 'no-repeats', type: 'no_duplicates', kinds: ['refund.create', 'payment.capture', 'invoice.send'], windowMinutes: 60 },
-      { id: 'invoice-cap', type: 'max_amount', kinds: ['invoice.send'], limit: amount(200), then: 'require_approval' },
+      { id: 'invoice-cap', type: 'max_amount', kinds: ['invoice.send'], limit: amount(d.invoiceApproval), then: 'require_approval' },
       { id: 'invoice-new-client', type: 'new_counterparty', kinds: ['invoice.send'], then: 'require_approval' },
     ],
   };
@@ -165,10 +169,10 @@ export function defaultBuyerPolicy(ownerId: string, currency: string): Policy {
   return {
     ownerId,
     currency,
-    source: `Default: my assistant can buy up to ${money(100)} per order and ${money(250)} a day; ask me above that.`,
+    source: `Default: my assistant can buy up to ${money(DEFAULT_LIMITS.buyerOrder)} per order and ${money(DEFAULT_LIMITS.buyerDaily)} a day; ask me above that.`,
     rules: [
-      { id: 'order-cap', type: 'max_amount', kinds: ['checkout.create'], limit: amount(100), then: 'require_approval' },
-      { id: 'daily-cap', type: 'daily_total', kinds: ['checkout.create'], limit: amount(250), then: 'require_approval' },
+      { id: 'order-cap', type: 'max_amount', kinds: ['checkout.create'], limit: amount(DEFAULT_LIMITS.buyerOrder), then: 'require_approval' },
+      { id: 'daily-cap', type: 'daily_total', kinds: ['checkout.create'], limit: amount(DEFAULT_LIMITS.buyerDaily), then: 'require_approval' },
       { id: 'no-dup-orders', type: 'no_duplicates', kinds: ['checkout.create'], windowMinutes: 10 },
     ],
   };

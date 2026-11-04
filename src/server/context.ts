@@ -7,7 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { Access, MemoryAccessStore, type AccessStore } from '@/core/access.ts';
-import { modelFromEnv, type Budget, type ChatModel } from '@/core/ai/llm.ts';
+import { modelFromEnv, type ChatModel } from '@/core/ai/llm.ts';
 import { Commerce } from '@/core/commerce.ts';
 import { demoCatalog, refreshDemoPresentation } from '@/core/demo-shop.ts';
 import { Guard, MemoryGuardStore } from '@/core/guard/engine.ts';
@@ -35,8 +35,9 @@ import { Shops } from '@/core/shops.ts';
 import { MemoryCartStore, MemoryCatalogStore, type CartStore, type CatalogStore } from '@/core/stores.ts';
 import type { ToolServices } from '@/core/tools/registry.ts';
 import { MemoryWalletStore, walletCheckoutExecutor, Wallets, type WalletStore } from '@/core/wallets.ts';
+import { PgHousekeeping } from './housekeeping.ts';
 import { notifyOwner } from './notify.ts';
-import { Db, PgAccessStore, PgCartStore, PgCatalogStore, PgGuardStore, PgJobStore, PgMediaStore, PgPasskeyStore, PgPolicyStore, PgPushStore, PgSellerStore, PgTourStore, PgWalletStore } from './pg-stores.ts';
+import { Db, PgAccessStore, PgCartStore, PgCatalogStore, PgGuardStore, PgJobStore, PgMediaStore, PgPasskeyStore, PgPolicyStore, PgPushStore, PgSellerStore, PgSpendStore, PgTourStore, PgWalletStore } from './pg-stores.ts';
 import { vapidFrom, webPushSender } from './push-sender.ts';
 import { showDevSecret } from './log.ts';
 
@@ -45,7 +46,6 @@ export interface Context {
   catalogs: CatalogStore;
   access: Access;
   model?: ChatModel;
-  aiBudget?: Budget;
   guard: Guard;
   commerce: Commerce;
   shops: Shops;
@@ -62,6 +62,8 @@ export interface Context {
   production: Production;
   /** The judges' tour; only on servers that run the public demo (SAYSO_DEMO=true). */
   tours?: Tours;
+  /** The hourly cleanup (Postgres only). */
+  housekeeping?: PgHousekeeping;
   market?: MarketPrices;
   tools: ToolServices;
   links: Links;
@@ -118,11 +120,11 @@ async function create(): Promise<Context> {
   const jobs: JobStore = db ? new PgJobStore(db) : new MemoryJobStore();
   const secret = sessionSecret();
   const access = new Access(accessStore, secret);
-  const ai = modelFromEnv();
+  const ai = modelFromEnv(process.env, db ? new PgSpendStore(db) : undefined);
   const model = ai?.model;
   const site = siteLinks();
   const policyFor = policyLookup(policies, catalogs);
-  const vapid = vapidFrom(secret);
+  const vapid = vapidFrom(process.env.SAYSO_PUSH_SECRET || secret);
   const push = new Push({ store: db ? new PgPushStore(db) : new MemoryPushStore(), send: webPushSender(vapid, site.base) });
   const passkeys = new Passkeys({ store: db ? new PgPasskeyStore(db) : new MemoryPasskeyStore(), access, origin: new URL(site.base).origin });
   const payouts = new Payouts({ paypal, catalogs, links: site, partnerMerchantId: process.env.PAYPAL_PARTNER_MERCHANT_ID || undefined });
@@ -161,6 +163,7 @@ async function create(): Promise<Context> {
   const invoicing = new Invoicing({ guard, carts, shops, paypal });
   const production = new Production({ carts, catalogs, guard, invoicing, jobs });
   const wallets = new Wallets({ store: walletStore, policies, guard, commerce, paypal, links: site });
+  const housekeeping = db ? new PgHousekeeping(db) : undefined;
   const tools: ToolServices = { commerce, orders, saySo, invoicing, production, shops, catalogs, wallets, links: site, market };
 
   // Tours copy the demo shop. SAYSO_TOUR_WALLET names a connected wallet whose PayPal approval the tour's
@@ -176,12 +179,13 @@ async function create(): Promise<Context> {
           tools,
           template: demoCatalog,
           lendFrom: process.env.SAYSO_TOUR_WALLET || undefined,
+          housekeeping,
         })
       : undefined;
 
   await seedDemo(catalogs, policies, access);
   const paypalLogin = paypalLoginEnabled();
-  return { carts, catalogs, access, model, aiBudget: ai?.budget, guard, commerce, shops, media, sellers, payouts, paypal, paypalLogin, orders, saySo, invoicing, production, tours, wallets, market, tools, links: site, passkeys, push, pushKey: vapid.publicKey };
+  return { carts, catalogs, access, model, guard, commerce, shops, media, sellers, payouts, paypal, paypalLogin, orders, saySo, invoicing, production, tours, housekeeping, wallets, market, tools, links: site, passkeys, push, pushKey: vapid.publicKey };
 }
 
 function sessionSecret(): string {

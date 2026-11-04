@@ -11,17 +11,18 @@ import { jsonLdScript, shopJsonLd } from '@/core/discovery.ts';
 import { formatMoney } from '@/core/money.ts';
 import { assistantPrompt, stockNote } from '@/core/storefront.ts';
 import { ready } from '@/server/context.ts';
+import { shopBySlug } from '@/server/shops.ts';
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
-  const catalog = await (await ready()).catalogs.bySlug((await params).slug).catch(() => undefined);
+  const catalog = await shopBySlug((await params).slug);
   return { title: catalog?.shop.name ?? 'Shop' };
 }
 
 export default async function ShopPage({ params }: { params: Promise<{ slug: string }> }) {
   await connection();
   const { slug } = await params;
-  const { catalogs, links } = await ready();
-  const catalog = await catalogs.bySlug(slug);
+  const { links } = await ready();
+  const catalog = await shopBySlug(slug);
   if (!catalog || !isLive(catalog)) {
     return (
       <main className="wrap wrap-narrow page stack">

@@ -31,6 +31,14 @@ export const mcpRequests = new RateLimit(120, 60_000);
  * setups, refunds) or the AI. PayPal throttles the whole app, so one caller must not use it all up.
  */
 export const costlyCalls = { paypal: new RateLimit(40, 3_600_000), ai: new RateLimit(20, 3_600_000) } as const;
+/** For REST routes that call the AI: refuse past the caller's hourly share. */
+export function limitAi(request: Request): void {
+  if (!costlyCalls.ai.allow(clientAddress(request))) throw new HttpError(429, 'Too many photo reads from here; wait a few minutes and try again.');
+}
+
+/** A test notification per shop per minute: enough to check it works, not enough to spam a phone. */
+export const testPushes = new RateLimit(1, 60_000);
+
 /** For REST routes that reach PayPal on the app's credentials: refuse past the caller's hourly share. */
 export function limitPayPal(request: Request): void {
   if (!costlyCalls.paypal.allow(clientAddress(request))) throw new HttpError(429, 'Too many requests from here; wait a few minutes and try again.');

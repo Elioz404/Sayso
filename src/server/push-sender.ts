@@ -1,6 +1,7 @@
 // Sends Web Push messages. The VAPID key pair (which identifies this server to the push services) is
-// derived from SAYSO_SECRET, so a deployment needs no extra configuration and keeps the same keys
-// across restarts; browsers' subscriptions stay valid as long as the secret does.
+// derived from a secret: SAYSO_PUSH_SECRET when set, else SAYSO_SECRET, so a deployment needs no extra
+// configuration and keeps the same keys across restarts. Browsers' subscriptions stay valid as long as
+// that secret does; set SAYSO_PUSH_SECRET to rotate the session secret without losing them.
 
 import 'server-only';
 import { createECDH, createHmac } from 'node:crypto';
@@ -18,16 +19,20 @@ export function vapidFrom(secret: string): Vapid {
   return { publicKey: ecdh.getPublicKey().toString('base64url'), privateKey: ecdh.getPrivateKey().toString('base64url') };
 }
 
-export function webPushSender(vapid: Vapid, subject: string): PushSender {
-  // Push services want a contact: a mailto: or an https URL. Local http addresses aren't accepted.
-  const contact = subject.startsWith('https://') ? subject : 'mailto:sayso@example.com';
+/**
+ * A sender, or undefined when the server has no contact push services accept (a mailto: or an https
+ * URL): SAYSO_PUSH_CONTACT, else the site's own https address. Plain-http local runs send no pushes.
+ */
+export function webPushSender(vapid: Vapid, siteUrl: string, contact = process.env.SAYSO_PUSH_CONTACT): PushSender | undefined {
+  const subject = contact?.startsWith('mailto:') || contact?.startsWith('https://') ? contact : siteUrl.startsWith('https://') ? siteUrl : undefined;
+  if (!subject) return undefined;
   return async (sub: PushSubscriptionRecord, message: PushMessage) => {
     try {
       await webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, JSON.stringify(message), {
         TTL: 6 * 3600,
         urgency: 'high',
         topic: message.tag.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32) || undefined,
-        vapidDetails: { subject: contact, publicKey: vapid.publicKey, privateKey: vapid.privateKey },
+        vapidDetails: { subject, publicKey: vapid.publicKey, privateKey: vapid.privateKey },
         timeout: 8_000,
       });
       return 'sent';

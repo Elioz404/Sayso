@@ -16,6 +16,9 @@ export class HttpError extends Error {
 
 export const notFound = (what: string) => new HttpError(404, `${what} not found`);
 
+/** The server is missing configuration it needs (keys, URLs). Shown to people as "not configured". */
+export class ConfigError extends Error {}
+
 /** What a person sees when an AI step fails: the budget message as is, anything else generic. */
 export function fromLlmError(err: unknown, fallback: string): HttpError {
   if (err instanceof LlmError && err.status === 429) return new HttpError(429, err.message);

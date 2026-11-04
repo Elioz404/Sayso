@@ -9,9 +9,10 @@ import { jsonLdScript, productJsonLd } from '@/core/discovery.ts';
 import { formatMoney } from '@/core/money.ts';
 import { assistantPrompt, stockNote } from '@/core/storefront.ts';
 import { ready } from '@/server/context.ts';
+import { shopBySlug } from '@/server/shops.ts';
 
 async function find(slug: string, productId: string): Promise<{ catalog: Catalog; index: number } | undefined> {
-  const catalog = await (await ready()).catalogs.bySlug(slug).catch(() => undefined);
+  const catalog = await shopBySlug(slug);
   if (!catalog || !isLive(catalog)) return undefined;
   const index = catalog.products.findIndex((p) => p.id === productId);
   return index === -1 ? undefined : { catalog, index };

@@ -5,7 +5,7 @@ import { fromLlmError, HttpError } from '@/core/errors.ts';
 import { checkPhotos } from '@/core/media.ts';
 import { ready } from '@/server/context.ts';
 import { handle, PHOTO_BODY_LIMIT, readBody, requireOwnShop } from '@/server/http.ts';
-import { photoReads } from '@/server/rate-limit.ts';
+import { limitAi, photoReads } from '@/server/rate-limit.ts';
 
 const LABEL = { type: 'object', properties: { image: { type: 'string' } }, required: ['image'] } as const;
 
@@ -17,6 +17,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const { model, orders } = await ready();
     if (!model) throw new HttpError(503, 'Reading labels needs an AI key on the server; type the number instead');
     await orders.get(shopId, (await params).id); // only this shop's orders
+    limitAi(request);
     if (!photoReads.allow(shopId)) throw new HttpError(429, 'That is a lot of photos for one hour; type the number instead');
     const reading = await readShippingLabel(model, photo).catch((err: unknown) => {
       throw fromLlmError(err, 'Could not read that label');

@@ -10,8 +10,8 @@ import type { Access } from './access.ts';
 import type { Address } from './cart/spec.ts';
 import type { Catalog } from './catalog.ts';
 import { HttpError, notFound } from './errors.ts';
-import type { Policy } from './guard/policy.ts';
-import { majorUnits, toMoney } from './money.ts';
+import { DEFAULT_LIMITS, type Policy } from './guard/policy.ts';
+import { formatMoney, majorUnits, toMoney } from './money.ts';
 import type { SaySo } from './say-so.ts';
 import type { CatalogStore } from './stores.ts';
 import { actor } from './tools/context.ts';
@@ -24,8 +24,13 @@ export type TourStep = (typeof TOUR_STEPS)[number];
 /** What each step needs done first. */
 const NEEDS: Record<TourStep, TourStep | undefined> = { buy: undefined, refund: 'buy', commission: undefined, rules: undefined, earn: undefined };
 
-/** The refunds the owner's agent asks for in the "earn" step: each over the $50 rule, so each waits for the judge. */
-const EARN_REFUNDS = [52, 56, 58];
+/**
+ * The refunds the owner's agent asks for in the "earn" step, in major units: each a little over the
+ * default refund rule every tour copy starts with, so each waits for the judge.
+ */
+const EARN_REFUNDS = [2, 6, 8].map((over) => DEFAULT_LIMITS.refundApproval + over);
+/** The refund limit the owner's agent tries to give itself in the "rules" step, in major units. */
+export const TOUR_ASKED_REFUND_LIMIT = 10_000;
 /** Made-to-order pieces the assistant buys for the "earn" step, so its refunds have an order of their own. */
 const EARN_PIECES = 3;
 
@@ -72,8 +77,16 @@ export interface TourStore {
   remove(id: string): Promise<void>;
 }
 
+/** Deletes everything a shop (or a wallet) left behind. Postgres implements it; without it, only the shop goes. */
+export interface Housekeeping {
+  forgetShop(shopId: string): Promise<void>;
+  forgetWallet(walletId: string): Promise<void>;
+}
+
 export interface ToursDeps {
   store: TourStore;
+  /** Clears what an expired tour left: its orders, records, keys, photos, passkeys and lent wallet. */
+  housekeeping?: Housekeeping;
   catalogs: CatalogStore;
   access: Access;
   wallets: Wallets;
@@ -159,23 +172,25 @@ export class Tours {
     if (step === 'buy') await this.buy(tour, result, act);
     if (step === 'refund') {
       const cartId = tour.steps.buy!.cartId!;
-      const refund = await act('owner-agent', 'refund_order', { order_id: cartId, reason: 'The bowl arrived chipped. Refund the whole order.' }, (r) =>
+      const refund = await act('owner-agent', 'refund_order', { order_id: cartId, reason: 'Part of the order arrived chipped. Refund the whole order.' }, (r) =>
         r.status === 'pending_approval' ? `Asked to refund ${r.amount}. Guard says: ${r.why.join(' ')} It waits for you.` : `Refund ${r.status}: ${r.next}`,
       );
       result.recordId = refund.say_so_id;
     }
     if (step === 'rules') {
       const policy = await this.deps.saySo.policy(shopId);
+      const limit = majorUnits(TOUR_ASKED_REFUND_LIMIT, policy.currency);
+      const asked = formatMoney(limit, policy.currency);
       const looser: Policy = {
         ...policy,
-        source: 'Let my agent refund up to $10,000 on its own.',
-        rules: policy.rules.map((r) => (r.type === 'max_amount' && r.kinds.includes('refund.create') ? { ...r, limit: majorUnits(10_000, policy.currency) } : r)),
+        source: `Let my agent refund up to ${asked} on its own.`,
+        rules: policy.rules.map((r) => (r.type === 'max_amount' && r.kinds.includes('refund.create') ? { ...r, limit } : r)),
       };
-      const record = await this.deps.saySo.submitPolicy(looser, 'Let me refund up to $10,000 without asking.', actor(this.ownerAgent(tour)));
+      const record = await this.deps.saySo.submitPolicy(looser, `Let me refund up to ${asked} without asking.`, actor(this.ownerAgent(tour)));
       transcript.push({
         who: 'owner-agent',
         did: 'policy.update',
-        said: record.status === 'pending_approval' ? `Tried to raise its own refund limit to $10,000. Guard says: ${record.decision?.hits.map((h) => h.message).join(' ')}` : `Rules ${record.status}.`,
+        said: record.status === 'pending_approval' ? `Tried to raise its own refund limit to ${asked}. Guard says: ${record.decision?.hits.map((h) => h.message).join(' ')}` : `Rules ${record.status}.`,
       });
       result.recordId = record.id;
     }
@@ -202,13 +217,17 @@ export class Tours {
     return result;
   }
 
-  /** Expired tour copies go: their shop, agent key and lent wallet. Their audit records stay. */
+  /** Expired tour copies go, with everything they made: orders, records, keys, photos, the lent wallet. */
   async sweep(now = new Date()): Promise<number> {
     const expired = await this.deps.store.expired(now);
     for (const tour of expired) {
-      await this.deps.catalogs.remove(tour.shopId);
       await this.deps.access.revokeKey(tour.shopId, tour.agentKeyId);
       if (tour.walletId) await this.deps.wallets.disconnect(tour.walletId).catch(() => undefined);
+      await this.deps.catalogs.remove(tour.shopId);
+      if (this.deps.housekeeping) {
+        await this.deps.housekeeping.forgetShop(tour.shopId);
+        if (tour.walletId) await this.deps.housekeeping.forgetWallet(tour.walletId);
+      }
       await this.deps.store.remove(tour.id);
     }
     return expired.length;
@@ -216,7 +235,7 @@ export class Tours {
 
   /**
    * The buyer's assistant orders a few made-to-order pieces with saved PayPal, then the owner's agent
-   * asks for small refunds on that order, each just over the shop's $50 rule. The judge decides each one;
+   * asks for small refunds on that order, each just over the shop's refund rule. The judge decides each one;
    * if they approve them all, Sayso suggests the rule those approvals earned (shown on the tour page).
    */
   private async earn(tour: Tour, result: StepResult, act: Act) {
@@ -246,17 +265,22 @@ export class Tours {
   private async buy(tour: Tour, result: StepResult, act: Act) {
     const found = await act('assistant', 'search_products', { query: 'mug', in_stock_only: true }, (r) => `Found ${r.products[0]?.variants.length ?? 0} mugs in stock at ${r.shop.name}.`);
     const mug = found.products[0].variants[0].variant_id as string;
-    const bowl = 'var_bowl_sand';
+    // Something else in stock from the shop, to make it a real basket.
+    const catalog = await this.deps.catalogs.byShopId(tour.shopId);
+    const extra = catalog?.products
+      .filter((p) => !p.variants.some((v) => v.id === mug))
+      .flatMap((p) => p.variants.filter((v) => v.inventory > 0 && v.madeToOrderDays === undefined).map((v) => ({ id: v.id, name: p.name.toLowerCase() })))[0];
+    if (!extra) throw new HttpError(409, 'The tour shop has nothing else in stock to add');
 
-    const first = await act('assistant', 'create_cart', { items: [{ variant_id: mug, quantity: 2 }, { variant_id: bowl, quantity: 1 }], shipping_address: SHIP_TO }, (r) =>
-      r.status === 'INCOMPLETE' ? `Asked for 2 mugs and a bowl. The shop says: ${r.validation_issues.map((i: Issue) => i.user_message).join(' ')}` : `Cart ${r.status}.`,
+    const first = await act('assistant', 'create_cart', { items: [{ variant_id: mug, quantity: 2 }, { variant_id: extra.id, quantity: 1 }], shipping_address: SHIP_TO }, (r) =>
+      r.status === 'INCOMPLETE' ? `Asked for 2 mugs and a ${extra.name}. The shop says: ${r.validation_issues.map((i: Issue) => i.user_message).join(' ')}` : `Cart ${r.status}.`,
     );
     result.cartId = first.cart_id;
 
     // Apply the shop's own resolution option, as the merchant-cart spec intends.
     const issue = (first.validation_issues as Issue[]).find((i) => i.resolution_options?.some((o) => o.action === 'REDUCE_QUANTITY'));
     const quantity = issue?.resolution_options?.find((o) => o.action === 'REDUCE_QUANTITY')?.metadata?.quantity ?? 1;
-    const fixed = await act('assistant', 'update_cart', { cart_id: first.cart_id, items: [{ variant_id: mug, quantity }, { variant_id: bowl, quantity: 1 }], shipping_address: SHIP_TO }, (r) =>
+    const fixed = await act('assistant', 'update_cart', { cart_id: first.cart_id, items: [{ variant_id: mug, quantity }, { variant_id: extra.id, quantity: 1 }], shipping_address: SHIP_TO }, (r) =>
       `Applied the shop's fix (buy ${quantity}). Cart ${r.status}: ${r.totals.total.value} ${r.totals.total.currency_code} with shipping and tax.`,
     );
 

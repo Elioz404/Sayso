@@ -2,7 +2,6 @@
 // tools any assistant uses, and the judge as the owner who gives (or refuses) every say-so. One step per
 // screen: what it proves, what the judge does, what happened (with the agents' transcript and the Guard
 // record behind it), then the next step. Everything is real: PayPal sandbox calls, Guard, the audit log.
-import { actionAmount, actionTitle } from '@/core/guard/describe.ts';
 import type { Metadata } from 'next';
 import { connection } from 'next/server';
 import { CopyField } from '@/app/_components/client-ui.tsx';
@@ -10,15 +9,21 @@ import { AdoptRule, Decision } from '@/app/_components/owner-actions.tsx';
 import { RunStep, StartTour } from '@/app/_components/tour-actions.tsx';
 import { When } from '@/app/_components/time.tsx';
 import { Icon, Status } from '@/app/_components/ui.tsx';
+import { demoCatalog } from '@/core/demo-shop.ts';
+import { actionTitle } from '@/core/guard/describe.ts';
 import { verifyAuditChain } from '@/core/guard/engine.ts';
+import { DEFAULT_LIMITS } from '@/core/guard/policy.ts';
 import type { GuardRecord } from '@/core/guard/types.ts';
-import { TOUR_STEPS, type StepResult, type Tour, type TourStep } from '@/core/tour.ts';
+import { formatMoney, majorUnits } from '@/core/money.ts';
+import { tourProgress, type StepView } from '@/core/tour-progress.ts';
+import { TOUR_ASKED_REFUND_LIMIT, TOUR_STEPS, type TourStep } from '@/core/tour.ts';
 import { developerPortalBuilt, ready } from '@/server/context.ts';
 import { ownerView } from '@/server/owner.ts';
 
 export const metadata: Metadata = { title: 'For Judges: the 2-minute tour' };
 
-type OwnerView = NonNullable<Awaited<ReturnType<typeof ownerView>>>;
+/** Amounts in the copy, from the rules every tour copy starts with (the demo shop's currency). */
+const money = (units: number) => formatMoney(majorUnits(units, demoCatalog.shop.currency), demoCatalog.shop.currency).replace(/\.00$/, '');
 
 const STEP: Record<TourStep, { short: string; title: string; proves: string; you: string; run: string; uses: string[] }> = {
   buy: {
@@ -33,7 +38,7 @@ const STEP: Record<TourStep, { short: string; title: string; proves: string; you
   refund: {
     short: 'A big refund',
     title: 'Your agent asks for a big refund',
-    proves: "The shop owner's own AI agent runs the shop, refunds included. But the owner's rules decide what it may do alone: refunds over $50 wait for the owner.",
+    proves: `The shop owner's own AI agent runs the shop, refunds included. But the owner's rules decide what it may do alone: refunds over ${money(DEFAULT_LIMITS.refundApproval)} wait for the owner.`,
     you: "You are the owner. Say OK and PayPal refunds it; reject and nothing moves.",
     run: 'Let the agent ask',
     uses: ['Guard', 'Payments v2 refunds'],
@@ -49,7 +54,7 @@ const STEP: Record<TourStep, { short: string; title: string; proves: string; you
   rules: {
     short: 'Grabbing autonomy',
     title: 'Your agent tries to loosen its own rules',
-    proves: 'An agent can never raise its own limits. It asks to refund up to $10,000 on its own; any rule change from an agent waits for the owner.',
+    proves: `An agent can never raise its own limits. It asks to refund up to ${money(TOUR_ASKED_REFUND_LIMIT)} on its own; any rule change from an agent waits for the owner.`,
     you: 'Decide. (A careful owner says no.)',
     run: 'Let the agent try',
     uses: ['Guard: rules only the owner can change'],
@@ -64,24 +69,6 @@ const STEP: Record<TourStep, { short: string; title: string; proves: string; you
     uses: ['Earned autonomy', 'Guard', 'Payments v2 refunds'],
   },
 };
-
-/** next: run it now. needs-you: waits on the judge. done: finished. unavailable: can't run here. */
-type State = 'next' | 'needs-you' | 'done' | 'unavailable';
-
-interface StepView {
-  step: TourStep;
-  state: State;
-  /** The result in one line. */
-  outcome?: string;
-  why?: string;
-  result?: StepResult;
-  records: GuardRecord[];
-  /** Say-so requests the judge can decide right here. */
-  decide: GuardRecord[];
-  payUrl?: string;
-  /** The rule the judge's approvals earned ("earn"). */
-  suggestion?: { id: string; title: string; evidence: string };
-}
 
 const WHO = { assistant: "Buyer's assistant", 'owner-agent': 'Your agent' } as const;
 
@@ -104,10 +91,11 @@ export default async function TourPage({ searchParams }: { searchParams: Promise
   }
   if (!view || !tour) return <Intro />;
 
-  const [steps, passkey] = await Promise.all([stepViews(view, tour), view.passkeys.required(view.shopId)]);
+  const [steps, passkey] = await Promise.all([tourProgress(view, tour), view.passkeys.required(view.shopId)]);
   const asked = (await searchParams).step;
   const firstOpen = steps.findIndex((s) => s.state !== 'done' && s.state !== 'unavailable');
-  const index = asked === 'end' ? steps.length : asked && /^[1-5]$/.test(asked) ? Number(asked) - 1 : firstOpen === -1 ? steps.length : firstOpen;
+  const askedStep = Number(asked);
+  const index = asked === 'end' ? steps.length : Number.isInteger(askedStep) && askedStep >= 1 && askedStep <= steps.length ? askedStep - 1 : firstOpen === -1 ? steps.length : firstOpen;
   const current = steps[index];
 
   return (
@@ -292,89 +280,6 @@ function StepScreen({ view, n, total, redact, passkey }: { view: StepView; n: nu
       </div>
     </section>
   );
-}
-
-/** Where each step stands, from the tour's results and the live Guard records, order and rules. */
-async function stepViews(view: OwnerView, tour: Tour): Promise<StepView[]> {
-  const buy = tour.steps.buy;
-  const order = buy?.cartId ? (await view.orders.get(view.shopId, buy.cartId)).order : undefined;
-  const paid = order?.status === 'paid';
-
-  const views: StepView[] = [];
-  for (const step of TOUR_STEPS) {
-    const result = tour.steps[step];
-    if (step === 'buy') {
-      const captures = buy?.cartId ? await view.guard.list(view.shopId, { cartId: buy.cartId, kind: 'payment.capture' }) : [];
-      views.push(
-        !result
-          ? { step, state: 'next', records: [], decide: [] }
-          : paid
-            ? { step, state: 'done', result, records: captures, decide: [], outcome: `Paid ${order!.total}. Guard checked the stock and captured it in PayPal.` }
-            : { step, state: 'needs-you', result, records: captures, decide: [], outcome: 'The cart is ready. Pay for it in PayPal sandbox to place the order.', payUrl: result.approvalUrl },
-      );
-      continue;
-    }
-    if (step === 'earn') {
-      views.push(await earnView(view, tour, result));
-      continue;
-    }
-    if (!result) {
-      const blocked = step === 'refund' && Boolean(buy) && !paid;
-      views.push({ step, state: blocked ? 'unavailable' : 'next', records: [], decide: [], why: blocked ? 'Step 1 has to be paid first: there is nothing to refund yet.' : undefined });
-      continue;
-    }
-    const r = result.recordId ? await view.guard.get(result.recordId) : undefined;
-    const pending = r?.status === 'pending_approval';
-    views.push({ step, state: pending ? 'needs-you' : 'done', result, records: r ? [r] : [], decide: pending ? [r] : [], outcome: r && outcome(step, r) });
-  }
-  return views;
-}
-
-async function earnView(view: OwnerView, tour: Tour, result: StepResult | undefined): Promise<StepView> {
-  const step = 'earn';
-  if (!tour.walletId) return { step, state: 'unavailable', records: [], decide: [], why: 'This step pays for its own order with saved PayPal, and this server has none to lend.' };
-  if (!result) return { step, state: 'next', records: [], decide: [] };
-
-  const records = (await Promise.all((result.recordIds ?? []).map((id) => view.guard.get(id)))).filter((r): r is GuardRecord => Boolean(r));
-  const pending = records.filter((r) => r.status === 'pending_approval');
-  if (pending.length) {
-    const decided = records.length - pending.length;
-    return { step, state: 'needs-you', result, records, decide: pending, outcome: `Guard held ${records.length} refunds over your $50 rule. ${decided} decided, ${pending.length} to go.` };
-  }
-  if (records.some((r) => r.events.some((e) => e.type === 'rejected'))) {
-    return { step, state: 'done', result, records, decide: [], outcome: 'You turned at least one down, so Sayso suggests nothing: autonomy only grows from your yeses.' };
-  }
-  const [suggestion] = (await view.saySo.autonomy(view.shopId)).suggestions;
-  if (suggestion) return { step, state: 'needs-you', result, records, decide: [], suggestion, outcome: 'You approved all three. Your approvals earned a rule:' };
-  const adopted = (await view.guard.list(view.shopId, { kind: 'policy.update' })).find((r) => r.action.actor.type === 'human' && r.status === 'verified' && r.createdAt >= result.at);
-  return adopted
-    ? { step, state: 'done', result, records: [...records, adopted], decide: [], outcome: 'Adopted. Refunds like these now go through on their own; bigger ones still wait for you. See it in Rules.' }
-    : { step, state: 'done', result, records, decide: [], outcome: 'Your agent already had room for these refunds, so none needed you.' };
-}
-
-
-/** The step's result in one line. */
-function outcome(step: TourStep, r: GuardRecord): string {
-  const amount = actionAmount(r.action) ?? '';
-  const lines: Partial<Record<TourStep, Partial<Record<GuardRecord['status'], string>>>> = {
-    refund: {
-      pending_approval: `Guard held a ${amount} refund. Nothing moves until you decide.`,
-      verified: `You said OK. PayPal refunded ${amount}, and Sayso read it back to confirm.`,
-      rejected: 'You said no. Nothing moved.',
-    },
-    rules: {
-      pending_approval: "Guard held it: an agent can't change its own rules. Only you can.",
-      verified: 'You approved the new rules. (A careful owner would say no.)',
-      rejected: 'You said no. The rules stay as they are.',
-      failed: 'Not applied: your rules changed after the agent asked, so its old request would have undone that. Guard refused it.',
-    },
-    commission: {
-      pending_approval: `Waiting for you: a ${amount} invoice to someone who has never paid this shop.`,
-      verified: 'Sent in PayPal. It is on your Making board, blocked until the buyer pays.',
-      rejected: 'You said no. No invoice went out.',
-    },
-  };
-  return lines[step]?.[r.status] ?? `Guard: ${r.status.replace(/_/g, ' ')}. ${r.verification?.detail ?? ''}`.trim();
 }
 
 const STAGE: Record<string, string> = {

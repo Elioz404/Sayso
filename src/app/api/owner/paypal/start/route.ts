@@ -8,7 +8,7 @@ import { newSignInState, rememberClaim } from '@/server/seller-session.ts';
 
 export async function GET(request: Request) {
   const { paypal, paypalLogin, links } = await ready();
-  if (!paypalLogin) return Response.redirect(`${links.base}/owner`, 303);
+  if (!paypalLogin) return Response.redirect(links.owner.home, 303);
   const params = new URL(request.url).searchParams;
   if (params.get('link') === '1') {
     const session = await ownerSession();

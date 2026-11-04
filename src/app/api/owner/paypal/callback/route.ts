@@ -11,7 +11,7 @@ import { logError } from '@/server/log.ts';
 export async function GET(request: Request) {
   const { paypal, sellers, links } = await ready();
   const params = new URL(request.url).searchParams;
-  const back = (outcome: string) => Response.redirect(`${links.base}/owner?signin=${outcome}`, 303);
+  const back = (outcome: string) => Response.redirect(`${links.owner.home}?signin=${outcome}`, 303);
 
   if (!(await checkSignInState(params.get('state')))) return back('expired');
   const code = params.get('code');

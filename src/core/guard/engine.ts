@@ -4,7 +4,7 @@
 
 import { createHash, randomUUID } from 'node:crypto';
 import { evaluate, findDuplicate, historyWindowMs, minutesAgo, type Policy } from './policy.ts';
-import { matchesQuery } from './types.ts';
+import { matchesQuery, SPENDING_STATUSES } from './types.ts';
 import type { ActionKind, AuditEvent, Decision, Executor, GuardRecord, GuardStore, ProposedAction, RecordQuery, RecordStatus, RuleHit, Verdict } from './types.ts';
 
 /** Only a person can apply these, whoever proposes them. */
@@ -13,6 +13,11 @@ const HUMAN_ONLY = new Set<ActionKind>(['policy.update']);
 const DUPLICATE_WINDOW_MS = 10 * 60_000;
 /** Final states: Guard tells subscribers once a record reaches one of them. */
 const SETTLED: readonly RecordStatus[] = ['verified', 'unverified', 'failed', 'denied', 'rejected'];
+/**
+ * Most records a decision reads. Rules only count what is (or may be) spent, so that is all that is
+ * read; a shop busier than this in one window gets the owner's eyes instead of a guess.
+ */
+const HISTORY_LIMIT = 2_000;
 
 export interface SubmitOptions {
   /** A deterministic PayPal-Request-Id (e.g. "<cart>-capture"), so a retry anywhere replays instead of repeating. */
@@ -82,9 +87,9 @@ export class Guard {
     // 2. Decide: a failed simulation is a hard stop (PayPal would reject it); otherwise the owner's
     //    policy plus the built-in rules no policy can switch off.
     const policy = await this.deps.policyFor(action.ownerId);
-    const history = await this.deps.store.list(action.ownerId, { since: new Date(now.getTime() - historyWindowMs(policy)) });
+    const history = await this.deps.store.list(action.ownerId, { since: new Date(now.getTime() - historyWindowMs(policy)), status: SPENDING_STATUSES, limit: HISTORY_LIMIT });
     record.decision = record.simulation.ok
-      ? withBuiltIns(evaluate(policy, action, history, now), action, history, now)
+      ? withBuiltIns(evaluate(policy, action, history, now), action, history, now, history.length >= HISTORY_LIMIT)
       : { verdict: 'deny', hits: record.simulation.blockers.map((message) => ({ ruleId: 'simulation', verdict: 'deny' as const, message })) };
     append(record, 'decided', 'sayso', { ...record.decision }, this.now());
 
@@ -192,8 +197,11 @@ const SEVERITY: Record<Verdict, number> = { allow: 0, require_approval: 1, deny:
  * Rules that are part of Guard, not of any policy: an agent can never change its own rules, the buyer's
  * side can never move the shop's money on its own, and the same money move twice is refused.
  */
-function withBuiltIns(decision: Decision, action: ProposedAction, history: GuardRecord[], now: Date): Decision {
+function withBuiltIns(decision: Decision, action: ProposedAction, history: GuardRecord[], now: Date, historyCut: boolean): Decision {
   const hits: RuleHit[] = [...decision.hits];
+  if (historyCut) {
+    hits.push({ ruleId: 'built-in:busy', verdict: 'require_approval', message: 'There is more recent activity than Guard reads at once, so limits could not be checked in full. You decide.' });
+  }
   if (HUMAN_ONLY.has(action.kind) && action.actor.type === 'agent') {
     hits.push({ ruleId: 'built-in:human-only', verdict: 'require_approval', message: 'Agents can propose policy changes, but only the owner can apply them.' });
   }

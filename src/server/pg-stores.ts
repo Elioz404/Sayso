@@ -12,6 +12,7 @@ import type { JobNotes, JobStore } from '@/core/production.ts';
 import type { Tour, TourStore } from '@/core/tour.ts';
 import type { GuardRecord, GuardStore, RecordQuery, RecordStatus } from '@/core/guard/types.ts';
 import type { CartStore, CatalogStore, StoredCart } from '@/core/stores.ts';
+import type { SpendStore } from '@/core/ai/llm.ts';
 import type { MediaStore, StoredPhoto } from '@/core/media.ts';
 import type { Passkey, PasskeyStore } from '@/core/passkeys.ts';
 import type { PushStore, PushSubscriptionRecord } from '@/core/push.ts';
@@ -32,9 +33,13 @@ create table if not exists sayso_docs (
 create index if not exists sayso_docs_owner on sayso_docs (kind, owner, created_at desc);
 create unique index if not exists sayso_docs_slug on sayso_docs (kind, slug) where slug is not null;
 create index if not exists sayso_docs_hash on sayso_docs (kind, hash) where hash is not null;
+-- Guard reads: a shop's records by status (what counts as spent), by cart (an order's history) and by kind.
+create index if not exists sayso_guard_status on sayso_docs (owner, (data->>'status'), created_at desc) where kind = 'guard';
+create index if not exists sayso_guard_cart on sayso_docs ((data->'action'->'params'->>'cartId')) where kind = 'guard';
+create index if not exists sayso_guard_kind on sayso_docs (owner, (data->'action'->>'kind'), created_at desc) where kind = 'guard';
 `;
 
-type Kind = 'catalog' | 'cart' | 'guard' | 'owner' | 'key' | 'policy' | 'wallet' | 'wallet-key' | 'jobs' | 'tour' | 'seller' | 'media' | 'passkey' | 'push' | 'epoch' | 'once';
+type Kind = 'catalog' | 'cart' | 'guard' | 'owner' | 'key' | 'policy' | 'wallet' | 'wallet-key' | 'jobs' | 'tour' | 'seller' | 'media' | 'passkey' | 'push' | 'epoch' | 'once' | 'ai-spend';
 type Queryable = pg.Pool | pg.PoolClient;
 
 interface Doc {
@@ -48,8 +53,9 @@ interface Doc {
   data: unknown;
 }
 
-/** Most rows any single read returns; callers ask for fewer. */
-const MAX_ROWS = 500;
+/** Rows a read returns unless the caller asks for a number (pages ask for fewer, Guard for more). */
+const DEFAULT_ROWS = 500;
+const MAX_ROWS = 5_000;
 
 export class Db {
   readonly pool: pg.Pool;
@@ -90,10 +96,15 @@ export class Db {
     const where = ['kind = $1', '($2::text is null or owner = $2)', ...(options.where ?? [])];
     const params = [kind, owner, ...(options.params ?? [])];
     const { rows } = await this.pool.query(
-      `select data from sayso_docs where ${where.join(' and ')} order by created_at desc limit ${Math.min(options.limit ?? MAX_ROWS, MAX_ROWS)}`,
+      `select data from sayso_docs where ${where.join(' and ')} order by created_at desc limit ${Math.min(Math.max(1, Math.trunc(options.limit ?? DEFAULT_ROWS)), MAX_ROWS)}`,
       params,
     );
     return rows.map((r) => r.data as T);
+  }
+
+  /** Delete one document by kind and id. */
+  async remove(kind: Kind, id: string): Promise<void> {
+    await this.pool.query('delete from sayso_docs where kind = $1 and id = $2', [kind, id]);
   }
 
   /** Run `work` in a transaction, rolling back if it throws. */
@@ -113,8 +124,12 @@ export class Db {
   }
 }
 
+/** Public shops change rarely and are read on every buyer search and crawl: kept for a short while. */
+const LIVE_SHOPS_TTL_MS = 30_000;
+
 export class PgCatalogStore implements CatalogStore {
   private readonly db: Db;
+  private live?: { at: number; shops: Promise<Catalog[]> };
   constructor(db: Db) {
     this.db = db;
   }
@@ -126,17 +141,25 @@ export class PgCatalogStore implements CatalogStore {
   }
   async save(catalog: Catalog, client?: Queryable) {
     await this.db.put({ kind: 'catalog', id: catalog.shop.id, owner: catalog.shop.sellerId, slug: catalog.shop.slug, createdAt: catalog.shop.createdAt, data: catalog }, client);
+    this.live = undefined;
   }
-  listLive() {
-    return this.db.list<Catalog>('catalog', null, {
-      where: ["coalesce(data->'shop'->>'status', 'live') = 'live'", "coalesce(data->'shop'->>'visibility', 'public') = 'public'"],
-    });
+  /** Every public live shop, read once per LIVE_SHOPS_TTL_MS (and again after any change made here). */
+  async listLive() {
+    if (!this.live || Date.now() - this.live.at > LIVE_SHOPS_TTL_MS) {
+      const shops = this.db.list<Catalog>('catalog', null, {
+        where: ["coalesce(data->'shop'->>'status', 'live') = 'live'", "coalesce(data->'shop'->>'visibility', 'public') = 'public'"],
+      });
+      this.live = { at: Date.now(), shops };
+      shops.catch(() => (this.live = undefined)); // a failed read is not remembered
+    }
+    return structuredClone(await this.live.shops); // callers get their own copy
   }
   listBySeller(sellerId: string) {
     return this.db.list<Catalog>('catalog', sellerId);
   }
   async remove(shopId: string) {
-    await this.db.pool.query("delete from sayso_docs where kind = 'catalog' and id = $1", [shopId]);
+    await this.db.remove('catalog', shopId);
+    this.live = undefined;
   }
   /** Row-locked, so two checkouts can't both take the last mug and an edit can't undo a sale. */
   modify(shopId: string, change: (catalog: Catalog) => boolean) {
@@ -309,7 +332,7 @@ export class PgTourStore implements TourStore {
     return this.db.list<Tour>('tour', null, { where: ["(data->>'expiresAt')::timestamptz <= $3"], params: [now.toISOString()] });
   }
   async remove(id: string) {
-    await this.db.pool.query("delete from sayso_docs where kind = 'tour' and id = $1", [id]);
+    await this.db.remove('tour', id);
   }
 }
 
@@ -388,7 +411,7 @@ export class PgPasskeyStore implements PasskeyStore {
     await this.db.put({ kind: 'passkey', id: passkey.id, owner: passkey.shopId, createdAt: passkey.createdAt, data: passkey });
   }
   async remove(id: string) {
-    await this.db.pool.query("delete from sayso_docs where kind = 'passkey' and id = $1", [id]);
+    await this.db.remove('passkey', id);
   }
 }
 
@@ -404,6 +427,22 @@ export class PgPushStore implements PushStore {
     await this.db.put({ kind: 'push', id: subscription.id, owner: subscription.shopId, createdAt: subscription.createdAt, data: subscription });
   }
   async remove(id: string) {
-    await this.db.pool.query("delete from sayso_docs where kind = 'push' and id = $1", [id]);
+    await this.db.remove('push', id);
+  }
+}
+export class PgSpendStore implements SpendStore {
+  private readonly db: Db;
+  constructor(db: Db) {
+    this.db = db;
+  }
+  async get(day: string) {
+    return (await this.db.get<{ usd: number; calls: number }>('ai-spend', day)) ?? { usd: 0, calls: 0 };
+  }
+  async add(day: string, usd: number) {
+    await this.db.pool.query(
+      `insert into sayso_docs (kind, id, data) values ('ai-spend', $1, jsonb_build_object('usd', $2::float8, 'calls', 1))
+       on conflict (kind, id) do update set data = jsonb_build_object('usd', (sayso_docs.data->>'usd')::float8 + $2::float8, 'calls', (sayso_docs.data->>'calls')::int + 1)`,
+      [day, usd],
+    );
   }
 }

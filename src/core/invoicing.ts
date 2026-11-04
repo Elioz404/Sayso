@@ -2,6 +2,7 @@
 // Guard action: by default a large invoice, or a first one to someone who has never paid the shop,
 // waits for the owner. Live status comes from PayPal, cached so a dashboard render is not N calls.
 
+import { BoundedCache, mapLimit } from './concurrency.ts';
 import { HttpError } from './errors.ts';
 import type { Guard } from './guard/engine.ts';
 import type { Actor, GuardRecord } from './guard/types.ts';
@@ -45,10 +46,12 @@ const PAID = new Set(['PAID', 'MARKED_AS_PAID', 'PARTIALLY_PAID']);
 /** No further change expected: cached for good. Anything else is re-read after STATUS_TTL_MS. */
 const FINAL = new Set(['PAID', 'MARKED_AS_PAID', 'CANCELLED', 'REFUNDED', 'MARKED_AS_REFUNDED']);
 const STATUS_TTL_MS = 60_000;
+/** PayPal reads in flight at once when a page lists many invoices. */
+const PAYPAL_READS = 5;
 
 export class Invoicing {
   private readonly deps: InvoicingDeps;
-  private readonly live = new Map<string, { invoice: Invoice; at: number }>();
+  private readonly live = new BoundedCache<string, { invoice: Invoice; at: number }>(1_000);
 
   constructor(deps: InvoicingDeps) {
     this.deps = deps;
@@ -90,8 +93,7 @@ export class Invoicing {
   /** Invoices this shop sent or wants to send, newest first, with their live PayPal status. */
   async list(shopId: string, limit = 20): Promise<InvoiceView[]> {
     const records = await this.deps.guard.list(shopId, { kind: 'invoice.send', limit });
-    return Promise.all(
-      records.map(async (r) => {
+    return mapLimit(records, PAYPAL_READS, async (r) => {
         const p = r.action.params as unknown as InvoiceParams;
         const live = await this.liveStatus(r);
         return {
@@ -104,16 +106,15 @@ export class Invoicing {
           payer_url: live?.detail.metadata?.recipient_view_url ?? (r.result?.payer_url as string | undefined),
           at: r.createdAt,
         };
-      }),
-    );
+    });
   }
 
   /** Has this person paid the shop before: a paid order, or a paid invoice? */
   private async hasPaid(shopId: string, email: string): Promise<boolean> {
     if (await this.deps.carts.paidBy(shopId, email)) return true;
     const sent = (await this.deps.guard.list(shopId, { kind: 'invoice.send', status: 'verified' })).filter((r) => r.action.counterparty === email);
-    for (const record of sent) if (PAID.has((await this.liveStatus(record))?.status ?? '')) return true;
-    return false;
+    const statuses = await mapLimit(sent, PAYPAL_READS, async (record) => (await this.liveStatus(record))?.status ?? '');
+    return statuses.some((status) => PAID.has(status));
   }
 
   /** The invoice as PayPal has it now (cached briefly), or undefined if it was never sent. */

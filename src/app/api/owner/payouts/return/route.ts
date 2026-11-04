@@ -7,10 +7,10 @@ import { logError } from '@/server/log.ts';
 export async function GET() {
   const { payouts, links } = await ready();
   const session = await ownerSession();
-  if (!session || session.kind !== 'owner') return Response.redirect(`${links.base}/owner`, 303);
+  if (!session || session.kind !== 'owner') return Response.redirect(links.owner.home, 303);
   const outcome = await payouts.finish(session.shopId).catch((err: unknown) => {
     logError('payouts', err);
     return { status: 'failed' as const };
   });
-  return Response.redirect(`${links.base}/owner?payouts=${outcome.status}`, 303);
+  return Response.redirect(`${links.owner.home}?payouts=${outcome.status}`, 303);
 }

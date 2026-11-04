@@ -59,7 +59,7 @@ export interface AccessStore {
   consumeOnce(id: string, expiresAt: Date): Promise<boolean>;
 }
 
-export function generateSecret(prefix: 'sk_agent' | 'sk_owner'): string {
+export function generateSecret(prefix: 'sk_agent' | 'sk_owner' | 'sk_wallet'): string {
   return `${prefix}_${randomBytes(24).toString('base64url')}`;
 }
 
