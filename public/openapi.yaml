@@ -105,7 +105,7 @@ paths:
       tags: [Merchant cart]
       operationId: getCart
       summary: Get a cart
-      description: The cart as it is now. Once paid, `status` is `COMPLETED`.
+      description: The cart as it is now. Once paid, `status` is `COMPLETED` and `payment_confirmation` says which order it became, as the checkout answered.
       parameters:
         - $ref: '#/components/parameters/Slug'
         - $ref: '#/components/parameters/CartId'

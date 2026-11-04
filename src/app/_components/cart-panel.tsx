@@ -4,11 +4,12 @@
 // merchant-cart API assistants use, so shipping, tax and stock come from the shop), then PayPal's button
 // pays for exactly that total. Changing the cart after that asks for a new price.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { formatMoney, toMinor } from '@/core/money.ts';
 import { callApi } from './api.ts';
 import { cartStore, useCarts, type ShopCart } from './cart-store.ts';
 import { PayPalCheckout, type Paid } from './paypal-checkout.tsx';
+import { PurchaseCard, paymentWords, type Purchase } from './purchase-card.tsx';
 
 type Money = { currency_code: string; value: string };
 type Priced = {
@@ -25,24 +26,51 @@ const SANDBOX_ADDRESS: Address = { name: 'Alex Rivera', email: 'alex@example.com
 
 const show = (m?: Money) => (m ? formatMoney(toMinor(m), m.currency_code) : '');
 
+// Receipts for what was paid from the cart, kept in this browser (the newest few) until dismissed.
+const RECEIPTS = 'sayso-receipts-v1';
+type Receipt = Purchase & { id: string };
+
+function useReceipts() {
+  const [list, setList] = useState<Receipt[]>([]);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(RECEIPTS) ?? '[]') as Receipt[];
+      if (Array.isArray(saved)) setList(saved);
+    } catch {
+      // nothing saved, or storage is off
+    }
+  }, []);
+  const update = (change: (list: Receipt[]) => Receipt[]) =>
+    setList((list) => {
+      const next = change(list).slice(0, 5);
+      try {
+        localStorage.setItem(RECEIPTS, JSON.stringify(next));
+      } catch {
+        // storage off: the receipt stays until the page changes
+      }
+      return next;
+    });
+  return { list, add: (r: Receipt) => update((l) => [r, ...l.filter((x) => x.id !== r.id)]), drop: (id: string) => update((l) => l.filter((x) => x.id !== id)) };
+}
+
 export function CartPanel({ paypalClientId, onAskAi }: { paypalClientId?: string; onAskAi: () => void }) {
   const carts = useCarts();
-  const [done, setDone] = useState<Record<string, Paid & { shop: string }>>({});
+  const receipts = useReceipts();
   const shops = Object.entries(carts);
-  const placed = Object.entries(done);
+  // Just paid: the receipt comes first. With a new cart going, earlier receipts wait below it.
+  const paid = receipts.list.length > 0 && (
+    <div className="cart-receipts">
+      {shops.length > 0 && <span className="small muted">Paid earlier</span>}
+      {receipts.list.map((r) => (
+        <PurchaseCard key={r.id} state="paid" data={r} onDismiss={() => receipts.drop(r.id)} />
+      ))}
+    </div>
+  );
 
   return (
     <div className="cart">
-      {placed.map(([slug, p]) => (
-        <div key={slug} className="cart-done">
-          <b>✓ Order placed with {p.shop}</b>
-          <span className="small">
-            {p.order ? `Order ${p.order}` : 'Paid with PayPal'}
-            {p.total ? ` · ${show(p.total)}` : ''}. Ask the assistant any time where it is.
-          </span>
-        </div>
-      ))}
-      {shops.length === 0 && placed.length === 0 && (
+      {shops.length === 0 && paid}
+      {shops.length === 0 && (
         <div className="cart-empty">
           <b>Your cart is empty.</b>
           <span className="small soft">Add pieces from any shop, or let the assistant find something for you.</span>
@@ -57,17 +85,18 @@ export function CartPanel({ paypalClientId, onAskAi }: { paypalClientId?: string
           slug={slug}
           cart={cart}
           paypalClientId={paypalClientId}
-          onPaid={(paid) => {
-            setDone((d) => ({ ...d, [slug]: { ...paid, shop: cart.name } }));
+          onPaid={(receipt) => {
+            receipts.add(receipt);
             cartStore.clear(slug);
           }}
         />
       ))}
+      {shops.length > 0 && paid}
     </div>
   );
 }
 
-function ShopCartView({ slug, cart, paypalClientId, onPaid }: { slug: string; cart: ShopCart; paypalClientId?: string; onPaid: (p: Paid) => void }) {
+function ShopCartView({ slug, cart, paypalClientId, onPaid }: { slug: string; cart: ShopCart; paypalClientId?: string; onPaid: (receipt: Receipt) => void }) {
   const [step, setStep] = useState<'items' | 'address'>('items');
   const [address, setAddress] = useState<Address>(SANDBOX_ADDRESS);
   const [priced, setPriced] = useState<{ cart: Priced; key: string }>();
@@ -96,6 +125,20 @@ function ShopCartView({ slug, cart, paypalClientId, onPaid }: { slug: string; ca
     }
     setBusy(false);
   }
+
+  /** The receipt for this cart as it was paid: its lines, the shop's totals, PayPal's word on the payment. */
+  const receiptOf = (paid: Paid): Receipt => ({
+    id: paid.order ?? quote?.id ?? String(Date.now()),
+    shop: cart.name,
+    ...(paid.order ? { order: paid.order } : {}),
+    lines: cart.lines.map((l) => ({ name: l.name, ...(l.variant ? { detail: l.variant } : {}), qty: l.qty, amount: formatMoney(l.price * l.qty, l.currency), ...(l.image ? { image: l.image } : {}) })),
+    subtotal: show(quote?.totals?.subtotal),
+    shipping: show(quote?.totals?.shipping),
+    tax: show(quote?.totals?.tax),
+    total: show(paid.total ?? quote?.totals?.total),
+    status: `${paymentWords(paid.status)} Shipping to ${address.city}. Ask the assistant any time where it is.`,
+    paidAt: new Date().toISOString(),
+  });
 
   const field = (name: keyof Address, label: string, props: React.InputHTMLAttributes<HTMLInputElement> = {}) => (
     <label className="cart-field">
@@ -192,7 +235,7 @@ function ShopCartView({ slug, cart, paypalClientId, onPaid }: { slug: string; ca
           </dl>
           <p className="small muted">Priced by {cart.name}, with shipping to {address.city}.</p>
           {orderId && quote.payment_method?.approval_url && paypalClientId ? (
-            <PayPalCheckout clientId={paypalClientId} cartId={quote.id} orderId={orderId} currency={quote.totals?.total?.currency_code ?? currency} approvalUrl={quote.payment_method.approval_url} onPaid={onPaid} />
+            <PayPalCheckout clientId={paypalClientId} cartId={quote.id} orderId={orderId} currency={quote.totals?.total?.currency_code ?? currency} approvalUrl={quote.payment_method.approval_url} onPaid={(paid: Paid) => onPaid(receiptOf(paid))} />
           ) : (
             !quote.validation_issues?.length && <p className="small error">PayPal isn&apos;t available right now.</p>
           )}

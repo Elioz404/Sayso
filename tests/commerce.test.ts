@@ -51,6 +51,12 @@ test('agent buys a mug end to end: cart -> PayPal approval -> authorize -> Guard
   assert.equal(catalog!.products[0].variants[1].inventory, 5);
   const again = await commerce.checkout(cart.id!, { items: [], payment_method: { type: 'paypal', token: cart.payment_method!.token } });
   assert.equal(again.payment_confirmation?.merchant_order_number, done.payment_confirmation?.merchant_order_number);
+
+  // Reading the cart later says which order it became, for a page that paid in another tab.
+  const read = (await commerce.getCart(cart.id!)) as typeof done;
+  assert.equal(read.status, 'COMPLETED');
+  assert.equal(read.payment_confirmation?.merchant_order_number, done.payment_confirmation?.merchant_order_number);
+  assert.equal(read.payment_confirmation?.payment_status, 'CAPTURED');
 });
 
 test('PUT that changes the total gets a fresh PayPal order', async () => {

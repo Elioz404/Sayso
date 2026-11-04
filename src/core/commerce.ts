@@ -63,8 +63,11 @@ export class Commerce {
   }
 
   /** A cart, optionally only if it belongs to `shopId` (routes scoped to one shop pass it). */
+  /** The cart as it is now; once paid, with the order it became (as checkout answered), so a page that
+   *  paid elsewhere can show the receipt. */
   async getCart(cartId: string, shopId?: string): Promise<PayPalCart> {
-    return view(await this.stored(cartId, shopId));
+    const stored = await this.stored(cartId, shopId);
+    return stored.cart.status === 'COMPLETED' && stored.merchantOrderNumber ? completed(stored) : view(stored);
   }
 
   async shopOf(cartId: string): Promise<string | undefined> {

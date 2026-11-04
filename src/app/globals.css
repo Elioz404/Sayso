@@ -700,7 +700,6 @@ body:has(.owner) .site-header, body:has(.owner) .site-footer { display: none; }
 /* color-scheme light: PayPal's button frame is light, and a frame whose scheme differs from the page's gets an opaque white backdrop in dark mode. */
 .shopper-checkout { width: min(100%, 320px); display: flex; flex-direction: column; gap: var(--s1); }
 .shopper-checkout > div:first-child { color-scheme: light; }
-.shopper-paid { align-self: flex-start; padding: 6px var(--s3); border-radius: var(--radius-sm); background: var(--say-soft); color: var(--say); font-weight: 650; font-size: var(--t-sm); }
 
 /* The shops directory, and the storefront's way back and "Buy with AI" */
 .shops-head { display: flex; justify-content: space-between; align-items: flex-end; gap: var(--s5); flex-wrap: wrap; }
@@ -778,8 +777,6 @@ html.dock-instant *, html.dock-instant *::before, html.dock-instant *::after { t
 .dock-scroll { overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--rule-strong) transparent; }
 .cart { display: flex; flex-direction: column; gap: var(--s5); padding: var(--s4) var(--s5); width: 100%; }
 .cart-empty, .cart-done { display: flex; flex-direction: column; gap: var(--s2); align-items: flex-start; }
-.cart-done { padding: var(--s3) var(--s4); border-radius: var(--radius-sm); background: var(--say-soft); color: var(--say); }
-.cart-done .small { color: var(--ink-2); }
 .cart-shop { display: flex; flex-direction: column; gap: var(--s3); }
 .cart-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s3); }
 .cart-lines li { display: grid; grid-template-columns: 48px minmax(0, 1fr) auto auto; gap: var(--s3); align-items: center; }
@@ -874,3 +871,30 @@ html.dock-instant *, html.dock-instant *::before, html.dock-instant *::after { t
   .cell-media .thumb { width: 32px !important; height: 32px !important; }
   .order-list a > span:nth-child(2) > .row { flex-wrap: wrap !important; row-gap: 2px; }
 }
+
+/* A purchase, set apart from the chat: a cart ready to pay, or its receipt once paid (chat and cart) */
+.purchase { width: 100%; max-width: 420px; align-self: flex-start; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--sheet); overflow: hidden; box-shadow: 0 1px 2px rgb(34 28 23 / 0.06); }
+.purchase-head { display: flex; align-items: center; gap: var(--s2); padding: var(--s2) var(--s4); font-size: var(--t-sm); }
+.purchase-ready .purchase-head { background: var(--say-soft); color: var(--say); }
+.purchase-paid .purchase-head { background: var(--ok-soft); color: var(--ok); }
+.purchase-paid { border-color: color-mix(in srgb, var(--ok) 35%, var(--rule)); }
+.purchase-badge { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
+.purchase-meta { margin-left: auto; display: inline-flex; gap: var(--s2); color: var(--ink-2); font-size: var(--t-xs); }
+.purchase-close { border: 0; background: none; color: var(--ink-3); font-size: 1.15rem; line-height: 1; padding: 0 2px; cursor: pointer; }
+.purchase-close:hover { color: var(--ink); }
+.purchase-body { display: flex; flex-direction: column; gap: var(--s3); padding: var(--s3) var(--s4) var(--s4); }
+.purchase-shop { font-size: var(--t-sm); }
+.purchase-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s2); }
+.purchase-lines li { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto auto; gap: var(--s3); align-items: center; font-size: var(--t-sm); }
+.purchase-thumb { width: 36px; height: 36px; border-radius: 8px; overflow: hidden; background: var(--paper-2); }
+.purchase-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.purchase-name { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+.purchase-name > span:first-child { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.purchase-totals { display: grid; grid-template-columns: 1fr auto; gap: 2px var(--s3); margin: 0; padding-top: var(--s3); border-top: 1px dashed var(--rule-strong); font-size: var(--t-sm); font-variant-numeric: tabular-nums; }
+.purchase-totals dt { color: var(--ink-2); }
+.purchase-totals dd { margin: 0; text-align: right; }
+.purchase-totals .purchase-total { color: var(--ink); font-weight: 700; font-size: var(--t-md); padding-top: 2px; }
+.purchase-status { margin: 0; color: var(--ink-2); }
+.purchase .shopper-checkout { width: 100%; }
+.cart-receipts { display: flex; flex-direction: column; gap: var(--s3); }
+.cart-receipts .purchase { max-width: none; }
