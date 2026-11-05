@@ -1,6 +1,6 @@
 // Where an AI app sends the owner to allow it (OAuth authorization endpoint). A good request goes on to the
-// consent page under a path of its own, so it survives signing in; a bad app or address is explained here,
-// and other mistakes go back to the app.
+// consent page under a path of its own, so it survives signing in. Anything wrong is explained here: the
+// owner is only sent back to the app after answering on the consent page.
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { connection } from 'next/server';
@@ -16,8 +16,7 @@ export default async function Authorize({ searchParams }: { searchParams: Promis
   const { access, links } = await ready();
   let target: string;
   try {
-    const checked = checkAuthorize(access, links, params);
-    target = 'redirect' in checked ? checked.redirect : `/oauth/consent/${packRequest(access, checked.request)}`;
+    target = links.oauth.consent(packRequest(access, checkAuthorize(access, links, params)));
   } catch (err) {
     if (!(err instanceof OAuthError)) throw err;
     return (

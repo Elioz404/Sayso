@@ -36,14 +36,19 @@ export interface OrderSummary {
   /** Refunds confirmed with PayPal, in minor units, and formatted. */
   refundedMinor: number;
   refunded?: string;
+  /** When it was charged (absent while held or cancelled). */
+  paidAt?: string;
   createdAt: string;
 }
 
 /** Validation issues that mean a buyer wanted something the shop could not sell them. */
 const MISSED = new Set(['INVENTORY_ISSUE', 'DATA_ERROR', 'SHIPPING_ERROR', 'BUSINESS_RULE_ERROR']);
 const DEFAULT_LIMIT = 200;
-/** Orders read for a sales summary. */
+/** Orders read for a sales summary: a safety cap, the period itself decides what is read. */
 const SALES_LIMIT = 2_000;
+/** Carts still with shoppers are only ever counted among the most recent ones. */
+const OPEN_SCAN = 200;
+const OPEN: readonly OrderStatus[] = ['awaiting_buyer', 'needs_info'];
 
 export class Orders {
   private readonly deps: OrdersDeps;
@@ -52,15 +57,26 @@ export class Orders {
     this.deps = deps;
   }
 
-  async list(shopId: string, options: { status?: OrderStatus; limit?: number } = {}): Promise<OrderSummary[]> {
-    const [carts, refunds] = await Promise.all([
-      this.deps.carts.listByShop(shopId, DEFAULT_LIMIT),
-      this.deps.guard.list(shopId, { kind: 'refund.create', status: 'verified' }),
-    ]);
+  /**
+   * A shop's orders, newest first: placed ones (cancelled included), or carts still with shoppers when
+   * `status` asks for those. `since`: placed at or after then. Refunds are read for these orders only.
+   */
+  async list(shopId: string, options: { status?: OrderStatus; limit?: number; since?: Date } = {}): Promise<OrderSummary[]> {
+    const limit = Math.min(options.limit ?? DEFAULT_LIMIT, DEFAULT_LIMIT);
+    const carts =
+      options.status && OPEN.includes(options.status)
+        ? (await this.deps.carts.listByShop(shopId, OPEN_SCAN)).filter((c) => c.cart.status !== 'COMPLETED')
+        : await this.deps.carts.listPlaced(shopId, { limit: options.status ? DEFAULT_LIMIT : limit, since: options.since, released: true });
+    const refunds = carts.length ? await this.deps.guard.list(shopId, { kind: 'refund.create', status: 'verified', cartIds: carts.map((c) => c.id), limit: SALES_LIMIT }) : [];
     return carts
       .map((c) => summarize(c, refunds))
       .filter((o) => !options.status || o.status === options.status)
-      .slice(0, options.limit ?? DEFAULT_LIMIT);
+      .slice(0, limit);
+  }
+
+  /** How many recent carts are still with shoppers (priced, not paid). */
+  async openCarts(shopId: string): Promise<number> {
+    return (await this.deps.carts.listByShop(shopId, OPEN_SCAN)).filter((c) => c.cart.status !== 'COMPLETED').length;
   }
 
   /** One order with its Guard history. `ref` is the cart id or the order number people see (SAY-...). */
@@ -68,6 +84,11 @@ export class Orders {
     const cart = await this.cart(shopId, ref);
     const records = await this.deps.guard.list(shopId, { cartId: cart.id });
     return { order: summarize(cart, records), cart, records };
+  }
+
+  /** The Guard history of several orders, in one read. */
+  history(shopId: string, cartIds: readonly string[]): Promise<GuardRecord[]> {
+    return cartIds.length ? this.deps.guard.list(shopId, { cartIds, limit: SALES_LIMIT }) : Promise.resolve([]);
   }
 
   /** Refund all or part of a paid order. May run now, wait for the owner, or be denied by the rules. */
@@ -96,7 +117,8 @@ export class Orders {
     // later): the window decides what is read, not the store's default page size.
     const since = new Date(resolvePeriod(query, now).previous.start - 60 * 86_400_000);
     const [placed, refunds] = await Promise.all([
-      this.deps.carts.listPlaced(shopId, SALES_LIMIT),
+      // Orders placed since then too: one paid in the period may have been placed a little before it.
+      this.deps.carts.listPlaced(shopId, { limit: SALES_LIMIT, since }),
       this.deps.guard.list(shopId, { kind: 'refund.create', status: 'verified', since, limit: SALES_LIMIT }),
     ]);
     return salesSummary({ placed, refunds, currency, query, now, partial: placed.length >= SALES_LIMIT || refunds.length >= SALES_LIMIT });
@@ -154,6 +176,7 @@ export function summarize(c: StoredCart, records: readonly GuardRecord[] = []): 
     tracking: c.tracking,
     refundedMinor,
     refunded: refundedMinor ? formatMoney(refundedMinor, currency) : undefined,
+    ...(c.captureId && c.paidAt ? { paidAt: c.paidAt } : {}),
     createdAt: c.createdAt,
   };
 }

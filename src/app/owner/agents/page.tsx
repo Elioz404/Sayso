@@ -6,7 +6,7 @@ import { CopyField, RefreshWhenBack } from '@/app/_components/client-ui.tsx';
 import { ConnectAgent, RevokeKey } from '@/app/_components/owner-actions.tsx';
 import { Ago, When } from '@/app/_components/time.tsx';
 import type { AgentKey } from '@/core/access.ts';
-import type { Policy } from '@/core/guard/policy.ts';
+import { approvalLimit } from '@/core/guard/policy.ts';
 import type { ActionKind, GuardRecord } from '@/core/guard/types.ts';
 import { formatMoney } from '@/core/money.ts';
 import { SHARED_DEMO_READ_ONLY } from '@/server/http.ts';
@@ -36,22 +36,20 @@ function askedByKey(records: readonly GuardRecord[]): Map<string, Asked> {
   return byKey;
 }
 
-/** "$50.00": above this, `kind` waits for the owner. */
-function approvalLimit(policy: Policy, kind: ActionKind): string | undefined {
-  const rule = policy.rules.find((r) => r.type === 'max_amount' && r.kinds.includes(kind) && r.then === 'require_approval');
-  return rule?.type === 'max_amount' ? formatMoney(rule.limit, policy.currency) : undefined;
-}
-
 export default async function Agents() {
   const view = await ownerView();
   if (!view) return null;
   const { access, saySo, shopId, shop, links, demo } = view;
-  const [keys, records, policy] = await Promise.all([access.listKeys(shopId), saySo.audit(shopId, 500), saySo.policy(shopId)]);
+  const [keys, records, policy, passkey] = await Promise.all([access.listKeys(shopId), saySo.audit(shopId, 500), saySo.policy(shopId), view.passkeys.required(shopId)]);
   const live = keys.filter((k) => !k.revokedAt);
   const revoked = keys.filter((k) => k.revokedAt);
   const asked = askedByKey(records);
-  const refundLimit = approvalLimit(policy, 'refund.create');
-  const invoiceLimit = approvalLimit(policy, 'invoice.send');
+  const limitOf = (kind: ActionKind) => {
+    const minor = approvalLimit(policy, kind);
+    return minor === undefined ? undefined : formatMoney(minor, policy.currency);
+  };
+  const refundLimit = limitOf('refund.create');
+  const invoiceLimit = limitOf('invoice.send');
   const limits = [refundLimit && `refunds up to ${refundLimit}`, invoiceLimit && `invoices up to ${invoiceLimit}`].filter(Boolean).join(' and ');
 
   return (
@@ -62,7 +60,7 @@ export default async function Agents() {
           <h1>Agents</h1>
           <p className="sub">Your own AI runs this shop with Sayso&apos;s tools. Money only moves within your rules or with your OK.</p>
         </div>
-        {!demo && live.length > 0 && <ConnectAgent endpoint={links.sellerMcp} />}
+        {!demo && live.length > 0 && <ConnectAgent endpoint={links.sellerMcp} passkey={passkey} />}
       </div>
 
       <div className="agents-grid">
@@ -83,7 +81,7 @@ export default async function Agents() {
             <div className="agents-empty">
               <b>No agent connected yet</b>
               <span className="small soft">Connect ChatGPT, Claude or any MCP app, and it can look after orders, stock and refunds for you.</span>
-              {!demo && <ConnectAgent endpoint={links.sellerMcp} quiet />}
+              {!demo && <ConnectAgent endpoint={links.sellerMcp} quiet passkey={passkey} />}
             </div>
           )}
           {demo && <p className="small soft">{SHARED_DEMO_READ_ONLY}</p>}

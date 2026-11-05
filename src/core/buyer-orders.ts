@@ -7,7 +7,7 @@ import { findVariant, type Catalog } from './catalog.ts';
 import type { AuditEvent, GuardRecord } from './guard/types.ts';
 import type { Links } from './links.ts';
 import { formatMoney, toMinor, type Money } from './money.ts';
-import type { Orders } from './orders.ts';
+import { summarize, type Orders } from './orders.ts';
 import { carrierName, trackingLink } from './shipping.ts';
 import type { CartStore, CatalogStore, PayerRef, StoredCart } from './stores.ts';
 import { PAYMENT_FOR_BUYER, refundRequestForBuyer } from './tools/views.ts';
@@ -57,22 +57,36 @@ export async function buyerOrder(deps: BuyerOrderDeps, cartId: string, options: 
   if (!/^[A-Za-z0-9_-]{6,60}$/.test(cartId)) return undefined;
   const cart = await deps.carts.get(cartId);
   if (!cart || cart.cart.status !== 'COMPLETED' || !cart.merchantOrderNumber) return undefined;
-  return view(deps, cart, await deps.catalogs.byShopId(cart.shopId), options.owner);
+  const [records, catalog] = await Promise.all([deps.orders.history(cart.shopId, [cart.id]), deps.catalogs.byShopId(cart.shopId)]);
+  return orderView(deps.links, cart, records, catalog, options);
 }
 
-/** Every order the PayPal account paid for, in every shop, newest first. */
-export async function buyerOrders(deps: BuyerOrderDeps, payer: PayerRef): Promise<BuyerOrder[]> {
-  const carts = await deps.carts.listByPayer(payer, 50);
-  const catalogs = new Map<string, Promise<Catalog | undefined>>();
-  const catalogOf = (shopId: string) => {
-    if (!catalogs.has(shopId)) catalogs.set(shopId, deps.catalogs.byShopId(shopId));
-    return catalogs.get(shopId)!;
-  };
-  return Promise.all(carts.map(async (c) => view(deps, c, await catalogOf(c.shopId))));
+/** Every order the PayPal account paid for, in every shop, newest first: one history read per shop. */
+export async function buyerOrders(deps: BuyerOrderDeps, payer: PayerRef, limit = 50): Promise<BuyerOrder[]> {
+  const carts = await deps.carts.listByPayer(payer, limit);
+  const shops = [...new Set(carts.map((c) => c.shopId))];
+  const loaded = new Map(
+    await Promise.all(
+      shops.map(async (shopId) => {
+        const ids = carts.filter((c) => c.shopId === shopId).map((c) => c.id);
+        const [records, catalog] = await Promise.all([deps.orders.history(shopId, ids), deps.catalogs.byShopId(shopId)]);
+        return [shopId, { records, catalog }] as const;
+      }),
+    ),
+  );
+  return carts.map((c) => {
+    const { records, catalog } = loaded.get(c.shopId)!;
+    return orderView(deps.links, c, records.filter((r) => r.action.params?.cartId === c.id), catalog);
+  });
 }
 
-async function view(deps: BuyerOrderDeps, cart: StoredCart, catalog?: Catalog, owner = false): Promise<BuyerOrder> {
-  const { order, records } = await deps.orders.get(cart.shopId, cart.id);
+/**
+ * One order as the buyer (or, with `owner`, the shop owner) sees it, from its cart, its Guard records and
+ * the shop's catalog. No reads of its own: callers load what it needs, in one go for many orders.
+ */
+export function orderView(links: Links, cart: StoredCart, records: readonly GuardRecord[], catalog?: Catalog, options: { owner?: boolean } = {}): BuyerOrder {
+  const owner = options.owner ?? false;
+  const order = summarize(cart, records);
   const totals = cart.cart.totals;
   const paid = Boolean(cart.captureId);
   const fullyRefunded = order.totalMinor !== undefined && order.refundedMinor >= order.totalMinor && order.refundedMinor > 0;
@@ -110,7 +124,7 @@ async function view(deps: BuyerOrderDeps, cart: StoredCart, catalog?: Catalog, o
   return {
     id: cart.id,
     number: cart.merchantOrderNumber!,
-    shop: { name: catalog?.shop.name ?? 'The shop', ...(catalog ? { url: deps.links.shopPage(catalog.shop.slug) } : {}) },
+    shop: { name: catalog?.shop.name ?? 'The shop', ...(catalog ? { url: links.shopPage(catalog.shop.slug) } : {}) },
     placedAt: cart.paidAt ?? cart.updatedAt,
     state,
     status,
@@ -123,8 +137,8 @@ async function view(deps: BuyerOrderDeps, cart: StoredCart, catalog?: Catalog, o
         ...(at > 0 ? { detail: i.name!.slice(at + 3) } : {}),
         qty: i.quantity,
         ...(i.price ? { amount: formatMoney(toMinor(i.price) * i.quantity, i.price.currency_code) } : {}),
-        ...(found?.product.imageUrl ? { image: deps.links.asset(found.product.imageUrl) } : {}),
-        ...(found && catalog ? { url: deps.links.productPage(catalog.shop.slug, found.product.id) } : {}),
+        ...(found?.product.imageUrl ? { image: links.asset(found.product.imageUrl) } : {}),
+        ...(found && catalog ? { url: links.productPage(catalog.shop.slug, found.product.id) } : {}),
       };
     }),
     subtotal: show(totals?.subtotal),

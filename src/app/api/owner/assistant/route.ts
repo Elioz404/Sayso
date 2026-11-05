@@ -31,7 +31,7 @@ export async function POST(request: Request) {
   return handle(async () => {
     const session = await requireOwnerSession(request);
     const { messages, text } = await readBody(request, TURN, 128 * 1024);
-    const { model, tools, shops } = await ready();
+    const { ownerModel: model, tools, shops } = await ready();
     if (!model?.chat) throw new ConfigError('The assistant needs an AI key on this server (OPENAI_API_KEY or DEEPSEEK_API_KEY).');
     // Only well-formed questions count, and each limiter is reached only if the one before it said yes.
     const caller = clientAddress(request);

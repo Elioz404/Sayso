@@ -10,6 +10,8 @@ import { ownerView } from '@/server/owner.ts';
 export const metadata: Metadata = { title: 'Catalog' };
 
 const PER_PAGE = 10;
+/** "Sold" counts these last days. */
+const SOLD_DAYS = 14;
 
 export default async function Catalog({ searchParams }: { searchParams: Promise<{ added?: string; tab?: string; page?: string }> }) {
   const view = await ownerView();
@@ -22,7 +24,8 @@ export default async function Catalog({ searchParams }: { searchParams: Promise<
   const pages = Math.max(1, Math.ceil(catalog.products.length / PER_PAGE));
   const page = Math.min(pages, Math.max(1, Math.floor(Number(pageParam)) || 1));
   // What sold in the last two weeks, next to each option: what to restock, what to reprice.
-  const sold = shipping ? new Map<string, number>() : soldSince(await view.orders.list(view.shopId), new Date(Date.now() - 14 * 86_400_000));
+  const soldFrom = new Date(Date.now() - SOLD_DAYS * 86_400_000);
+  const sold = shipping ? new Map<string, number>() : soldSince(await view.orders.list(view.shopId, { since: soldFrom }), soldFrom);
   const products: EditableProduct[] = catalog.products.slice((page - 1) * PER_PAGE, page * PER_PAGE).map((p) => ({
     id: p.id,
     name: p.name,

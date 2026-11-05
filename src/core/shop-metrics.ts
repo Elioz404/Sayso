@@ -1,8 +1,12 @@
 // The Overview's numbers: the last 7 days against the 7 before, a day-by-day series for each, and what the
-// shop's agents did with its money this week. Minor units throughout; pages format them.
+// shop's agents did with its money this week. Sales and refunds follow the same definitions as the sales
+// summary (charged orders by when they were charged, refunds by when PayPal confirmed them), so the
+// dashboard and the assistant never disagree. Minor units throughout; pages format them.
 
+import type { GuardRecord } from './guard/types.ts';
 import type { OrderSummary } from './orders.ts';
-import type { DecisionRow } from './trust-report.ts';
+import { confirmedRefunds } from './sales-summary.ts';
+import { outcomeOf, whoOf } from './trust-report.ts';
 
 export interface Kpi {
   now: number;
@@ -28,20 +32,25 @@ export interface ShopMetrics {
 const DAY = 86_400_000;
 const isoDay = (t: number) => new Date(t).toISOString().slice(0, 10);
 
-/** Orders that count as sales: placed and not cancelled by the shop. */
-const sold = (o: OrderSummary) => Boolean(o.number) && o.status !== 'released';
-
-export function shopMetrics(orders: OrderSummary[], decisions: DecisionRow[], minorPerUnit: number, now = new Date(), days = 7): ShopMetrics {
+/**
+ * `orders`: the shop's orders over (at least) the last 2 x `days`; `records`: its Guard records over the
+ * same days. Charged orders count on the day they were charged; refunds on the day PayPal confirmed them.
+ */
+export function shopMetrics(orders: readonly OrderSummary[], records: readonly GuardRecord[], now = new Date(), days = 7): ShopMetrics {
   const end = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) + DAY; // end of today, UTC
   const start = end - days * DAY;
   const daily = Array.from({ length: days * 2 }, (_, i) => ({ day: isoDay(end - (days * 2 - i) * DAY), revenue: 0, refunded: 0, orders: 0 }));
   const index = new Map(daily.map((d, i) => [d.day, i]));
-  for (const o of orders.filter(sold)) {
-    const i = index.get(o.createdAt.slice(0, 10));
+  for (const o of orders) {
+    if (o.status !== 'paid' || !o.paidAt) continue;
+    const i = index.get(o.paidAt.slice(0, 10));
     if (i === undefined) continue;
     daily[i].revenue += o.totalMinor ?? 0;
-    daily[i].refunded += o.refundedMinor;
     daily[i].orders += 1;
+  }
+  for (const r of confirmedRefunds(records)) {
+    const i = index.get(isoDay(r.at));
+    if (i !== undefined) daily[i].refunded += r.amount;
   }
   const recent = daily.slice(days);
   const earlier = daily.slice(0, days);
@@ -51,8 +60,10 @@ export function shopMetrics(orders: OrderSummary[], decisions: DecisionRow[], mi
   // Running averages and rates read better as a line than day-by-day zeros.
   const running = (f: (rows: typeof daily) => number) => recent.map((_, i) => f(daily.slice(i + 1, days + i + 1)));
 
-  const week = decisions.filter((d) => Date.parse(d.day) >= start);
-  const minor = (major: number) => Math.round(major * minorPerUnit);
+  // What agents asked of the owner's money this week (a buyer's own checkout is a sale, not a request).
+  const week = records.filter((r) => Date.parse(r.createdAt) >= start && whoOf(r.action) !== 'Sayso checkout');
+  const by = (outcome: ReturnType<typeof outcomeOf>) =>
+    week.filter((r) => outcomeOf(r) === outcome && r.action.kind !== 'policy.update').reduce((n, r) => n + (r.action.amount ?? r.simulation?.amount ?? 0), 0);
   return {
     days,
     revenue: { now: sum(recent, 'revenue'), before: sum(earlier, 'revenue'), series: recent.map((d) => d.revenue) },
@@ -61,11 +72,11 @@ export function shopMetrics(orders: OrderSummary[], decisions: DecisionRow[], mi
     refundRate: { now: rate(recent), before: rate(earlier), series: running(rate) },
     daily,
     sayso: {
-      alone: minor(week.reduce((n, d) => n + d.movedAlone, 0)),
-      approved: minor(week.reduce((n, d) => n + d.approved, 0)),
-      waiting: minor(week.reduce((n, d) => n + d.waiting, 0)),
-      declined: minor(week.reduce((n, d) => n + d.declined, 0)),
-      blocked: minor(week.reduce((n, d) => n + d.blocked, 0)),
+      alone: by('Allowed by your rules'),
+      approved: by('You said OK'),
+      waiting: by('Waiting for you'),
+      declined: by('You said no'),
+      blocked: by('Blocked by a rule'),
       requests: week.length,
     },
   };

@@ -113,10 +113,20 @@ export async function readBody<const S extends JsonSchema>(request: Request, sch
 
 /** The JSON body as unknown, refused past `limit` bytes before it is buffered whole. */
 export async function readJson(request: Request, limit = BODY_LIMIT): Promise<unknown> {
+  const text = await readText(request, limit);
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new HttpError(400, 'Request body must be JSON');
+  }
+}
+
+/** The body as text, read with a size cap: the declared length is checked first, then the bytes as they come. */
+export async function readText(request: Request, limit = BODY_LIMIT): Promise<string> {
   const declared = Number(request.headers.get('content-length') ?? 0);
   if (declared > limit) throw tooLarge(limit);
   const reader = request.body?.getReader();
-  if (!reader) throw new HttpError(400, 'Request body must be JSON');
+  if (!reader) return '';
   const chunks: Uint8Array[] = [];
   let size = 0;
   for (;;) {
@@ -129,11 +139,7 @@ export async function readJson(request: Request, limit = BODY_LIMIT): Promise<un
     }
     chunks.push(value);
   }
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-  } catch {
-    throw new HttpError(400, 'Request body must be JSON');
-  }
+  return Buffer.concat(chunks).toString('utf8');
 }
 
 function tooLarge(limit: number): HttpError {

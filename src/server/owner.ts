@@ -2,6 +2,9 @@
 // need the shop (or the waiting list) read it once.
 import 'server-only';
 import { cache } from 'react';
+import type { OwnerSession } from '@/core/access.ts';
+import { HttpError } from '@/core/errors.ts';
+import type { Confirmation, PasskeyProof } from '@/core/passkeys.ts';
 import { maskPersonalData } from '@/core/privacy.ts';
 import { ready } from './context.ts';
 import { ownerSession } from './http.ts';
@@ -49,3 +52,15 @@ export const signedInSeller = cache(async () => {
 
 /** Signs a rules draft between drafting it and saving it (POST /api/owner/rules/draft, then /api/owner/rules). */
 export const RULES_DRAFT = 'rules-draft';
+
+/**
+ * New credentials (an agent key, a phone link) come only from the device the owner signed in on, right
+ * after signing in or with their passkey: an old or borrowed session can't keep minting them.
+ */
+export async function requireStepUp(session: OwnerSession, proof: PasskeyProof | undefined, what: Confirmation): Promise<void> {
+  const { access, passkeys } = await ready();
+  if (session.via === 'handoff') throw new HttpError(403, 'Do this from the device you signed in on.');
+  if (proof) return passkeys.confirm(session.shopId, what, proof);
+  if (await passkeys.required(session.shopId)) throw new HttpError(428, 'Confirm with your passkey (fingerprint, face or PIN)');
+  if (!access.isFresh(session)) throw new HttpError(403, 'For your safety, this works for 30 minutes after you sign in. Sign out and in again.');
+}

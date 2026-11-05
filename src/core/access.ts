@@ -50,6 +50,10 @@ export interface AccessStore {
   setOwnerHash(shopId: string, hash: string): Promise<void>;
   ownerHash(shopId: string): Promise<string | undefined>;
   putKey(key: AgentKey): Promise<void>;
+  /** Records a use, only while the key is not revoked: never writes the rest of the key back. */
+  touchKey(id: string, at: string): Promise<void>;
+  /** Marks the key revoked, whatever else changed meanwhile. */
+  revokeKey(id: string, at: string): Promise<void>;
   keyByHash(hash: string): Promise<AgentKey | undefined>;
   listKeys(shopId: string): Promise<AgentKey[]>;
   /** The shop's session generation; sessions signed under an older one are no longer valid. */
@@ -123,7 +127,7 @@ export class Access {
     if (!key || key.revokedAt) return undefined;
     const now = Date.now();
     if (!key.lastUsedAt || now - Date.parse(key.lastUsedAt) > LAST_USED_RESOLUTION_MS) {
-      await this.store.putKey({ ...key, lastUsedAt: new Date(now).toISOString() });
+      await this.store.touchKey(key.id, new Date(now).toISOString());
     }
     return key;
   }
@@ -133,7 +137,7 @@ export class Access {
     const key = (await this.store.listKeys(shopId)).find((k) => k.id === keyId);
     if (!key) return false;
     if (key.shared) throw new HttpError(403, 'This key is shared with everyone trying the demo, so it stays. Revoke any key you made.');
-    await this.store.putKey({ ...key, revokedAt: new Date().toISOString() });
+    await this.store.revokeKey(key.id, new Date().toISOString());
     return true;
   }
 
@@ -237,6 +241,14 @@ export class MemoryAccessStore implements AccessStore {
   }
   async putKey(key: AgentKey) {
     this.keys.set(key.id, structuredClone(key));
+  }
+  async touchKey(id: string, at: string) {
+    const key = this.keys.get(id);
+    if (key && !key.revokedAt) key.lastUsedAt = at;
+  }
+  async revokeKey(id: string, at: string) {
+    const key = this.keys.get(id);
+    if (key) key.revokedAt ??= at;
   }
   async keyByHash(hash: string) {
     const key = [...this.keys.values()].find((k) => k.hash === hash);

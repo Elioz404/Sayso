@@ -49,7 +49,8 @@ export async function POST(request: Request) {
     // The shopper's own orders: from their PayPal sign-in, and the ones this browser paid for.
     const deps = { carts, catalogs, orders, links };
     const who = await buyerSession();
-    const mine = who ? await buyerOrders(deps, who) : [];
+    // The assistant reads ten at most (ordersForAssistant), so ten are loaded.
+    const mine = who ? await buyerOrders(deps, who, 10) : [];
     const ids = [...new Set([...(await paidHere()), ...(here ?? [])])].filter((id) => !mine.some((o) => o.id === id)).slice(0, 10);
     const local = await Promise.all(ids.map((id) => buyerOrder(deps, id)));
     const context = ordersForAssistant([...mine, ...local.filter((o): o is BuyerOrder => Boolean(o))]);

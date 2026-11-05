@@ -111,21 +111,36 @@ function summary(tool: string, result: unknown, isError: boolean): string {
   }
 }
 
-/** Plain text with markdown links and bold, as the model writes them. PayPal links become the PayPal button. */
+/** A PayPal page, by its parsed host: "paypal.com.evil.example" or "evil.example/?paypal.com" are not. */
+function isPayPal(url: URL): boolean {
+  return url.protocol === 'https:' && (url.hostname === 'paypal.com' || url.hostname.endsWith('.paypal.com'));
+}
+
+/**
+ * Plain text with markdown links and bold, as the model writes them. Shops write some of what the model
+ * reads, so a link is only clickable when it goes to PayPal (by its real host) or to this site; any other
+ * address stays plain text.
+ */
 function Rich({ text }: { text: string }) {
   // Models sometimes slip ("[Pay with PayPal].(url)") or paste a bare URL; both still become a proper link.
-  const tidy = text
-    .replace(/\[([^\]]+)\]\.?\s*\((https?:\/\/[^)\s]+)\)/g, '[$1]($2)')
-    .replace(/(^|[^(\w])(https?:\/\/[^\s)]+[^\s).,])/g, (_, lead: string, url: string) => `${lead}[${/paypal\.com/.test(url) ? 'Pay with PayPal' : url}](${url})`);
+  const tidy = text.replace(/\[([^\]]+)\]\.?\s*\((https?:\/\/[^)\s]+)\)/g, '[$1]($2)').replace(/(^|[^(\w])(https?:\/\/[^\s)]+[^\s).,])/g, (_, lead: string, url: string) => `${lead}[${url}](${url})`);
   const parts = tidy.split(/(\[[^\]]+\]\(https?:\/\/[^)\s]+\)|\*\*[^*]+\*\*)/);
   return (
     <>
       {parts.map((p, i) => {
         const link = p.match(/^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/);
         if (link) {
-          const pay = /paypal\.com/.test(link[2]);
+          let url: URL | undefined;
+          try {
+            url = new URL(link[2]);
+          } catch {
+            url = undefined;
+          }
+          const pay = url ? isPayPal(url) : false;
+          const ours = url && typeof window !== 'undefined' ? url.origin === window.location.origin : false;
+          if (!pay && !ours) return <span key={i}>{link[1]}</span>;
           return (
-            <a key={i} href={link[2]} target="_blank" rel="noopener noreferrer" title={pay ? 'Opens PayPal in a new tab' : undefined}>
+            <a key={i} href={url!.toString()} target={pay ? '_blank' : undefined} rel={pay ? 'noopener noreferrer' : undefined} title={pay ? 'Opens PayPal in a new tab' : undefined}>
               {pay ? 'open PayPal in a new tab' : link[1]}
             </a>
           );

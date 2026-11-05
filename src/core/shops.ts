@@ -21,7 +21,10 @@ export interface ShopsDeps {
   catalogs: CatalogStore;
   access: Access;
   paypal: PayPalClient;
+  /** The public pool (Start selling). */
   model?: ChatModel;
+  /** Signed-in owners' pool (drafts from photos); the public one when not given. */
+  ownerModel?: ChatModel;
   links: Links;
   /** Where sellers' photos are kept; without it, products start without pictures. */
   media?: MediaStore;
@@ -332,11 +335,12 @@ export class Shops {
    * with the photo and a market price suggestion. They wait in `drafts` until the owner puts them on sale.
    */
   async draftFromPhotos(shopId: string, images: string[], note = ''): Promise<Product[]> {
-    if (!this.deps.model) throw new HttpError(503, 'Drafting from photos needs an AI key (OPENAI_API_KEY or DEEPSEEK_API_KEY) on the server');
+    const model = this.deps.ownerModel ?? this.deps.model;
+    if (!model) throw new HttpError(503, 'Drafting from photos needs an AI key (OPENAI_API_KEY or DEEPSEEK_API_KEY) on the server');
     const photos = checkPhotos(images, MAX_DRAFT_PHOTOS);
     const { shop } = await this.get(shopId);
     const text = note.trim() || 'New items for this shop. One product per photo, unless several photos show the same item.';
-    const { catalog: draft, photoOf } = await draftCatalog(this.deps.model, { text, images: photos, currency: shop.currency, country: shop.country, shopName: shop.name }).catch((err: unknown) => {
+    const { catalog: draft, photoOf } = await draftCatalog(model, { text, images: photos, currency: shop.currency, country: shop.country, shopName: shop.name }).catch((err: unknown) => {
       throw fromLlmError(err, 'Could not read those photos');
     });
     draft.shop = { ...draft.shop, id: shopId, currency: shop.currency };

@@ -414,7 +414,7 @@ const APPS: Record<AppChoice, { name: string; open: string; where: string }> = {
  * the owner here to allow it and gets a key of its own (no secret to copy). Anything else: name it and copy
  * its key once, as the personal URL an MCP app takes, a terminal login, or a bearer header (`endpoint`).
  */
-export function ConnectAgent({ endpoint, quiet = false }: { endpoint: string; quiet?: boolean }) {
+export function ConnectAgent({ endpoint, quiet = false, passkey = false }: { endpoint: string; quiet?: boolean; passkey?: boolean }) {
   const router = useRouter();
   const dialog = useRef<HTMLDialogElement>(null);
   const [step, setStep] = useState<'choose' | AppChoice | 'other'>('choose');
@@ -424,6 +424,8 @@ export function ConnectAgent({ endpoint, quiet = false }: { endpoint: string; qu
   const [error, setError] = useState<string>();
   const close = () => dialog.current?.close();
   const app = step === 'chatgpt' || step === 'claude' ? APPS[step] : undefined;
+  // A new key is a new credential: confirmed with the passkey once the shop has one.
+  const confirm = usePasskeyChallenge(passkey && step === 'other' && !issued ? { purpose: 'confirm', what: 'agent-key' } : undefined);
 
   return (
     <>
@@ -547,7 +549,12 @@ export function ConnectAgent({ endpoint, quiet = false }: { endpoint: string; qu
                 setBusy(true);
                 setError(undefined);
                 try {
-                  setIssued(await callApi<IssuedKey>('/api/owner/keys', 'POST', { label: name.trim() || 'My agent' }));
+                  let proof;
+                  if (passkey) {
+                    if (!confirm.challenge) throw new Error(confirm.error ?? 'Getting the passkey ready, try again in a second');
+                    proof = await signChallenge(confirm.challenge);
+                  }
+                  setIssued(await callApi<IssuedKey>('/api/owner/keys', 'POST', { label: name.trim() || 'My agent', proof }));
                   router.refresh();
                 } catch (err) {
                   setError((err as Error).message);

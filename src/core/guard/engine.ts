@@ -3,6 +3,8 @@
 // only orchestrates, so it is fully testable with fake executors (tests/guard.test.ts).
 
 import { createHash, randomUUID } from 'node:crypto';
+import { OPS_AGENT } from '../actors.ts';
+import { KeyedLock } from '../lock.ts';
 import { evaluate, findDuplicate, historyWindowMs, minutesAgo, type Policy } from './policy.ts';
 import { matchesQuery, SPENDING_STATUSES } from './types.ts';
 import type { ActionKind, AuditEvent, Decision, Executor, GuardRecord, GuardStore, ProposedAction, RecordQuery, RecordStatus, RuleHit, Verdict } from './types.ts';
@@ -44,6 +46,7 @@ export class Guard {
   private readonly deps: GuardDeps;
   private readonly executors: Partial<Record<ActionKind, Executor>>;
   private readonly listeners: SettledListener[] = [];
+  private readonly deciding = new KeyedLock();
 
   constructor(deps: GuardDeps) {
     this.deps = deps;
@@ -85,29 +88,36 @@ export class Guard {
     append(record, 'simulated', 'sayso', { ...record.simulation }, this.now());
 
     // 2. Decide: a failed simulation is a hard stop (PayPal would reject it); otherwise the owner's
-    //    policy plus the built-in rules no policy can switch off.
+    //    policy plus the built-in rules no policy can switch off. Reading what was already spent and
+    //    saving this record happen as one step per owner, so two requests at once can't both fit under
+    //    a daily total or both pass the duplicate check.
     const policy = await this.deps.policyFor(action.ownerId);
-    const history = await this.deps.store.list(action.ownerId, { since: new Date(now.getTime() - historyWindowMs(policy)), status: SPENDING_STATUSES, limit: HISTORY_LIMIT });
-    record.decision = record.simulation.ok
-      ? withBuiltIns(evaluate(policy, action, history, now), action, history, now, history.length >= HISTORY_LIMIT)
-      : { verdict: 'deny', hits: record.simulation.blockers.map((message) => ({ ruleId: 'simulation', verdict: 'deny' as const, message })) };
-    append(record, 'decided', 'sayso', { ...record.decision }, this.now());
-
-    if (record.decision.verdict === 'deny') {
-      record.status = 'denied';
+    await this.serialize(action.ownerId, async () => {
+      const history = await this.deps.store.list(action.ownerId, { since: new Date(now.getTime() - historyWindowMs(policy)), status: SPENDING_STATUSES, limit: HISTORY_LIMIT });
+      record.decision = !record.simulation!.ok
+        ? { verdict: 'deny', hits: record.simulation!.blockers.map((message) => ({ ruleId: 'simulation', verdict: 'deny' as const, message })) }
+        : releasesHold(action)
+          ? { verdict: 'allow', hits: [] }
+          : withBuiltIns(evaluate(policy, action, history, now), action, history, now, history.length >= HISTORY_LIMIT);
+      append(record, 'decided', 'sayso', { ...record.decision }, this.now());
+      record.status = record.decision.verdict === 'deny' ? 'denied' : record.decision.verdict === 'require_approval' ? 'pending_approval' : 'executing';
       await this.deps.store.insert(record);
+    });
+
+    if (record.status === 'denied') {
       await this.settled(record);
       return record;
     }
-    if (record.decision.verdict === 'require_approval') {
-      record.status = 'pending_approval';
-      await this.deps.store.insert(record);
+    if (record.status === 'pending_approval') {
       if (options.notify !== false) await this.deps.onApprovalNeeded?.(record);
       return record;
     }
-
-    await this.deps.store.insert(record);
     return this.run(record);
+  }
+
+  /** One decision at a time per owner: across instances when the store can lock, in this process anyway. */
+  private serialize<T>(ownerId: string, work: () => Promise<T>): Promise<T> {
+    return this.deciding.run(ownerId, () => (this.deps.store.exclusive ? this.deps.store.exclusive(ownerId, work) : work()));
   }
 
   /**
@@ -141,13 +151,17 @@ export class Guard {
 
   private async run(record: GuardRecord): Promise<GuardRecord> {
     const executor = this.executor(record.action.kind);
-    try {
-      record.result = await executor.execute(record.action, record.idempotencyKey);
+    const outcome = await this.execute(executor, record);
+    if ('result' in outcome) {
+      record.result = outcome.result;
       record.status = 'executed';
       append(record, 'executed', 'sayso', record.result, this.now());
-    } catch (err) {
-      record.status = 'failed';
-      append(record, 'failed', 'sayso', { error: errorMessage(err) }, this.now());
+    } else {
+      // Refused: nothing moved. Unknown: PayPal may have done it, so it is never called "failed" (that
+      // would release an order that was in fact charged); it stays "unverified" for the owner to check.
+      record.status = outcome.refused ? 'failed' : 'unverified';
+      if (!outcome.refused) record.verification = { ok: false, detail: `PayPal did not answer clearly, so it may have gone through: ${outcome.error}` };
+      append(record, outcome.refused ? 'failed' : 'unverified', 'sayso', { error: outcome.error }, this.now());
       await this.deps.store.update(record);
       await this.settled(record);
       return record;
@@ -166,6 +180,23 @@ export class Guard {
     await this.deps.store.update(record);
     await this.settled(record);
     return record;
+  }
+
+  /**
+   * Execute once, and once more with the same idempotency key if the answer was lost (a timeout, a
+   * dropped connection, a 5xx): PayPal replays the first result instead of doing it twice.
+   */
+  private async execute(executor: Executor, record: GuardRecord): Promise<{ result: Record<string, unknown> } | { refused: boolean; error: string }> {
+    let last: unknown;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return { result: await executor.execute(record.action, record.idempotencyKey) };
+      } catch (err) {
+        if (!ambiguous(err)) return { refused: true, error: errorMessage(err) };
+        last = err;
+      }
+    }
+    return { refused: false, error: errorMessage(last) };
   }
 
   private async settled(record: GuardRecord): Promise<void> {
@@ -277,4 +308,23 @@ export class MemoryGuardStore implements GuardStore {
       .slice(0, query.limit ?? Infinity)
       .map((r) => structuredClone(r));
   }
+}
+
+/**
+ * The call may or may not have gone through: no answer (timeout, network) or a server-side error. A clear
+ * refusal (any other 4xx, or an executor's own check) means nothing moved.
+ */
+function ambiguous(err: unknown): boolean {
+  const status = (err as { status?: unknown } | null)?.status;
+  if (typeof status === 'number') return status >= 500 || status === 408 || status === 409;
+  const name = (err as { name?: unknown } | null)?.name;
+  return name === 'TimeoutError' || name === 'AbortError' || (err instanceof TypeError && /fetch|network|socket/i.test(err.message));
+}
+
+/**
+ * Sayso letting go of a buyer's payment hold (an order that won't go through) gives money back to the
+ * buyer: it is not the owner's money moving, so the owner's rules don't hold it. It is still recorded.
+ */
+function releasesHold(action: ProposedAction): boolean {
+  return action.kind === 'payment.void' && action.actor.id === OPS_AGENT.id;
 }

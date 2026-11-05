@@ -74,6 +74,17 @@ export function resolvePeriod(query: SalesQuery, now: Date): { current: Range; p
   }
 }
 
+/** Refunds PayPal confirmed, dated when it did: the one definition sales figures use everywhere. */
+export function confirmedRefunds(records: readonly GuardRecord[]): { at: number; amount: number; cartId?: string }[] {
+  return records
+    .filter((r) => r.action.kind === 'refund.create' && r.status === 'verified')
+    .map((r) => ({
+      at: Date.parse(r.events.find((e) => e.type === 'verified')?.at ?? r.createdAt),
+      amount: r.action.amount ?? 0,
+      ...(typeof r.action.params?.cartId === 'string' ? { cartId: r.action.params.cartId } : {}),
+    }));
+}
+
 interface Totals {
   sales: number;
   orders: number;
@@ -113,9 +124,7 @@ export function salesSummary(input: { placed: StoredCart[]; refunds: GuardRecord
   const { current, previous } = resolvePeriod(input.query, now);
   const charged = input.placed.filter((c) => c.captureId && !c.released);
   const held = input.placed.filter((c) => !c.captureId && !c.released);
-  const refunds = input.refunds
-    .filter((r) => r.action.kind === 'refund.create' && r.status === 'verified')
-    .map((r) => ({ at: Date.parse(r.events.find((e) => e.type === 'verified')?.at ?? r.createdAt), amount: r.action.amount ?? 0 }));
+  const refunds = confirmedRefunds(input.refunds);
 
   // While the period runs, compare like with like: the period before, up to the same point in it.
   const running = now.getTime() >= current.start && now.getTime() < current.end;

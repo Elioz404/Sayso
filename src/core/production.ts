@@ -101,7 +101,7 @@ export class Production {
   async jobs(shopId: string): Promise<ProductionJob[]> {
     const [catalog, carts, refunds, invoices, notes] = await Promise.all([
       this.catalog(shopId),
-      this.deps.carts.listPlaced(shopId, SCANNED),
+      this.deps.carts.listPlaced(shopId, { limit: SCANNED }),
       this.deps.guard.list(shopId, { kind: 'refund.create', status: 'verified' }),
       this.deps.guard.list(shopId, { kind: 'invoice.send', status: ['verified', 'unverified'], limit: SCANNED }),
       this.deps.jobs.list(shopId),

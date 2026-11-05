@@ -6,7 +6,7 @@ import { LabelScanner } from '@/app/_components/label-scanner.tsx';
 import { OrderSteps } from '@/app/_components/order-view.tsx';
 import { When } from '@/app/_components/time.tsx';
 import { actionLabel, Icon, Status, toneOf } from '@/app/_components/ui.tsx';
-import { buyerOrder } from '@/core/buyer-orders.ts';
+import { orderView } from '@/core/buyer-orders.ts';
 import { HttpError } from '@/core/errors.ts';
 import { formatMoney, toMinor } from '@/core/money.ts';
 import { trackingLink } from '@/core/shipping.ts';
@@ -48,7 +48,7 @@ export default async function OrderDetail({ params }: { params: Promise<{ id: st
   const address = cart.cart.shipping_address;
   const history = [...records].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   // The same progress line the buyer sees on their order page.
-  const progress = order.number ? await buyerOrder(view, cart.id, { owner: true }) : undefined;
+  const progress = order.number ? orderView(view.links, cart, records, view.catalog, { owner: true }) : undefined;
   const state = progress ? STATE[progress.state] : undefined;
   const waiting = records.filter((r) => r.status === 'pending_approval');
   const capture = waiting.find((r) => r.action.kind === 'payment.capture');

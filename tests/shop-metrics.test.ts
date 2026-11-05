@@ -6,7 +6,8 @@ import { test } from 'node:test';
 import { soldSince } from '../src/core/catalog-view.ts';
 import type { OrderSummary } from '../src/core/orders.ts';
 import { change, shopMetrics } from '../src/core/shop-metrics.ts';
-import type { DecisionRow } from '../src/core/trust-report.ts';
+import { OPS_AGENT } from '../src/core/actors.ts';
+import type { GuardRecord } from '../src/core/guard/types.ts';
 
 const NOW = new Date('2026-11-04T15:00:00Z');
 
@@ -22,26 +23,38 @@ function order(day: string, totalMinor: number, extra: Partial<OrderSummary> = {
     items: [{ variant_id: 'var_mug_sage', quantity: 1 }],
     paidToOwner: true,
     refundedMinor: 0,
+    paidAt: `${day}T12:00:00Z`,
     createdAt: `${day}T12:00:00Z`,
     ...extra,
   };
 }
 
-function decision(day: string, money: Partial<DecisionRow>): DecisionRow {
-  return { id: day, day, action: 'Refund', who: 'Your agents', outcome: 'Allowed by your rules', amount: 0, movedAlone: 0, approved: 0, waiting: 0, declined: 0, blocked: 0, requests: 1, nAlone: 0, nApproved: 0, nWaiting: 0, nDeclined: 0, nBlocked: 0, ...money } as DecisionRow;
+function record(action: Partial<GuardRecord['action']>, status: GuardRecord['status'], at: string, events: GuardRecord['events'] = []): GuardRecord {
+  return {
+    id: `say_${at}_${status}`,
+    createdAt: at,
+    action: { kind: 'refund.create', actor: { type: 'agent', id: 'agent:x:k', side: 'merchant' }, ownerId: 'shop_x', currency: 'USD', reason: 'r', ...action } as GuardRecord['action'],
+    status,
+    idempotencyKey: 'k',
+    events,
+  };
 }
+const refund = (amount: number, verifiedAt: string) => record({ amount }, 'verified', verifiedAt, [{ at: verifiedAt, type: 'verified', by: 'sayso', hash: 'h' }]);
+const asked = (actor: GuardRecord['action']['actor'], amount: number, status: GuardRecord['status'], at: string, approved = false) =>
+  record({ actor, amount }, status, at, approved ? [{ at, type: 'approved', by: 'owner:shop_x', hash: 'h' }] : []);
 
-test('this week against the week before, with a sparkline per number', () => {
+test('this week against the week before: charged orders by when they were charged, refunds by when PayPal confirmed them', () => {
   const orders = [
     order('2026-11-04', 6000), // today
-    order('2026-11-02', 4000, { refundedMinor: 1000 }),
+    order('2026-11-02', 4000),
     order('2026-10-29', 2000), // first day of this week
     order('2026-10-28', 3000), // last day of the week before
     order('2026-10-25', 5000, { status: 'released' }), // cancelled: not a sale
+    order('2026-10-27', 8000, { status: 'awaiting_owner', paidAt: undefined }), // held, not charged: not a sale yet
     order('2026-10-01', 9000), // too old for either week
-    { ...order('2026-11-03', 7000), number: undefined }, // a cart, never placed
   ];
-  const m = shopMetrics(orders, [], 100, NOW);
+  // A $10 refund confirmed this week (on any order), and one from long ago.
+  const m = shopMetrics(orders, [refund(1000, '2026-11-03T10:00:00Z'), refund(500, '2026-09-01T10:00:00Z')], NOW);
 
   assert.equal(m.daily.length, 14);
   assert.equal(m.daily[0].day, '2026-10-22');
@@ -57,16 +70,17 @@ test('this week against the week before, with a sparkline per number', () => {
   assert.equal(m.average.series.at(-1), m.average.now, "the running average ends on this week's number");
 });
 
-test("the agents' week: money by outcome, older requests left out", () => {
-  const decisions = [
-    decision('2026-11-03', { movedAlone: 5 }),
-    decision('2026-11-02', { waiting: 60.5 }),
-    decision('2026-11-01', { blocked: 250 }),
-    decision('2026-10-20', { approved: 99 }), // two weeks ago
+test("the agents' week: money by outcome in minor units, a buyer's checkout and older requests left out", () => {
+  const agent = { type: 'agent' as const, id: 'agent:laptop:k1', side: 'merchant' as const };
+  const records = [
+    asked(agent, 500, 'verified', '2026-11-03T10:00:00Z'),
+    asked(agent, 6050, 'pending_approval', '2026-11-02T10:00:00Z'),
+    asked(agent, 25_000, 'denied', '2026-11-01T10:00:00Z'),
+    asked(agent, 9900, 'verified', '2026-10-20T10:00:00Z', true), // two weeks ago
+    asked(OPS_AGENT, 7000, 'verified', '2026-11-03T10:00:00Z'), // a buyer's own checkout: a sale, not a request
   ];
-  const m = shopMetrics([], decisions, 100, NOW);
+  const m = shopMetrics([], records, NOW);
   assert.deepEqual(m.sayso, { alone: 500, approved: 0, waiting: 6050, declined: 0, blocked: 25_000, requests: 3 });
-  assert.equal(shopMetrics([], decisions, 1, NOW).sayso.waiting, 61, 'currencies without cents round to whole units');
 });
 
 test('change is a whole percentage, and says nothing when there was nothing before', () => {

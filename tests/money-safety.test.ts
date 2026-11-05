@@ -290,3 +290,20 @@ test('the email a buyer types into a cart is not who paid: trust rules use PayPa
   const known = await s.call('send_invoice', { email: 'buyer@example.com', items: [{ name: 'Vase', price: '30.00' }] }, s.owner);
   assert.equal(known.data.status, 'verified', 'the real payer is a known client');
 });
+
+test('if Guard itself fails during checkout, the stock comes back and the hold is let go', async () => {
+  const s = await stack();
+  const { cartId, token } = await approvedCart(s, [{ variant_id: 'var_mug_sage', quantity: 2 }]);
+  const before = await stock(s, 'var_mug_sage');
+  const submit = s.guard.submit.bind(s.guard);
+  s.guard.submit = async (action, options) => {
+    if (action.kind === 'payment.capture') throw new Error('database went away');
+    return submit(action, options);
+  };
+  await assert.rejects(pay(s, cartId, token), /database went away/);
+  const cart = (await s.carts.get(cartId))!;
+  assert.ok(cart.released, 'the order is released');
+  assert.equal(cart.reserved, undefined);
+  assert.equal(await stock(s, 'var_mug_sage'), before, 'its stock is back');
+  assert.equal(s.pp.authorizations.get(cart.authorizationId!)?.status, 'VOIDED', "the buyer's hold is gone");
+});

@@ -62,6 +62,11 @@ export interface SpendStore {
   add(day: string, usd: number): Promise<void>;
 }
 
+/** One pool's spend inside a shared store: its days are kept under "<pool>:<day>". */
+export function poolOf(store: SpendStore, pool: string): SpendStore {
+  return { get: (day) => store.get(`${pool}:${day}`), add: (day, usd) => store.add(`${pool}:${day}`, usd) };
+}
+
 export class MemorySpendStore implements SpendStore {
   private readonly days = new Map<string, { usd: number; calls: number }>();
   async get(day: string) {
@@ -208,30 +213,37 @@ export function openAICompatible(config: OpenAICompatibleConfig): ChatModel {
 
 /**
  * OpenAI when OPENAI_API_KEY is set (default gpt-4.1-mini), otherwise DeepSeek when DEEPSEEK_API_KEY
- * is set. AI_PROVIDER forces one. AI_DAILY_BUDGET_USD caps spend per day (default $0.50).
+ * is set. AI_PROVIDER forces one. AI_DAILY_BUDGET_USD caps spend per day (default $0.50), split in two
+ * pools so anyone on the public site can't switch AI off for owners: `model` for public pages (the
+ * shopping assistant, Start selling) and `ownerModel` for signed-in owners and their agents (assistant,
+ * rules, photo drafts, labels), which gets AI_OWNER_BUDGET_SHARE of it (default 0.4).
  */
-export function modelFromEnv(env: Record<string, string | undefined> = process.env, spend?: SpendStore): { model: ChatModel; budget: Budget } | undefined {
+export function modelFromEnv(
+  env: Record<string, string | undefined> = process.env,
+  spend: SpendStore = new MemorySpendStore(),
+): { model: ChatModel; ownerModel: ChatModel; budget: Budget; ownerBudget: Budget } | undefined {
   const provider = env.AI_PROVIDER === 'deepseek' || env.AI_PROVIDER === 'openai' ? env.AI_PROVIDER : env.OPENAI_API_KEY ? 'openai' : env.DEEPSEEK_API_KEY ? 'deepseek' : undefined;
   if (!provider) return undefined;
   const apiKey = provider === 'openai' ? env.OPENAI_API_KEY : env.DEEPSEEK_API_KEY;
   if (!apiKey) return undefined;
 
   const prices = provider === 'openai' ? [0.4, 1.6] : [0.14, 0.28];
-  const budget = new Budget(
-    positive(env.AI_DAILY_BUDGET_USD) ?? 0.5,
-    positive(env.AI_PRICE_INPUT_PER_MTOK) ?? prices[0],
-    positive(env.AI_PRICE_OUTPUT_PER_MTOK) ?? prices[1],
-    spend,
-  );
-  const model = openAICompatible({
-    provider,
-    apiKey,
-    baseUrl: provider === 'openai' ? env.OPENAI_BASE_URL : env.DEEPSEEK_BASE_URL,
-    model: provider === 'openai' ? env.OPENAI_MODEL : env.DEEPSEEK_MODEL,
-    imageDetail: env.AI_IMAGE_DETAIL === 'high' || env.AI_IMAGE_DETAIL === 'auto' ? env.AI_IMAGE_DETAIL : 'low',
-    budget,
-  });
-  return { model, budget };
+  const total = positive(env.AI_DAILY_BUDGET_USD) ?? 0.5;
+  const share = Math.min(0.9, positive(env.AI_OWNER_BUDGET_SHARE) ?? 0.4);
+  const inPrice = positive(env.AI_PRICE_INPUT_PER_MTOK) ?? prices[0];
+  const outPrice = positive(env.AI_PRICE_OUTPUT_PER_MTOK) ?? prices[1];
+  const budget = new Budget(total * (1 - share), inPrice, outPrice, poolOf(spend, 'public'));
+  const ownerBudget = new Budget(total * share, inPrice, outPrice, poolOf(spend, 'owner'));
+  const make = (b: Budget) =>
+    openAICompatible({
+      provider,
+      apiKey,
+      baseUrl: provider === 'openai' ? env.OPENAI_BASE_URL : env.DEEPSEEK_BASE_URL,
+      model: provider === 'openai' ? env.OPENAI_MODEL : env.DEEPSEEK_MODEL,
+      imageDetail: env.AI_IMAGE_DETAIL === 'high' || env.AI_IMAGE_DETAIL === 'auto' ? env.AI_IMAGE_DETAIL : 'low',
+      budget: b,
+    });
+  return { model: make(budget), ownerModel: make(ownerBudget), budget, ownerBudget };
 }
 
 function positive(value: string | undefined): number | undefined {

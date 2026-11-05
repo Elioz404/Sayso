@@ -10,9 +10,7 @@ export default async function Orders() {
   const view = await ownerView();
   if (!view) return null;
   const { shopId, orders: shopOrders, invoicing, redact, catalog, demo } = view;
-  const [orders, invoices] = await Promise.all([shopOrders.list(shopId), invoicing.list(shopId)]);
-  const placed = orders.filter((o) => o.number);
-  const open = orders.length - placed.length;
+  const [placed, open, invoices] = await Promise.all([shopOrders.list(shopId), shopOrders.openCarts(shopId), invoicing.list(shopId)]);
 
   const rows: OrderRow[] = placed.map((o) => ({
     id: o.id,

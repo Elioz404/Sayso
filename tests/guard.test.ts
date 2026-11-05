@@ -135,3 +135,58 @@ test('money round-trips through PayPal decimal strings', () => {
   assert.equal(toMoney(1500, 'JPY').value, '1500');
   assert.throws(() => toMinor({ currency_code: 'USD', value: '1.234' }));
 });
+
+/** An executor whose first calls fail the way the network or PayPal can, then (maybe) succeed. */
+function flaky(failures: unknown[], keys: string[]): Executor {
+  return {
+    async simulate() {
+      return { ok: true, effects: ['Refund'], blockers: [] };
+    },
+    async execute(_action, key) {
+      keys.push(key);
+      const failure = failures.shift();
+      if (failure) throw failure;
+      return { refund_id: 'REF-1' };
+    },
+    async verify() {
+      return { ok: true, detail: 'COMPLETED' };
+    },
+  };
+}
+
+const guardWith = (executor: Executor) => new Guard({ store: new MemoryGuardStore(), executors: { 'refund.create': executor }, policyFor: async () => defaultMerchantPolicy('shop_maya', 'USD') });
+const httpError = (status: number) => Object.assign(new Error(`PayPal ${status}`), { status });
+
+test('a lost answer is retried with the same key; still unknown, it is unverified, never failed', async () => {
+  const timeout = Object.assign(new Error('The operation timed out'), { name: 'TimeoutError' });
+  const keys: string[] = [];
+  const replayed = await guardWith(flaky([timeout], keys)).submit(refund(1_000));
+  assert.equal(replayed.status, 'verified');
+  assert.equal(new Set(keys).size, 1, 'the retry carries the same PayPal-Request-Id');
+
+  const unknown = await guardWith(flaky([httpError(503), httpError(502)], [])).submit(refund(1_000));
+  assert.equal(unknown.status, 'unverified', 'it may have gone through: an order is not released over it');
+  assert.match(unknown.verification!.detail, /may have gone through/);
+
+  const refused = await guardWith(flaky([httpError(422)], [])).submit(refund(1_000));
+  assert.equal(refused.status, 'failed', 'a clear refusal means nothing moved');
+});
+
+test('two requests at once still count each other against a daily total', async () => {
+  const policy: Policy = { ownerId: 'shop_maya', currency: 'USD', rules: [{ id: 'day', type: 'daily_total', kinds: ['refund.create'], limit: 5_000, then: 'require_approval' }] };
+  const { guard } = setup(policy);
+  // $30 + $30 > $50 a day: whichever is decided second must wait, even when both arrive together.
+  const [a, b] = await Promise.all([guard.submit(refund(3_000, 'CAP-A')), guard.submit(refund(3_000, 'CAP-B'))]);
+  assert.deepEqual([a.status, b.status].sort(), ['pending_approval', 'verified']);
+});
+
+test("letting go of a buyer's hold is never held by the owner's rules", async () => {
+  const { OPS_AGENT } = await import('../src/core/actors.ts');
+  const policy: Policy = { ownerId: 'shop_maya', currency: 'USD', rules: [{ id: 'no-voids', type: 'never', kinds: ['payment.void'] }] };
+  const voids: Executor = { simulate: async () => ({ ok: true, effects: ['Release'], blockers: [] }), execute: async () => ({ ok: true }), verify: async () => ({ ok: true, detail: 'VOIDED' }) };
+  const guard = new Guard({ store: new MemoryGuardStore(), executors: { 'payment.void': voids }, policyFor: async () => policy });
+  const release = await guard.submit({ kind: 'payment.void', actor: OPS_AGENT, ownerId: 'shop_maya', resourceId: 'AUTH-1', reason: 'Order released' });
+  assert.equal(release.status, 'verified', "the buyer's money is not kept on hold");
+  const agentVoid = await guard.submit({ kind: 'payment.void', actor: opsAgent, ownerId: 'shop_maya', resourceId: 'AUTH-2', reason: 'Agent' });
+  assert.equal(agentVoid.status, 'denied', "an agent's void still follows the rules");
+});

@@ -3,7 +3,9 @@
 import type { Metadata } from 'next';
 import { connection } from 'next/server';
 import { LoginForm, ShopSwitcher } from '@/app/_components/owner-actions.tsx';
+import { ConsentAnswer } from '@/app/_components/consent-answer.tsx';
 import { unpackRequest } from '@/core/oauth.ts';
+import { ownerSession } from '@/server/http.ts';
 import { paypalLoginEnabled, ready } from '@/server/context.ts';
 import { ownerView, signedInSeller } from '@/server/owner.ts';
 
@@ -38,13 +40,14 @@ export default async function Consent({ params }: { params: Promise<{ request: s
     );
   }
 
-  const seller = await signedInSeller();
+  const [seller, session, passkey] = await Promise.all([signedInSeller(), ownerSession(), view.passkeys.required(view.shopId)]);
+  // Same step-up as making a key by hand: the passkey, or a sign-in on this device in the last 30 minutes.
+  const canAllow = Boolean(session && session.via !== 'handoff' && (passkey || access.isFresh(session)));
   return (
     <main className="wrap wrap-narrow page">
-      <form className="panel consent" method="post" action="/api/oauth/consent">
-        <input type="hidden" name="request" value={packed} />
+      <section className="panel consent" aria-labelledby="consent-title">
         <div className="stack" style={{ gap: 'var(--s2)' }}>
-          <h1 className="consent-title">
+          <h1 id="consent-title" className="consent-title">
             Let {app} run {view.shop.name}?
           </h1>
           <p className="small soft">It gets an agent key of its own. You see what it does under Agents and Activity, and can revoke it there.</p>
@@ -66,15 +69,15 @@ export default async function Consent({ params }: { params: Promise<{ request: s
         <p className="small muted">
           You go back to <b>{host}</b> afterwards.
         </p>
-        <div className="connect-actions">
-          <button className="btn btn-quiet" name="decision" value="deny">
-            Cancel
-          </button>
-          <button className="btn btn-primary" name="decision" value="allow">
-            Allow
-          </button>
-        </div>
-      </form>
+        {canAllow ? (
+          <ConsentAnswer request={packed} passkey={passkey} />
+        ) : (
+          <div className="stack" style={{ gap: 'var(--s3)' }}>
+            <p className="small soft">For your safety, allowing an app works for 30 minutes after you sign in. Sign in again to continue.</p>
+            <LoginForm demo={false} paypal={paypalLoginEnabled()} next={`/oauth/consent/${packed}`} />
+          </div>
+        )}
+      </section>
     </main>
   );
 }

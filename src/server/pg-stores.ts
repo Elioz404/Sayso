@@ -12,7 +12,7 @@ import type { PolicyStore } from '@/core/guard/policy-store.ts';
 import type { JobNotes, JobStore } from '@/core/production.ts';
 import type { Tour, TourStore } from '@/core/tour.ts';
 import type { GuardRecord, GuardStore, RecordQuery, RecordStatus } from '@/core/guard/types.ts';
-import type { CartStore, CatalogStore, StoredCart } from '@/core/stores.ts';
+import type { CartStore, CatalogStore, PlacedQuery, StoredCart } from '@/core/stores.ts';
 import type { SpendStore } from '@/core/ai/llm.ts';
 import type { MediaStore, StoredPhoto } from '@/core/media.ts';
 import type { Passkey, PasskeyStore } from '@/core/passkeys.ts';
@@ -40,6 +40,8 @@ create index if not exists sayso_guard_cart on sayso_docs ((data->'action'->'par
 create index if not exists sayso_guard_kind on sayso_docs (owner, (data->'action'->>'kind'), created_at desc) where kind = 'guard';
 -- A buyer's orders across shops, by the PayPal account that paid.
 create index if not exists sayso_cart_payer on sayso_docs ((data->>'payerId')) where kind = 'cart';
+-- A shop's placed orders, newest first (orders, sales, production), without scanning abandoned carts.
+create index if not exists sayso_cart_placed on sayso_docs (owner, created_at desc) where kind = 'cart' and data->'cart'->>'status' = 'COMPLETED';
 create index if not exists sayso_cart_payer_email on sayso_docs (lower(data->>'payerEmail')) where kind = 'cart';
 `;
 
@@ -191,8 +193,9 @@ export class PgCartStore implements CartStore {
   listByShop(shopId: string, limit?: number) {
     return this.db.list<StoredCart>('cart', shopId, { limit });
   }
-  listPlaced(shopId: string, limit?: number) {
-    return this.db.list<StoredCart>('cart', shopId, { where: ["data->'cart'->>'status' = 'COMPLETED'", "data->'released' is null"], limit });
+  listPlaced(shopId: string, query: PlacedQuery) {
+    const where = ["data->'cart'->>'status' = 'COMPLETED'", ...(query.released ? [] : ["data->'released' is null"]), ...(query.since ? ['created_at >= $3::timestamptz'] : [])];
+    return this.db.list<StoredCart>('cart', shopId, { where, params: query.since ? [query.since.toISOString()] : [], limit: query.limit });
   }
   async byNumber(shopId: string, number: string) {
     const cart = await this.db.one<StoredCart>('cart', 'slug', number.toUpperCase());
@@ -223,6 +226,20 @@ export class PgGuardStore implements GuardStore {
   constructor(db: Db) {
     this.db = db;
   }
+  /** A session advisory lock per owner, held on its own connection while `work` reads and writes. */
+  async exclusive<T>(ownerId: string, work: () => Promise<T>): Promise<T> {
+    const client = await this.db.pool.connect();
+    try {
+      await client.query('select pg_advisory_lock(hashtext($1))', [`guard:${ownerId}`]);
+      try {
+        return await work();
+      } finally {
+        await client.query('select pg_advisory_unlock(hashtext($1))', [`guard:${ownerId}`]);
+      }
+    } finally {
+      client.release();
+    }
+  }
   async insert(record: GuardRecord) {
     await this.db.put(this.doc(record));
   }
@@ -250,6 +267,7 @@ export class PgGuardStore implements GuardStore {
     if (query.status !== undefined) add((n) => `data->>'status' = any(${n}::text[])`, ([] as RecordStatus[]).concat(query.status));
     if (query.kind) add((n) => `data->'action'->>'kind' = ${n}`, query.kind);
     if (query.cartId) add((n) => `data->'action'->'params'->>'cartId' = ${n}`, query.cartId);
+    if (query.cartIds) add((n) => `data->'action'->'params'->>'cartId' = any(${n}::text[])`, query.cartIds);
     return this.db.list<GuardRecord>('guard', ownerId, { where, params, limit: query.limit });
   }
   private doc(record: GuardRecord): Doc {
@@ -270,6 +288,12 @@ export class PgAccessStore implements AccessStore {
   }
   async putKey(key: AgentKey) {
     await this.db.put({ kind: 'key', id: key.id, owner: key.shopId, hash: key.hash, createdAt: key.createdAt, data: key });
+  }
+  async touchKey(id: string, at: string) {
+    await this.db.pool.query(`update sayso_docs set data = jsonb_set(data, '{lastUsedAt}', to_jsonb($2::text)) where kind = 'key' and id = $1 and data->>'revokedAt' is null`, [id, at]);
+  }
+  async revokeKey(id: string, at: string) {
+    await this.db.pool.query(`update sayso_docs set data = jsonb_set(data, '{revokedAt}', to_jsonb($2::text)) where kind = 'key' and id = $1 and data->>'revokedAt' is null`, [id, at]);
   }
   keyByHash(hash: string) {
     return this.db.one<AgentKey>('key', 'hash', hash);

@@ -46,14 +46,24 @@ export interface CartStore {
   put(cart: StoredCart): Promise<void>;
   /** Carts of a shop, newest first. */
   listByShop(shopId: string, limit?: number): Promise<StoredCart[]>;
-  /** Placed orders that still stand (completed, not released), newest first. */
-  listPlaced(shopId: string, limit?: number): Promise<StoredCart[]>;
+  /**
+   * Placed orders, newest first: completed, and still standing unless `released` asks for cancelled ones
+   * too. `since`: placed (created) at or after then. `limit` is required, so every caller says how many.
+   */
+  listPlaced(shopId: string, options: PlacedQuery): Promise<StoredCart[]>;
   /** A placed order by the number people see (case-insensitive). */
   byNumber(shopId: string, number: string): Promise<StoredCart | undefined>;
   /** Has this PayPal account (by email) paid the shop for an order before? */
   paidBy(shopId: string, email: string): Promise<boolean>;
   /** Orders a PayPal account paid for, in every shop, newest first: by its payer id, or by its email for orders saved without one. */
   listByPayer(payer: PayerRef, limit?: number): Promise<StoredCart[]>;
+}
+
+export interface PlacedQuery {
+  limit: number;
+  since?: Date;
+  /** Include orders the shop cancelled (released). */
+  released?: boolean;
 }
 
 /** A PayPal account as PayPal itself reported it (never an email someone typed). */
@@ -98,10 +108,10 @@ export class MemoryCartStore implements CartStore {
   async listByShop(shopId: string, limit = Infinity) {
     return this.ofShop(shopId).slice(0, limit).map((c) => structuredClone(c));
   }
-  async listPlaced(shopId: string, limit = Infinity) {
+  async listPlaced(shopId: string, query: PlacedQuery) {
     return this.ofShop(shopId)
-      .filter((c) => c.cart.status === 'COMPLETED' && !c.released)
-      .slice(0, limit)
+      .filter((c) => c.cart.status === 'COMPLETED' && (query.released || !c.released) && (!query.since || Date.parse(c.createdAt) >= query.since.getTime()))
+      .slice(0, query.limit)
       .map((c) => structuredClone(c));
   }
   async byNumber(shopId: string, number: string) {

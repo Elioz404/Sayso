@@ -15,7 +15,7 @@ const ASK = {
   properties: {
     purpose: { type: 'string', enum: ['register', 'approve', 'confirm'] },
     record: { type: 'string', maxLength: 40 },
-    what: { type: 'string', maxLength: 120, pattern: '^(add-passkey|phone-link|remove-passkey:[A-Za-z0-9_-]{1,1400}|adopt-rule:[A-Za-z0-9_.:-]{1,100}|rules:[a-f0-9]{16})$' },
+    what: { type: 'string', maxLength: 120, pattern: '^(add-passkey|phone-link|agent-key|remove-passkey:[A-Za-z0-9_-]{1,1400}|adopt-rule:[A-Za-z0-9_.:-]{1,100}|rules:[a-f0-9]{16})$' },
   },
   required: ['purpose'],
 } as const;

@@ -7,16 +7,20 @@ import { ConnectPayouts, Decision, FlashNotice, KeepPrice, PublishButton, ShopNa
 import { actionLabel, Icon, Status, Who } from '@/app/_components/ui.tsx';
 import { Ago } from '@/app/_components/time.tsx';
 import { pricesToConfirm } from '@/core/catalog.ts';
-import { formatMoney, toMoney } from '@/core/money.ts';
+import { decimalsFor, formatMoney, toMoney } from '@/core/money.ts';
 import { ChannelBadge, Thumb } from '@/app/_components/owner-bits.tsx';
 import { KpiCard, SaysoBar } from '@/app/_components/metrics.tsx';
 import { RevenueChart } from '@/app/_components/revenue-chart.tsx';
 import { TrustReportView } from '@/app/_components/trust-report-view.tsx';
 import { findVariant } from '@/core/catalog.ts';
-import { decimalsFor } from '@/core/money.ts';
 import { shopMetrics } from '@/core/shop-metrics.ts';
 import { trustReport } from '@/core/trust-report.ts';
+import { approvalLimit } from '@/core/guard/policy.ts';
 import { ownerView, pendingFor } from '@/server/owner.ts';
+
+/** The in-depth report's window, and the most records it reads in it. */
+const REPORT_DAYS = 90;
+const REPORT_RECORDS = 2_000;
 
 /** What PayPal's payout onboarding came back with, as /owner?payouts=... */
 const PUBLISHED: Record<string, string> = {
@@ -38,19 +42,19 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const asked = await searchParams;
   const outcome = PAYOUT_OUTCOMES[asked.payouts ?? ''] ?? PUBLISHED[asked.published ?? ''];
   const onTour = shop.visibility === 'private';
+  // One window for everything below: the in-depth report covers it, the week's numbers sit at its end.
+  const since = new Date(Date.now() - REPORT_DAYS * 86_400_000);
   const [approvals, orders, { suggestions }, passkey, devices, records, policy] = await Promise.all([
     pendingFor(shopId),
-    shopOrders.list(shopId),
+    shopOrders.list(shopId, { since }),
     saySo.autonomy(shopId),
     view.passkeys.required(shopId),
     view.push.list(shopId),
-    saySo.audit(shopId, 2000),
+    saySo.audit(shopId, REPORT_RECORDS, since),
     saySo.policy(shopId),
   ]);
-  const refundRule = policy.rules.find((r) => r.type === 'max_amount' && r.kinds.includes('refund.create'));
-  const report = trustReport(records, orders, shop.currency, refundRule?.type === 'max_amount' ? refundRule.limit : undefined);
-  const minorPerUnit = 10 ** decimalsFor(shop.currency);
-  const week = shopMetrics(orders, report.decisions, minorPerUnit);
+  const report = trustReport(records, orders, shop.currency, approvalLimit(policy, 'refund.create'));
+  const week = shopMetrics(orders, records);
   // The shared demo shows people's details masked, as everywhere else in it.
   const inDepth = { ...report, decisions: report.decisions.map((d) => ({ ...d, why: redact(d.why) })), trail: report.trail.map((t) => ({ ...t, buyer: redact(t.buyer) })) };
   const pictureOf = (variantId?: string) => {
@@ -298,7 +302,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             <h2 id="revenue">Revenue, day by day</h2>
             <span className="small muted">Last {week.days * 2} days</span>
           </div>
-          <RevenueChart daily={week.daily} currency={shop.currency} minorPerUnit={minorPerUnit} />
+          <RevenueChart daily={week.daily} currency={shop.currency} minorPerUnit={10 ** decimalsFor(shop.currency)} />
         </section>
       </div>
 

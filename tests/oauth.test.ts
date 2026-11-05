@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { links } from '../src/core/links.ts';
-import { allow, checkAuthorize, clientOf, deny, exchangeCode, OAuthError, packRequest, registerClient, resourceMetadata, serverMetadata, unpackRequest } from '../src/core/oauth.ts';
+import { allow, checkAuthorize, clientOf, deny, exchangeCode, OAuthError, packRequest, parseTokenRequest, registerClient, resourceMetadata, serverMetadata, unpackRequest } from '../src/core/oauth.ts';
 import { stack } from './stack.ts';
 
 const site = links('https://sayso.test');
@@ -32,8 +32,7 @@ test('an app registers, the owner allows it, and its code becomes an agent key n
   assert.equal(clientOf(s.access, registered.client_id)?.name, 'Claude');
 
   const checked = checkAuthorize(s.access, site, authorizeParams(registered.client_id));
-  assert.ok('request' in checked);
-  const request = unpackRequest(s.access, packRequest(s.access, checked.request))!;
+  const request = unpackRequest(s.access, packRequest(s.access, checked))!;
   assert.equal(request.redirectUri, CALLBACK, 'the request survives the trip through sign-in');
 
   const back = new URL(allow(s.access, site, request, 'shop_maya'));
@@ -66,16 +65,16 @@ test('requests that must not go through', async () => {
   assert.throws(() => checkAuthorize(s.access, site, authorizeParams('made-up-client')), OAuthError);
   assert.throws(() => checkAuthorize(s.access, site, authorizeParams(client_id.replace(/.$/, (c) => (c === 'A' ? 'B' : 'A')))), OAuthError, 'a client id is signed');
 
-  // Other mistakes go back to the app.
-  const noPkce = checkAuthorize(s.access, site, authorizeParams(client_id, { code_challenge_method: 'plain' }));
-  assert.ok('redirect' in noPkce && new URL(noPkce.redirect).searchParams.get('error') === 'invalid_request');
-  const otherResource = checkAuthorize(s.access, site, authorizeParams(client_id, { resource: 'https://sayso.test/api/shopping/mcp' }));
-  assert.ok('redirect' in otherResource && new URL(otherResource.redirect).searchParams.get('error') === 'invalid_target');
+  // Nor for any other mistake: anyone can register an app with any https address, so nothing is sent
+  // back to it before the owner answers (no open redirect through Sayso's domain).
+  const bad = (extra: Record<string, string>, code: string) => assert.throws(() => checkAuthorize(s.access, site, authorizeParams(client_id, extra)), (e: OAuthError) => e.code === code);
+  bad({ code_challenge_method: 'plain' }, 'invalid_request');
+  bad({ response_type: 'token' }, 'unsupported_response_type');
+  bad({ resource: 'https://sayso.test/api/shopping/mcp' }, 'invalid_target');
+  bad({ scope: 'admin' }, 'invalid_scope');
 
   // The owner says no.
-  const checked = checkAuthorize(s.access, site, authorizeParams(client_id));
-  assert.ok('request' in checked);
-  assert.equal(new URL(deny(site, checked.request)).searchParams.get('error'), 'access_denied');
+  assert.equal(new URL(deny(site, checkAuthorize(s.access, site, authorizeParams(client_id)))).searchParams.get('error'), 'access_denied');
 
   // Registration: https, or http back to this computer only; public clients only.
   assert.throws(() => registerClient(s.access, { redirect_uris: ['http://evil.example/cb'] }), OAuthError);
@@ -83,4 +82,10 @@ test('requests that must not go through', async () => {
   assert.throws(() => registerClient(s.access, { redirect_uris: [CALLBACK], token_endpoint_auth_method: 'client_secret_basic' }), OAuthError);
   assert.ok(registerClient(s.access, { redirect_uris: ['http://localhost:3118/callback'] }).client_id);
   assert.equal(unpackRequest(s.access, 'not-a-real-request-token-at-all'), undefined);
+});
+
+test('token requests: form or JSON, string fields only', () => {
+  assert.deepEqual(parseTokenRequest('application/x-www-form-urlencoded', 'grant_type=authorization_code&code=abc'), { grant_type: 'authorization_code', code: 'abc' });
+  assert.deepEqual(parseTokenRequest('application/json', '{"code":{"$ne":1},"grant_type":"authorization_code"}'), { grant_type: 'authorization_code' }, 'non-strings are dropped');
+  assert.throws(() => parseTokenRequest('application/json', '{nope'), (e: OAuthError) => e.code === 'invalid_request');
 });

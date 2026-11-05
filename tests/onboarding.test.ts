@@ -179,5 +179,16 @@ test('modelFromEnv prefers OpenAI, falls back to DeepSeek, and is off without ke
   assert.equal(modelFromEnv({ OPENAI_API_KEY: 'a', DEEPSEEK_API_KEY: 'b' })?.model.name, 'gpt-4.1-mini');
   assert.equal(modelFromEnv({ DEEPSEEK_API_KEY: 'b' })?.model.name, 'deepseek-flash');
   assert.equal(modelFromEnv({ OPENAI_API_KEY: 'a', DEEPSEEK_API_KEY: 'b', AI_PROVIDER: 'deepseek' })?.model.name, 'deepseek-flash');
-  assert.equal(modelFromEnv({ OPENAI_API_KEY: 'a', AI_DAILY_BUDGET_USD: '2' })?.budget.dailyLimitUsd, 2);
+  // The day's budget is split: owners keep their share however busy the public site is.
+  const split = modelFromEnv({ OPENAI_API_KEY: 'a', AI_DAILY_BUDGET_USD: '2' })!;
+  assert.equal(split.budget.dailyLimitUsd + split.ownerBudget.dailyLimitUsd, 2);
+  assert.equal(split.ownerBudget.dailyLimitUsd, 0.8);
+});
+
+test("public AI traffic can't use up the owners' share", async () => {
+  const ai = modelFromEnv({ OPENAI_API_KEY: 'a', AI_DAILY_BUDGET_USD: '1' })!;
+  const spent = await ai.budget.reserve(100);
+  await ai.budget.settle(spent, { prompt_tokens: 10_000_000, completion_tokens: 0 }); // far past the public share
+  await assert.rejects(ai.budget.reserve(100), /budget/);
+  assert.ok(await ai.ownerBudget.reserve(100), 'owners still have theirs');
 });

@@ -45,7 +45,10 @@ export interface Context {
   carts: CartStore;
   catalogs: CatalogStore;
   access: Access;
+  /** Public pages' AI pool (shopping assistant, Start selling). */
   model?: ChatModel;
+  /** Signed-in owners' AI pool (assistant, rules, photo drafts, labels), which public traffic can't use up. */
+  ownerModel?: ChatModel;
   guard: Guard;
   commerce: Commerce;
   shops: Shops;
@@ -122,6 +125,7 @@ async function create(): Promise<Context> {
   const access = new Access(accessStore, secret);
   const ai = modelFromEnv(process.env, db ? new PgSpendStore(db) : undefined);
   const model = ai?.model;
+  const ownerModel = ai?.ownerModel;
   const site = siteLinks();
   const policyFor = policyLookup(policies, catalogs);
   const vapid = vapidFrom(process.env.SAYSO_PUSH_SECRET || secret);
@@ -156,10 +160,10 @@ async function create(): Promise<Context> {
   const channel3 = Channel3.fromEnv();
   const market = channel3 && new MarketPrices(channel3);
   const media: MediaStore = db ? new PgMediaStore(db) : new MemoryMediaStore();
-  const shops = new Shops({ catalogs, access, paypal, model, links: site, media, market });
+  const shops = new Shops({ catalogs, access, paypal, model, ownerModel, links: site, media, market });
   const sellers = new Sellers({ store: db ? new PgSellerStore(db) : new MemorySellerStore(), catalogs });
   const orders = new Orders({ carts, guard, paypal });
-  const saySo = new SaySo({ guard, policyFor, shops, model, passkeys });
+  const saySo = new SaySo({ guard, policyFor, shops, model: ownerModel, passkeys });
   const invoicing = new Invoicing({ guard, carts, shops, paypal });
   const production = new Production({ carts, catalogs, guard, invoicing, jobs });
   const wallets = new Wallets({ store: walletStore, policies, guard, commerce, paypal, links: site });
@@ -185,7 +189,7 @@ async function create(): Promise<Context> {
 
   await seedDemo(catalogs, policies, access);
   const paypalLogin = paypalLoginEnabled();
-  return { carts, catalogs, access, model, guard, commerce, shops, media, sellers, payouts, paypal, paypalLogin, orders, saySo, invoicing, production, tours, housekeeping, wallets, market, tools, links: site, passkeys, push, pushKey: vapid.publicKey };
+  return { carts, catalogs, access, model, ownerModel, guard, commerce, shops, media, sellers, payouts, paypal, paypalLogin, orders, saySo, invoicing, production, tours, housekeeping, wallets, market, tools, links: site, passkeys, push, pushKey: vapid.publicKey };
 }
 
 function sessionSecret(): string {

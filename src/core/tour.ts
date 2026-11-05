@@ -14,7 +14,8 @@ import type { Access } from './access.ts';
 import type { Address } from './cart/spec.ts';
 import type { Catalog } from './catalog.ts';
 import { HttpError, notFound } from './errors.ts';
-import { DEFAULT_LIMITS, type Policy } from './guard/policy.ts';
+import { KeyedLock } from './lock.ts';
+import { DEFAULT_LIMITS, withApprovalLimit, type Policy } from './guard/policy.ts';
 import { formatMoney, majorUnits, toMoney } from './money.ts';
 import type { SaySo } from './say-so.ts';
 import type { CatalogStore } from './stores.ts';
@@ -127,6 +128,7 @@ interface Issue {
 
 export class Tours {
   private readonly deps: ToursDeps;
+  private readonly steps = new KeyedLock();
 
   constructor(deps: ToursDeps) {
     this.deps = deps;
@@ -195,8 +197,15 @@ export class Tours {
     return this.deps.store.byShop(shopId);
   }
 
-  /** Run one step for the judge. Each step runs once; asking again returns what happened. */
-  async run(shopId: string, step: TourStep): Promise<StepResult> {
+  /**
+   * Run one step for the judge. Each step runs once; asking again returns what happened. Steps of one tour
+   * run one at a time, so two clicks at once can't run the same PayPal step twice.
+   */
+  run(shopId: string, step: TourStep): Promise<StepResult> {
+    return this.steps.run(shopId, () => this.runOnce(shopId, step));
+  }
+
+  private async runOnce(shopId: string, step: TourStep): Promise<StepResult> {
     const tour = await this.deps.store.byShop(shopId);
     if (!tour) throw notFound('Tour');
     const done = tour.steps[step];
@@ -231,11 +240,7 @@ export class Tours {
       const policy = await this.deps.saySo.policy(shopId);
       const limit = majorUnits(TOUR_ASKED_REFUND_LIMIT, policy.currency);
       const asked = formatMoney(limit, policy.currency);
-      const looser: Policy = {
-        ...policy,
-        source: `Let my agent refund up to ${asked} on its own.`,
-        rules: policy.rules.map((r) => (r.type === 'max_amount' && r.kinds.includes('refund.create') ? { ...r, limit } : r)),
-      };
+      const looser: Policy = { ...withApprovalLimit(policy, 'refund.create', limit), source: `Let my agent refund up to ${asked} on its own.` };
       const record = await this.deps.saySo.submitPolicy(looser, `Let me refund up to ${asked} without asking.`, actor(this.ownerAgent(tour)));
       transcript.push({
         who: 'owner-agent',

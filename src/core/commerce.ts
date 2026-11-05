@@ -182,37 +182,30 @@ export class Commerce {
    */
   private async settle(stored: StoredCart, authorization: OrderAuthorization, payerEmail?: string, payerId?: string): Promise<CheckoutResult> {
     stored.authorizationId = authorization.id;
-    const lines = stockLines(stored.cart.items);
-    let makeDays: (number | null)[] = [];
-    const took = await this.deps.catalogs.modify(stored.shopId, (catalog) => {
-      // Read the lead times in the same atomic step that takes the stock: what was promised is kept.
-      makeDays = stored.cart.items.map((i) => (i.variant_id ? (findVariant(catalog, i.variant_id)?.variant.madeToOrderDays ?? null) : null));
-      return takeStock(catalog, lines);
-    });
-    if (!took) {
-      await this.release(stored, 'An item sold out while the buyer was paying.', OPS_AGENT);
-      await this.recheck(stored).catch(() => undefined); // records the sold-out issue on the cart
-      throw new HttpError(422, 'An item sold out before payment completed', issueBody(stored, paymentIssue(`${NOT_CHARGED} An item just sold out.`)));
+    // A settle that stopped half way already holds its stock (saved below): never take it twice.
+    if (!stored.reserved) {
+      const lines = stockLines(stored.cart.items);
+      let makeDays: (number | null)[] = [];
+      const took = await this.deps.catalogs.modify(stored.shopId, (catalog) => {
+        // Read the lead times in the same atomic step that takes the stock: what was promised is kept.
+        makeDays = stored.cart.items.map((i) => (i.variant_id ? (findVariant(catalog, i.variant_id)?.variant.madeToOrderDays ?? null) : null));
+        return takeStock(catalog, lines);
+      });
+      if (!took) {
+        await this.release(stored, 'An item sold out while the buyer was paying.', OPS_AGENT);
+        await this.recheck(stored).catch(() => undefined); // records the sold-out issue on the cart
+        throw new HttpError(422, 'An item sold out before payment completed', issueBody(stored, paymentIssue(`${NOT_CHARGED} An item just sold out.`)));
+      }
+      stored.reserved = lines;
+      stored.makeDays = makeDays;
     }
-    stored.reserved = lines;
-    stored.makeDays = makeDays;
     stored.payerEmail = payerEmail?.toLowerCase();
     if (payerId) stored.payerId = payerId;
+    // The stock it holds is saved before anything else can fail, so a release always finds it to give back.
+    stored.updatedAt = new Date().toISOString();
+    await this.deps.carts.put(stored);
 
-    const record = await this.deps.guard.submit(
-      {
-        kind: 'payment.capture',
-        actor: OPS_AGENT,
-        ownerId: stored.shopId,
-        amount: toMinor(authorization.amount),
-        currency: authorization.amount.currency_code,
-        counterparty: payerEmail,
-        resourceId: authorization.id,
-        reason: stored.paidWith === 'saved-paypal' ? "Paid with the buyer's saved PayPal, within their limits; the items are in stock." : 'The buyer approved in PayPal and the items are in stock.',
-        params: { cartId: stored.id, orderId: stored.orderId, channel: stored.channel },
-      },
-      { idempotencyKey: `${stored.id}-capture` },
-    );
+    const record = await this.capture(stored, authorization, payerEmail);
     stored.guardRecordId = record.id;
 
     if (!placed(record)) {
@@ -234,6 +227,29 @@ export class Commerce {
     stored.updatedAt = new Date().toISOString();
     await this.deps.carts.put(stored);
     return completed(stored);
+  }
+
+  /** Capture through the shop's Guard. If Guard itself fails, the hold and the stock are let go first. */
+  private async capture(stored: StoredCart, authorization: OrderAuthorization, payerEmail?: string): Promise<GuardRecord> {
+    try {
+      return await this.deps.guard.submit(
+        {
+          kind: 'payment.capture',
+          actor: OPS_AGENT,
+          ownerId: stored.shopId,
+          amount: toMinor(authorization.amount),
+          currency: authorization.amount.currency_code,
+          counterparty: payerEmail,
+          resourceId: authorization.id,
+          reason: stored.paidWith === 'saved-paypal' ? "Paid with the buyer's saved PayPal, within their limits; the items are in stock." : 'The buyer approved in PayPal and the items are in stock.',
+          params: { cartId: stored.id, orderId: stored.orderId, channel: stored.channel },
+        },
+        { idempotencyKey: `${stored.id}-capture` },
+      );
+    } catch (err) {
+      await this.release(stored, `Checkout stopped: ${err instanceof Error ? err.message : 'unexpected error'}`, OPS_AGENT);
+      throw err;
+    }
   }
 
   /** A placed order's capture finished later: keep the order in step, or release it if it never will. */

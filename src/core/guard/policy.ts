@@ -177,3 +177,14 @@ export function defaultBuyerPolicy(ownerId: string, currency: string): Policy {
     ],
   };
 }
+
+/** Minor units: above this amount, `kind` waits for the owner (the lowest such limit), if a rule says so. */
+export function approvalLimit(policy: Policy, kind: ActionKind): number | undefined {
+  const limits = policy.rules.flatMap((r) => (r.type === 'max_amount' && r.then === 'require_approval' && r.kinds.includes(kind) ? [r.limit] : []));
+  return limits.length ? Math.min(...limits) : undefined;
+}
+
+/** The same rules, with `kind`'s ask-the-owner limit set to `limit` (minor units). */
+export function withApprovalLimit(policy: Policy, kind: ActionKind, limit: number): Policy {
+  return { ...policy, rules: policy.rules.map((r) => (r.type === 'max_amount' && r.then === 'require_approval' && r.kinds.includes(kind) ? { ...r, limit } : r)) };
+}

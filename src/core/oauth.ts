@@ -60,9 +60,9 @@ export function resourceMetadata(links: Links) {
 export function serverMetadata(links: Links) {
   return {
     issuer: links.base,
-    authorization_endpoint: `${links.base}/oauth/authorize`,
-    token_endpoint: `${links.base}/api/oauth/token`,
-    registration_endpoint: `${links.base}/api/oauth/register`,
+    authorization_endpoint: links.oauth.authorize,
+    token_endpoint: links.oauth.token,
+    registration_endpoint: links.oauth.register,
     response_types_supported: ['code'],
     grant_types_supported: ['authorization_code'],
     code_challenge_methods_supported: ['S256'],
@@ -73,7 +73,7 @@ export function serverMetadata(links: Links) {
 
 /** The `WWW-Authenticate` value a 401 from the seller MCP endpoint carries, so apps can find the above. */
 export function challengeHeader(links: Links, invalidToken = false): string {
-  const where = `resource_metadata="${links.base}/.well-known/oauth-protected-resource/api/mcp"`;
+  const where = `resource_metadata="${links.oauth.resourceMetadata}"`;
   return invalidToken ? `Bearer error="invalid_token", ${where}` : `Bearer ${where}`;
 }
 
@@ -109,26 +109,25 @@ export function clientOf(access: Access, clientId: unknown, now = Date.now()): O
 }
 
 /**
- * Check an authorization request. A bad client or redirect URI is shown on Sayso's page (it must never
- * send the owner to an address the app didn't register); anything else goes back to the app as an error.
+ * Check an authorization request. Anything wrong is shown on Sayso's own page, never sent back as a
+ * redirect: anyone can register an app with any https address, so Sayso only sends the owner to it after
+ * they have answered on the consent page (RFC 9700, 4.11.2).
  */
-export function checkAuthorize(access: Access, links: Links, params: URLSearchParams, now = Date.now()): { request: ConsentRequest } | { redirect: string } {
+export function checkAuthorize(access: Access, links: Links, params: URLSearchParams, now = Date.now()): ConsentRequest {
   const clientId = params.get('client_id') ?? '';
   const client = clientOf(access, clientId, now);
   if (!client) throw new OAuthError('invalid_client', 'This app is not registered with Sayso. Remove the connector in the app and add it again.');
   const redirectUri = params.get('redirect_uri') ?? (client.redirectUris.length === 1 ? client.redirectUris[0] : '');
   if (!client.redirectUris.includes(redirectUri)) throw new OAuthError('invalid_request', 'The app sent an address it did not register.');
   const state = params.get('state') ?? undefined;
-  const back = (error: string, description: string) => ({ redirect: withParams(redirectUri, { error, error_description: description, state, iss: links.base }) });
-
-  if (params.get('response_type') !== 'code') return back('unsupported_response_type', 'Only response_type=code');
+  if (params.get('response_type') !== 'code') throw new OAuthError('unsupported_response_type', 'The app asked for something other than a code.');
   const codeChallenge = params.get('code_challenge') ?? '';
-  if (params.get('code_challenge_method') !== 'S256' || !/^[A-Za-z0-9_-]{43,128}$/.test(codeChallenge)) return back('invalid_request', 'PKCE with S256 is required');
+  if (params.get('code_challenge_method') !== 'S256' || !/^[A-Za-z0-9_-]{43,128}$/.test(codeChallenge)) throw new OAuthError('invalid_request', 'The app did not send PKCE (S256).');
   const resource = params.get('resource');
-  if (resource && resource.replace(/\/$/, '') !== links.sellerMcp) return back('invalid_target', `The resource is ${links.sellerMcp}`);
+  if (resource && resource.replace(/\/$/, '') !== links.sellerMcp) throw new OAuthError('invalid_target', `The app asked for ${resource}; Sayso signs agents in to ${links.sellerMcp}.`);
   const scope = params.get('scope');
-  if (scope && !scope.split(' ').every((s) => s === SCOPE || s === 'offline_access')) return back('invalid_scope', `The only scope is "${SCOPE}"`);
-  return { request: { clientId, client, redirectUri, codeChallenge, ...(state ? { state } : {}) } };
+  if (scope && !scope.split(' ').every((s) => s === SCOPE || s === 'offline_access')) throw new OAuthError('invalid_scope', `The only scope is "${SCOPE}".`);
+  return { clientId, client, redirectUri, codeChallenge, ...(state ? { state } : {}) };
 }
 
 /** The consent request as a path segment: survives the owner signing in on the way (letters, digits, - and _ only). */
@@ -156,6 +155,22 @@ export function allow(access: Access, links: Links, request: ConsentRequest, sho
 /** The owner said no. */
 export function deny(links: Links, request: ConsentRequest): string {
   return withParams(request.redirectUri, { error: 'access_denied', error_description: 'The shop owner did not allow it', state: request.state, iss: links.base });
+}
+
+/** A token request body (form-encoded per RFC 6749, JSON accepted) as string fields only. */
+export function parseTokenRequest(contentType: string, text: string): Record<string, string> {
+  let entries: [string, unknown][];
+  if (contentType.includes('application/json')) {
+    try {
+      const body = JSON.parse(text) as unknown;
+      entries = body && typeof body === 'object' && !Array.isArray(body) ? Object.entries(body) : [];
+    } catch {
+      throw new OAuthError('invalid_request', 'The body is not valid JSON');
+    }
+  } else {
+    entries = [...new URLSearchParams(text)];
+  }
+  return Object.fromEntries(entries.filter((e): e is [string, string] => typeof e[1] === 'string'));
 }
 
 /** RFC 6749 token request: a code (once, with its PKCE verifier) for an agent key named after the app. */

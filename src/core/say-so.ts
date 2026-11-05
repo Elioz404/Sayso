@@ -41,8 +41,9 @@ export class SaySo {
     return this.deps.guard.list(shopId, { status: 'pending_approval' });
   }
 
-  async audit(shopId: string, limit = 50): Promise<AuditedRecord[]> {
-    return (await this.deps.guard.list(shopId, { limit })).map(audited);
+  /** The shop's records, newest first, each with its hash chain checked. `since`: only those created since then. */
+  async audit(shopId: string, limit = 50, since?: Date): Promise<AuditedRecord[]> {
+    return (await this.deps.guard.list(shopId, { limit, ...(since ? { since } : {}) })).map(audited);
   }
 
   async record(shopId: string, recordId: string): Promise<AuditedRecord> {

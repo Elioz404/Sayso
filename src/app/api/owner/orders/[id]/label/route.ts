@@ -14,7 +14,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const { shopId } = await requireOwnShop(request);
     const { image } = await readBody(request, LABEL, PHOTO_BODY_LIMIT);
     const [photo] = checkPhotos([image], 1);
-    const { model, orders } = await ready();
+    const { ownerModel: model, orders } = await ready();
     if (!model) throw new HttpError(503, 'Reading labels needs an AI key on the server; type the number instead');
     await orders.get(shopId, (await params).id); // only this shop's orders
     limitAi(request);

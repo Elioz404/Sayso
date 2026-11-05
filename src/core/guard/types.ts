@@ -125,10 +125,14 @@ export interface RecordQuery {
   kind?: ActionKind;
   /** Records about one cart (action.params.cartId). */
   cartId?: string;
+  /** Records about any of these carts: an order list's history in one read. */
+  cartIds?: readonly string[];
   limit?: number;
 }
 
 export interface GuardStore {
+  /** Runs `work` while no other instance decides for this owner (a database lock); optional for one-process stores. */
+  exclusive?<T>(ownerId: string, work: () => Promise<T>): Promise<T>;
   insert(record: GuardRecord): Promise<void>;
   update(record: GuardRecord): Promise<void>;
   /** Saves only if the stored record is still in `expected` status. False means someone else moved it first. */
@@ -144,6 +148,7 @@ export function matchesQuery(record: GuardRecord, query: RecordQuery): boolean {
     (!query.since || Date.parse(record.createdAt) >= query.since.getTime()) &&
     (!statuses || statuses.includes(record.status)) &&
     (!query.kind || record.action.kind === query.kind) &&
-    (!query.cartId || record.action.params?.cartId === query.cartId)
+    (!query.cartId || record.action.params?.cartId === query.cartId) &&
+    (!query.cartIds || query.cartIds.includes(String(record.action.params?.cartId)))
   );
 }

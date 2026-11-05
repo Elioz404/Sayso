@@ -1,10 +1,10 @@
 // Where each step of a judge's tour stands, worked out from the tour's results and the live Guard
 // records, the order and the shop's rules. The tour page only draws this.
 
-import { DEFAULT_CURRENCY, formatMoney } from './money.ts';
+import { formatMoney } from './money.ts';
 import { actionAmount } from './guard/describe.ts';
 import type { Guard } from './guard/engine.ts';
-import type { Policy } from './guard/policy.ts';
+import { approvalLimit } from './guard/policy.ts';
 import type { GuardRecord } from './guard/types.ts';
 import type { Orders } from './orders.ts';
 import type { SaySo } from './say-so.ts';
@@ -80,7 +80,9 @@ async function earnView(deps: TourProgressDeps, tour: Tour, result: StepResult |
   const pending = records.filter((r) => r.status === 'pending_approval');
   if (pending.length) {
     const decided = records.length - pending.length;
-    const limit = refundApprovalLimit(await deps.saySo.policy(tour.shopId));
+    const policy = await deps.saySo.policy(tour.shopId);
+    const minor = approvalLimit(policy, 'refund.create');
+    const limit = minor === undefined ? undefined : formatMoney(minor, policy.currency);
     return { step, state: 'needs-you', result, records, decide: pending, outcome: `Guard held ${records.length} refunds over your ${limit ?? 'refund'} rule. ${decided} decided, ${pending.length} to go.` };
   }
   if (records.some((r) => r.events.some((e) => e.type === 'rejected'))) {
@@ -92,12 +94,6 @@ async function earnView(deps: TourProgressDeps, tour: Tour, result: StepResult |
   return adopted
     ? { step, state: 'done', result, records: [...records, adopted], decide: [], outcome: 'Adopted. Refunds like these now go through on their own; bigger ones still wait for you. See it in Rules.' }
     : { step, state: 'done', result, records, decide: [], outcome: 'Your agent already had room for these refunds, so none needed you.' };
-}
-
-/** "$50.00": the amount above which the shop's refunds wait for the owner, if it has such a rule. */
-function refundApprovalLimit(policy: Policy): string | undefined {
-  const rule = policy.rules.find((r) => r.type === 'max_amount' && r.kinds.includes('refund.create') && r.then === 'require_approval');
-  return rule && rule.type === 'max_amount' ? formatMoney(rule.limit, policy.currency ?? DEFAULT_CURRENCY) : undefined;
 }
 
 /** The step's result in one line. */

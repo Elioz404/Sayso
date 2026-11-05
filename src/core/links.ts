@@ -23,6 +23,8 @@ export interface Links {
   sellerMcp: string;
   /** The owner's agent through a personal URL. */
   sellerMcpFor(agentKey: string): string;
+  /** How AI apps sign the owner's agent in (OAuth for sellerMcp). */
+  oauth: { authorize: string; token: string; register: string; consent(request: string): string; resourceMetadata: string; serverMetadata: string };
   cliLogin(agentKey: string): string;
   /** Starts Log in with PayPal for an owner. */
   paypalSignIn: string;
@@ -58,6 +60,15 @@ export function links(baseUrl: string): Links {
     developers: `${base}/developers`,
     sellerMcp: `${base}/api/mcp`,
     sellerMcpFor: (key) => `${base}/api/mcp/${key}`,
+    oauth: {
+      authorize: `${base}/oauth/authorize`,
+      token: `${base}/api/oauth/token`,
+      register: `${base}/api/oauth/register`,
+      consent: (request) => `/oauth/consent/${request}`,
+      // RFC 9728: the resource's own path after the well-known prefix.
+      resourceMetadata: `${base}/.well-known/oauth-protected-resource/api/mcp`,
+      serverMetadata: `${base}/.well-known/oauth-authorization-server`,
+    },
     cliLogin: (key) => `node cli/sayso.ts login --url ${base} --key ${key}`,
     paypalSignIn: `${base}/api/owner/paypal/start`,
     paypalSignInReturn: `${base}/api/owner/paypal/callback`,
