@@ -19,12 +19,14 @@ from .core import (
     RetryOptionsOrDict,
     param,
 )
+from .server.environment import Environment
 
 
 class AsyncSaysoShopsApiClient(BaseSaysoShopsApiClient[AsyncRawClient]):
     def __init__(
         self,
         *,
+        environment: Environment = "production",
         base_url: str | None = None,
         timeout: float = DEFAULT_TIMEOUT,
         retry_options: int | RetryOptionsOrDict | None = None,
@@ -32,7 +34,11 @@ class AsyncSaysoShopsApiClient(BaseSaysoShopsApiClient[AsyncRawClient]):
         custom_async_http_client: AsyncHttpClient | None = None,
     ) -> None:
         super().__init__(
-            base_url=base_url, timeout=timeout, retry_options=retry_options, logging_options=logging_options
+            environment=environment,
+            base_url=base_url,
+            timeout=timeout,
+            retry_options=retry_options,
+            logging_options=logging_options,
         )
         self._raw_client = AsyncRawClient(
             http_client=(

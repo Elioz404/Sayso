@@ -27,5 +27,6 @@ Start with the [TypeScript guide](/guides/agent-checkout), or pick your language
 
 ## Prefer MCP?
 
-Assistants that speak MCP (ChatGPT, or any MCP client) can connect to `/api/shopping/mcp` instead: the
-same operations as tools, plus saved PayPal with the buyer's own spending limits.
+Assistants that speak MCP (ChatGPT, Claude or any MCP client) can connect to
+`https://sayso-ovph.onrender.com/api/shopping/mcp` instead, with no key: the same operations as tools, plus
+saved PayPal with the buyer's own spending limits.

@@ -212,7 +212,7 @@ Mapped in first-match order -- an earlier row wins over a later range that also 
 <dl>
 <dd>
 
-The cart as it is now. Once paid, `status` is `COMPLETED`.
+The cart as it is now. Once paid, `status` is `COMPLETED` and `payment_confirmation` says which order it became, as the checkout answered.
 
 </dd>
 </dl>
@@ -609,8 +609,8 @@ match result:
 | --- | --- | --- |
 | <code>slug</code> | <code>str</code> | The shop, e.g. maya-ceramics |
 | <code>query</code> | <code>str \| None</code> | Words to match, e.g. "green mug". Leave out to list everything.<br>**Default**: <code>None</code> |
-| <code>max_price</code> | <code>str \| None</code> | Highest price per item in the shop's currency, e.g. "40.00".<br>**Default**: <code>None</code> |
-| <code>in_stock_only</code> | <code>bool \| None</code> | Leave out sold-out variants (made-to-order ones always stay).<br>**Default**: <code>False</code> |
+| <code>max_price</code> | <code>str \| None</code> | Highest price per item in the shop's currency, e.g. "40.00" or "$40". No more decimals than the currency has.<br>**Default**: <code>None</code> |
+| <code>in_stock_only</code> | <code>bool \| None</code> | Leave out sold-out variants (made-to-order ones always stay). "true" or "1".<br>**Default**: <code>False</code> |
 | <code>request_options</code> | <code>[RequestOptionsOrDict](sayso_shops_api/core/request_options.py) \| None</code> | Per-call overrides for this one request, such as a timeout, extra headers, or its retry count and statuses. |
 
 </dd>

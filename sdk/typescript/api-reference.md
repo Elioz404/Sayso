@@ -142,8 +142,8 @@ if (result.ok) {
 | --- | --- | --- |
 | <code>slug</code> | <code>string</code> | The shop, e.g. maya-ceramics |
 | <code>query?</code> | <code>string</code> | Words to match, e.g. "green mug". Leave out to list everything. |
-| <code>maxPrice?</code> | <code>string</code> | Highest price per item in the shop's currency, e.g. "40.00". |
-| <code>inStockOnly?</code> | <code>boolean</code> | Leave out sold-out variants (made-to-order ones always stay).<br>**Default**: false |
+| <code>maxPrice?</code> | <code>string</code> | Highest price per item in the shop's currency, e.g. "40.00" or "$40". No more decimals than the currency has. |
+| <code>inStockOnly?</code> | <code>boolean</code> | Leave out sold-out variants (made-to-order ones always stay). "true" or "1".<br>**Default**: false |
 
 </dd>
 </dl>
@@ -390,7 +390,7 @@ if (result.ok) {
 <dl>
 <dd>
 
-The cart as it is now. Once paid, `status` is `COMPLETED`.
+The cart as it is now. Once paid, `status` is `COMPLETED` and `payment_confirmation` says which order it became, as the checkout answered.
 
 </dd>
 </dl>

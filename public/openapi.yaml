@@ -16,8 +16,10 @@ info:
     name: MIT
     url: https://github.com/Elioz404/Sayso/blob/main/LICENSE
 servers:
+  - url: https://sayso-ovph.onrender.com
+    description: The live demo, on the PayPal sandbox. No real money moves.
   - url: http://localhost:3000
-    description: A Sayso server running locally. Point clients at your own Sayso server's address instead.
+    description: A Sayso server running locally.
 tags:
   - name: Shops
     description: Find shops and what they sell.

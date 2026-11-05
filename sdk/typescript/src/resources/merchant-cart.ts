@@ -116,7 +116,8 @@ export class MerchantCart {
    * Get a cart
    *
    * @remarks
-   * The cart as it is now. Once paid, `status` is `COMPLETED`.
+   * The cart as it is now. Once paid, `status` is `COMPLETED` and `payment_confirmation` says which
+   * order it became, as the checkout answered.
    *
    * @returns The cart
    *

@@ -1,6 +1,8 @@
 export { SaysoShopsApiClient } from "./client.js";
 export type { ClientOptions } from "./client-options.js";
 
+export { ServerEnvironment } from "./servers.js";
+
 export { Shops } from "./resources/shops.js";
 export { MerchantCart } from "./resources/merchant-cart.js";
 export { Service } from "./resources/service.js";

@@ -26,9 +26,9 @@ All `Source` paths on this map and its sub-pages are relative to the **SDK root*
 ## Getting a client
 
 ```ts
-import { SaysoShopsApiClient } from "sayso-shops-api";
+import { SaysoShopsApiClient, ServerEnvironment } from "sayso-shops-api";
 
-const client = new SaysoShopsApiClient({});
+const client = new SaysoShopsApiClient({ serverEnvironment: ServerEnvironment.Production });
 ```
 
 The only constructor is `new SaysoShopsApiClient(options: ClientOptions = {})`, so `new SaysoShopsApiClient()` is the minimum. Resources are memoized lazy getters on the client — `client.shops`, `client.merchantCart`, `client.service` — and their classes are exported only for their merged namespaces and for `instanceof`; their constructors take engine internals that are not exported, so reach a resource only through its getter.
@@ -37,7 +37,8 @@ All `ClientOptions` fields (source: `src/client-options.ts`; every field is `rea
 
 | Field | Type | Default |
 | --- | --- | --- |
-| `serverOptions` | the server's base-URL and template-variable overrides | `{}` — the resolver merges the declared defaults in |
+| `serverEnvironment` | `typeof ServerEnvironment.<member>`, one per union arm | `ServerEnvironment.Production` |
+| `serverOptions` | the selected environment's server overrides | `{}` — each resolver merges its own per-environment defaults in |
 | `retry` | `RetryOptions` | the `RetryOptions` defaults below |
 | `logging` | `LoggingOptions` | off — the `LoggingOptions` defaults below |
 | `fetch` | `FetchLike \| undefined` | the global `fetch`, resolved by the transport |
@@ -151,7 +152,7 @@ Core types (public members with their declared types; all are `readonly`):
 | `"auth"` | a credential could not be **obtained**, per the paragraph below | — |
 | `"pagination"` | a next link the API sent resolved to another origin, or was not a URL, so the walk stopped there. Raised inside a paged loop, after the page that carried the link; `uri` names the link, or the page that carried it when the link is not a URL | — |
 
-**Four throwables sit outside the family**, so `instanceof SaysoShopsApiError` is `false` on each and a `catch` that tests it has to rethrow what is left. `ConfigurationError` comes out of the **`SaysoShopsApiClient` constructor**, synchronously and before any `ApiPromise` exists: no reachable `fetch` or a `ClientOptions.retry` or `ClientOptions.logging` whose reads throw. One call can reject with it too: a `RequestOptions.retry` or `RequestOptions.logging` whose reads throw. Either way the failed read is on `cause`. `SchemaError` is what a codec throws when called directly — `addressSchema.decode(json)` — so it names no call; through an operation the same failure arrives one level down, on `DecodeError.cause` or `EncodeError.cause`, and a `serverOptions` override whose value is not a string raises it from the constructor too. Bugs stay outside the family and reach you raw — an unparseable `baseUrl` is a `TypeError`. And a caller abort arrives as the signal's own `reason`, unwrapped. The first two are exported from the package root; the other two are not ours to export.
+**Four throwables sit outside the family**, so `instanceof SaysoShopsApiError` is `false` on each and a `catch` that tests it has to rethrow what is left. `ConfigurationError` comes out of the **`SaysoShopsApiClient` constructor**, synchronously and before any `ApiPromise` exists: no reachable `fetch`, an unknown `ClientOptions.serverEnvironment`, or a `ClientOptions.retry` or `ClientOptions.logging` whose reads throw. One call can reject with it too: a `RequestOptions.retry` or `RequestOptions.logging` whose reads throw. Either way the failed read is on `cause`. `SchemaError` is what a codec throws when called directly — `addressSchema.decode(json)` — so it names no call; through an operation the same failure arrives one level down, on `DecodeError.cause` or `EncodeError.cause`, and a `serverOptions` override whose value is not a string raises it from the constructor too. Bugs stay outside the family and reach you raw — an unparseable `baseUrl` is a `TypeError`. And a caller abort arrives as the signal's own `reason`, unwrapped. The first two are exported from the package root; the other two are not ours to export.
 
 **`AuthError` is about obtaining a credential, never about being refused one.** A 401 *from the API* is an `ApiError` like any other status. A 401 does have one auth consequence: it invalidates whatever that operation's scheme had cached, so the **next** call re-acquires.
 
@@ -282,15 +283,23 @@ import { type Address, addressSchema } from "sayso-shops-api";
 
 **Auth — none.** The spec declares no security schemes, so every operation is public and the client sends no credential.
 
+**Environments.** `ClientOptions.serverEnvironment` selects one for the whole client (source: `src/servers.ts`). `ServerEnvironment` is a `const` object with a derived union type, not a TypeScript `enum` — and unlike the model enums it is **closed**, so only the values below are assignable.
+
+| `ServerEnvironment` member | Value |
+| --- | --- |
+| `ServerEnvironment.Production` *(default)* | `production` |
+| `ServerEnvironment.Environment2` | `environment2` |
+
 **serverOptions.** 1 logical server; each operation is bound to one at generation time, and a block carries a **Server** bullet only when its group is not `default`. Override `serverOptions`.
 
-**Base URLs and overrides.** One row per group, and every cell is overridden at `serverOptions.<name>`, where `<name>` is `baseUrl` for the whole template or the variable name for one substitution. An override merges with the built-in defaults **key by key**.
+**Base URLs and overrides.** One row per group-and-environment pair, and every cell is overridden at `serverOptions.<name>`, where `<name>` is `baseUrl` for the whole template or the variable name for one substitution. Which environment a cell belongs to is selected by `serverEnvironment`, not written into the path — the options type only admits the keys legal under the environment named there. An override merges with the built-in defaults **per pair, key by key**.
 
-| Group | Base URL template | Template variables (default) |
-| --- | --- | --- |
-| `default` | `http://localhost:3000` | — |
+| Group | Environment | Base URL template | Template variables (default) |
+| --- | --- | --- | --- |
+| `default` | `production` | `https://sayso-ovph.onrender.com` | — |
+| `default` | `environment2` | `http://localhost:3000` | — |
 
-A `baseUrl` override replaces the template verbatim; variable values are percent-encoded into it. Server variables are filled in once, as the client is built; only the path parameters are expanded per request.
+A `baseUrl` override replaces the template verbatim; variable values are percent-encoded into it. Server variables are filled in once, as the client is built; only the path parameters are expanded per request. An environment value the SDK does not know throws `ConfigurationError`, and it is the **constructor** that throws it: every server group is resolved once, by `buildServers`, as the client is built, and an accessor afterwards only attaches the operation's sub-path. No operation method throws synchronously.
 
 Retries are configurable via `ClientOptions.retry` (`RetryOptions`, source `src/core/retry.ts`) — the field table is under Getting a client.
 

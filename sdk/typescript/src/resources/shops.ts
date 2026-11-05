@@ -112,9 +112,16 @@ export namespace Shops {
     slug: string;
     /** Words to match, e.g. "green mug". Leave out to list everything. */
     query?: string;
-    /** Highest price per item in the shop's currency, e.g. "40.00". */
+    /**
+     * Highest price per item in the shop's currency, e.g. "40.00" or "$40". No more decimals than
+     * the currency has.
+     */
     maxPrice?: string;
-    /** Leave out sold-out variants (made-to-order ones always stay). @default false */
+    /**
+     * Leave out sold-out variants (made-to-order ones always stay). "true" or "1".
+     *
+     * @default false
+     */
     inStockOnly?: boolean;
   };
 

@@ -21,7 +21,7 @@ export function llmsText(links: Links, shops: readonly Catalog[]): string {
     '## Buy from any shop',
     '',
     `- [All shops](${links.base}/shops): every shop and its pieces; people buy with a cart or Sayso's own assistant and pay with PayPal's button`,
-    `- [Shopping MCP server](${links.shoppingMcp}): every shop, for any MCP client (list_shops, search_products, create_cart, update_cart, get_cart, pay_with_paypal, request_refund)`,
+    `- [Shopping MCP server](${links.shoppingMcp}): every shop, for any MCP client (list_shops, search_products, create_cart, update_cart, get_cart, request_refund, connect_paypal, wallet_status, pay_with_paypal)`,
     `- [Shops API (OpenAPI)](${links.openApi}): the same as REST, with PayPal's merchant-cart spec per shop`,
     `- [Developer portal](${links.developers}): guides, SDKs and a console for the API`,
     '',
@@ -37,7 +37,8 @@ export function llmsText(links: Links, shops: readonly Catalog[]): string {
     '## Optional',
     '',
     `- [For owners](${links.base}/start): turn photos or a price list into a shop your own agent runs`,
-    `- [Docs](${links.base}/docs): how the owner's agent, Guard and the say-so work`,
+    `- [Seller MCP server](${links.sellerMcp}): for the owner's own agent, with OAuth or a scoped key`,
+    `- [Docs](${links.base}/docs): how the owner's agent, Guard, the say-so and PayPal's webhooks work`,
     '',
   ];
   return lines.join('\n');

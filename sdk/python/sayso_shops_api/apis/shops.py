@@ -50,8 +50,9 @@ class Shops:
         Args:
             slug: The shop, e.g. maya-ceramics
             query: Words to match, e.g. "green mug". Leave out to list everything.
-            max_price: Highest price per item in the shop's currency, e.g. "40.00".
-            in_stock_only: Leave out sold-out variants (made-to-order ones always stay).
+            max_price: Highest price per item in the shop's currency, e.g. "40.00" or "$40". No more decimals than the
+                currency has.
+            in_stock_only: Leave out sold-out variants (made-to-order ones always stay). "true" or "1".
             request_options: Per-call overrides for this one request, such as a timeout, extra headers, or its retry
                 count and statuses.
 
@@ -104,8 +105,9 @@ class AsyncShops:
         Args:
             slug: The shop, e.g. maya-ceramics
             query: Words to match, e.g. "green mug". Leave out to list everything.
-            max_price: Highest price per item in the shop's currency, e.g. "40.00".
-            in_stock_only: Leave out sold-out variants (made-to-order ones always stay).
+            max_price: Highest price per item in the shop's currency, e.g. "40.00" or "$40". No more decimals than the
+                currency has.
+            in_stock_only: Leave out sold-out variants (made-to-order ones always stay). "true" or "1".
             request_options: Per-call overrides for this one request, such as a timeout, extra headers, or its retry
                 count and statuses.
 
@@ -160,8 +162,9 @@ class ShopsWithRawResponse(BaseRawResponse[RawClient, Server]):
         Args:
             slug: The shop, e.g. maya-ceramics
             query: Words to match, e.g. "green mug". Leave out to list everything.
-            max_price: Highest price per item in the shop's currency, e.g. "40.00".
-            in_stock_only: Leave out sold-out variants (made-to-order ones always stay).
+            max_price: Highest price per item in the shop's currency, e.g. "40.00" or "$40". No more decimals than the
+                currency has.
+            in_stock_only: Leave out sold-out variants (made-to-order ones always stay). "true" or "1".
             request_options: Per-call overrides for this one request, such as a timeout, extra headers, or its retry
                 count and statuses.
 
@@ -216,8 +219,9 @@ class AsyncShopsWithRawResponse(BaseRawResponse[AsyncRawClient, Server]):
         Args:
             slug: The shop, e.g. maya-ceramics
             query: Words to match, e.g. "green mug". Leave out to list everything.
-            max_price: Highest price per item in the shop's currency, e.g. "40.00".
-            in_stock_only: Leave out sold-out variants (made-to-order ones always stay).
+            max_price: Highest price per item in the shop's currency, e.g. "40.00" or "$40". No more decimals than the
+                currency has.
+            in_stock_only: Leave out sold-out variants (made-to-order ones always stay). "true" or "1".
             request_options: Per-call overrides for this one request, such as a timeout, extra headers, or its retry
                 count and statuses.
 

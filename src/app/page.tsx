@@ -23,7 +23,7 @@ export default async function Home() {
           <h1>Let AI shoppers buy from your shop, and let your own agent run it.</h1>
           <p className="lede">
             Sayso turns a few photos and a price list into a shop that AI assistants can buy from with PayPal. Your agent handles orders,
-            refunds and tracking. Anything that moves real money past your limits waits for your OK on your phone.
+            refunds and tracking. Anything that moves money past your limits waits for your OK on your phone.
           </p>
           <div className="row" style={{ gap: 'var(--s3)' }}>
             <a className="btn btn-primary" href="/start">
@@ -91,7 +91,7 @@ export default async function Home() {
             </h3>
             <p className="soft">
               Sign in and get paid with your own PayPal, and see your week at a glance. Refunds, charges and rule changes that cross your limits wait
-              for you, and the yeses you keep giving become rules your agent earns.
+              for you, and the yeses you keep giving become rules your agent earns. Refunds and disputes in PayPal itself show up here too.
             </p>
             <span className="via">Sign in with PayPal · dashboard · phone approvals</span>
           </div>
@@ -141,7 +141,7 @@ export default async function Home() {
         <div className="spread">
           <div className="stack" style={{ gap: 'var(--s1)' }}>
             <h2 style={{ fontSize: 'var(--t-xl)' }}>Shop from your own assistant</h2>
-            <p className="soft">Add this one MCP server to any MCP client and ask for a hand-thrown mug. It searches every shop on Sayso. No key needed.</p>
+            <p className="soft">Add this one MCP server to ChatGPT or any MCP client and ask for a hand-thrown mug. It searches every shop on Sayso. No key needed.</p>
           </div>
           <a className="btn" href="/owner">
             Watch it as the owner <Icon name="arrow" size={17} />

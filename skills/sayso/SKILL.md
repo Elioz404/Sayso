@@ -15,7 +15,7 @@ their own device. **You can never approve anything yourself**, and you should no
 sayso status --json
 ```
 
-If it says "Not signed in", ask the owner for an agent key (owner dashboard -> Agent keys) and run
+If it says "Not signed in", ask the owner for an agent key (owner dashboard -> Agents -> Connect an agent) and run
 `sayso login --key sk_agent_... --url <their Sayso URL>`. Never ask for or use the owner secret
 (`sk_owner_...`); it is not for agents.
 

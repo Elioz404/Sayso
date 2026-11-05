@@ -8,7 +8,7 @@ This is the whole agent-side flow with the generated TypeScript SDK. It is the s
 ```ts
 import { SaysoShopsApiClient } from 'sayso-shops-api';
 
-const client = new SaysoShopsApiClient({ serverOptions: { baseUrl: 'https://your-sayso-server' } });
+const client = new SaysoShopsApiClient({ serverOptions: { baseUrl: 'https://sayso-ovph.onrender.com' } });
 
 // 1. Find a shop and something in stock.
 const [{ shop: slug }] = await client.shops.listShops();

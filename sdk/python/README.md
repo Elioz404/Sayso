@@ -49,7 +49,7 @@ Construct `SaysoShopsApiClient` with keyword arguments, and call `close()` when 
 ```python
 from sayso_shops_api import SaysoShopsApiClient
 
-client = SaysoShopsApiClient()
+client = SaysoShopsApiClient(environment="production")
 
 # TODO: call endpoints here -- see api-reference.md
 
@@ -73,7 +73,7 @@ from sayso_shops_api import AsyncSaysoShopsApiClient
 
 
 async def main() -> None:
-    client = AsyncSaysoShopsApiClient()
+    client = AsyncSaysoShopsApiClient(environment="production")
     # TODO: call endpoints here, awaiting each -- see api-reference.md
     await client.aclose()
 

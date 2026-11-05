@@ -35,12 +35,12 @@ npm install <path-to-sdk>
 Create one client and reuse it. Configure its behaviour through [ClientOptions](src/client-options.ts).
 
 ```ts
-import { SaysoShopsApiClient } from "sayso-shops-api";
+import { SaysoShopsApiClient, ServerEnvironment } from "sayso-shops-api";
 
-const client = new SaysoShopsApiClient({});
+const client = new SaysoShopsApiClient({ serverEnvironment: ServerEnvironment.Production });
 ```
 
-Nothing in `ClientOptions` is required — `new SaysoShopsApiClient()` compiles — and each option left out falls back to its default. This API declares one environment, so there is no environment to select and no host to state at the construction site.
+Nothing in `ClientOptions` is required — `new SaysoShopsApiClient()` compiles — and each option left out falls back to its default. `serverEnvironment` is spelled out above so the environment a call reaches is visible where the client is built rather than inherited silently.
 
 ### From CommonJS
 
@@ -49,7 +49,7 @@ The package ships both dialects from a single entry, so `require` works with ful
 ```ts
 import sdk = require("sayso-shops-api");
 
-const client = new sdk.SaysoShopsApiClient({});
+const client = new sdk.SaysoShopsApiClient({ serverEnvironment: sdk.ServerEnvironment.Production });
 ```
 
 ---

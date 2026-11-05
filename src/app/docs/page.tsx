@@ -20,7 +20,7 @@ const SECTIONS = [
   { id: 'paid', title: 'Get paid into your PayPal' },
   { id: 'cli', title: 'The sayso CLI' },
   { id: 'guard', title: 'How your money is protected' },
-  { id: 'paypal', title: "PayPal's commerce platform" },
+  { id: 'paypal', title: "PayPal's merchant-cart API" },
   { id: 'reference', title: 'Reference' },
 ];
 
@@ -143,20 +143,20 @@ export default async function Docs() {
             <ol className="steps">
               <li>
                 <span>
-                  In ChatGPT, open <b>Settings</b>, then <b>Apps</b> (called Connectors or Plugins in some versions and languages). Turn on{' '}
-                  <b>Developer mode</b> under Advanced if it asks, then choose <b>Create</b> or <b>Add</b> a custom MCP connector.
+                  In ChatGPT, open <b>Settings</b>, then <b>Plugins</b> (Apps or Connectors in some versions and plans). Press <b>Add</b> and choose a
+                  custom MCP server. If it asks, turn on <b>Developer mode</b> under Advanced.
                 </span>
               </li>
               <li>
                 <span>
-                  Name it <b>Sayso</b>, set authentication to <b>No authentication</b>, and paste this as the MCP server URL:
+                  Name it <b>Sayso</b>, set authentication to <b>No authentication</b>, and paste this as the server URL:
                 </span>
               </li>
             </ol>
             <CopyField value={links.shoppingMcp} />
             <ol className="steps" start={3} style={{ counterReset: 'step 2' }}>
               <li>
-                <span>Tick the box that says you trust the connector, then press <b>Create</b>.</span>
+                <span>Tick the box that says you trust it, then press <b>Create plugin</b>.</span>
               </li>
               <li>
                 <span>
@@ -166,8 +166,8 @@ export default async function Docs() {
               </li>
             </ol>
             <p className="small soft">
-              Shop owners connect their own agent the same way, with the personal MCP URL from <b>Agents</b> in their dashboard (the key is in the URL, so
-              again no authentication). Rather not set anything up? <a href="/assistant">Shop on this site</a>, with a cart or Sayso&apos;s assistant.
+              Shop owners connect their own agent from <b>Agents</b> in their dashboard: see <a href="#run">Run your shop with your agent</a>. Rather not
+              set anything up? <a href="/assistant">Shop on this site</a>, with a cart or Sayso&apos;s assistant.
             </p>
           </section>
 
@@ -241,7 +241,7 @@ export default async function Docs() {
             <p>
               Your dashboard&apos;s <b>Overview</b> shows the week against the one before (revenue, orders, average order, refund rate), what your agents
               did with your money, the latest orders and where they came from, and an in-depth report of every request, sale and money move, each
-              checked against PayPal. <b>Assistant</b> answers questions about your own shop (sales, refunds and net for any period, a month-end
+              checked against PayPal. <b>Ask about your shop</b>, at the bottom right of every owner page, answers questions about your own shop (sales, refunds and net for any period, a month-end
               estimate, what waits for you) and only reads. <b>Orders</b>, <b>Catalog</b>, <b>Making</b> and <b>Activity</b> hold the rest.
             </p>
           </section>
@@ -318,8 +318,8 @@ export default async function Docs() {
               exact rules you can read in <b>Rules</b>, and the rules decide, not the AI.
             </p>
             <p>
-              When you keep approving the same kind of request, Sayso suggests letting your agent handle those alone, up to what you approved and
-              never past anything you turned down. Your agent can ask for that rule too, but only you can say yes: agents earn autonomy, they never
+              When you approve the same kind of request three times, Sayso suggests letting your agent handle those alone, up to a limit your approvals
+              support (rounded up to the next $10) and never past anything you turned down. Your agent can ask for that rule too, but only you can say yes: agents earn autonomy, they never
               take it.
             </p>
             <p>
@@ -330,10 +330,9 @@ export default async function Docs() {
           </section>
 
           <section id="paypal" className="doc-section">
-            <h2>PayPal&apos;s commerce platform</h2>
+            <h2>PayPal&apos;s merchant-cart API</h2>
             <p>
-              Every shop also implements PayPal&apos;s Agentic Commerce merchant-cart API, so assistants on PayPal&apos;s platform can buy without any
-              setup by the shopper:
+              Every shop also implements PayPal&apos;s Agentic Commerce merchant-cart API, for any platform or agent that speaks that spec:
             </p>
             <CopyField value={links.merchantCart('<shop>')} />
             <p className="small soft">
@@ -380,9 +379,14 @@ export default async function Docs() {
                     <td className="small">The shopping tools for that shop only</td>
                   </tr>
                   <tr>
+                    <td className="mono">/api/mcp</td>
+                    <td>The owner&apos;s agent, OAuth or a bearer key</td>
+                    <td className="small">shop_overview, sales_summary, list_products, update_product, update_variant, price_check, production_board, plan_job, finish_job, list_orders, get_order, refund_order, add_tracking, send_invoice, list_invoices, list_approvals, get_say_so, get_policy, propose_policy, rule_suggestions, propose_rule_suggestion, audit_log</td>
+                  </tr>
+                  <tr>
                     <td className="mono">/api/mcp/&lt;agent key&gt;</td>
-                    <td>The owner&apos;s agent</td>
-                    <td className="small">shop_overview, list_products, update_variant, price_check, production_board, plan_job, finish_job, list_orders, get_order, refund_order, add_tracking, send_invoice, list_invoices, list_approvals, get_say_so, get_policy, propose_policy, rule_suggestions, propose_rule_suggestion, audit_log</td>
+                    <td>The owner&apos;s agent, personal URL</td>
+                    <td className="small">The same, for apps that only take a URL</td>
                   </tr>
                 </tbody>
               </table>

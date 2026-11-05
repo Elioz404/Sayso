@@ -92,7 +92,8 @@ class MerchantCart:
         )
 
     def get_cart(self, slug: str, cart_id: str, *, request_options: RequestOptionsOrDict | None = None) -> Cart:
-        """The cart as it is now. Once paid, ``status`` is ``COMPLETED``.
+        """The cart as it is now. Once paid, ``status`` is ``COMPLETED`` and ``payment_confirmation`` says which order
+        it became, as the checkout answered.
 
         Args:
             slug: The shop, e.g. maya-ceramics
@@ -205,7 +206,8 @@ class AsyncMerchantCart:
         )
 
     async def get_cart(self, slug: str, cart_id: str, *, request_options: RequestOptionsOrDict | None = None) -> Cart:
-        """The cart as it is now. Once paid, ``status`` is ``COMPLETED``.
+        """The cart as it is now. Once paid, ``status`` is ``COMPLETED`` and ``payment_confirmation`` says which order
+        it became, as the checkout answered.
 
         Args:
             slug: The shop, e.g. maya-ceramics
@@ -321,7 +323,8 @@ class MerchantCartWithRawResponse(BaseRawResponse[RawClient, Server]):
     def get_cart(
         self, slug: str, cart_id: str, *, request_options: RequestOptionsOrDict | None = None
     ) -> ApiResult[Cart, GetCartErrorBody]:
-        """The cart as it is now. Once paid, ``status`` is ``COMPLETED``.
+        """The cart as it is now. Once paid, ``status`` is ``COMPLETED`` and ``payment_confirmation`` says which order
+        it became, as the checkout answered.
 
         Args:
             slug: The shop, e.g. maya-ceramics
@@ -441,7 +444,8 @@ class AsyncMerchantCartWithRawResponse(BaseRawResponse[AsyncRawClient, Server]):
     async def get_cart(
         self, slug: str, cart_id: str, *, request_options: RequestOptionsOrDict | None = None
     ) -> ApiResult[Cart, GetCartErrorBody]:
-        """The cart as it is now. Once paid, ``status`` is ``COMPLETED``.
+        """The cart as it is now. Once paid, ``status`` is ``COMPLETED`` and ``payment_confirmation`` says which order
+        it became, as the checkout answered.
 
         Args:
             slug: The shop, e.g. maya-ceramics

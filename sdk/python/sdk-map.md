@@ -26,7 +26,7 @@ All `Source` paths on this map and its sub-pages are relative to the **SDK root*
 ```python
 from sayso_shops_api import SaysoShopsApiClient
 
-client = SaysoShopsApiClient()
+client = SaysoShopsApiClient(environment="production")
 
 # TODO: call endpoints here -- see api-reference.md
 
@@ -44,7 +44,7 @@ from sayso_shops_api import AsyncSaysoShopsApiClient
 
 
 async def main() -> None:
-    client = AsyncSaysoShopsApiClient()
+    client = AsyncSaysoShopsApiClient(environment="production")
     # TODO: call endpoints here, awaiting each -- see api-reference.md
     await client.aclose()
 
@@ -64,6 +64,7 @@ Every API group is a property on the client (e.g. `client.merchant_cart`). Every
 
 | Keyword | Sync Type | Async Type | Default |
 | --- | --- | --- | --- |
+| `environment` | `Environment` | `Environment` | `"production"` |
 | `base_url` | `str \| None` | `str \| None` | `None` |
 | `timeout` | `float` | `float` | `30.0` seconds |
 | `retry_options` | `int \| RetryOptionsOrDict \| None` | `int \| RetryOptionsOrDict \| None` | `None` |
@@ -75,6 +76,7 @@ The types those columns name — where each imports from and, for a credentials 
 
 | Type | Import from | Shape |
 | --- | --- | --- |
+| `Environment` | `sayso_shops_api.server` | `Literal` of the Environments table's names |
 | `RetryOptionsOrDict` | `sayso_shops_api.core` | a retry count, `RetryOptions`, or a dict: `max_retries: int` · `initial_delay: float` · `backoff_factor: float` · `max_delay: float` · `max_jitter: float` · `status_codes_to_retry: frozenset[int]` · `http_methods_to_retry: frozenset[HttpMethod]` |
 | `LoggingOptionsOrDict` | `sayso_shops_api.core` | `LoggingOptions` or a dict: `log_request_headers: bool` · `log_response_headers: bool` · `log_request_body: bool` · `body_size_limit: int` · `redaction_placeholder: str` · `unmask_headers: AbstractSet[str]` · `mask_headers: AbstractSet[str]` · `mask_keys: AbstractSet[str]` |
 | `HttpClient` | `sayso_shops_api.core` | protocol — `send(request: HttpRequest) -> HttpResponse` · `close()`; `send` returns once the head has arrived and never reads the body, and raises `TransportError` (from `core`) when no response arrives — anything else it raises is never retried |
@@ -176,7 +178,7 @@ Each links to a sub-page with one block per operation, headed by its full access
 | **Parsed raises, raw returns** — `ApiError` versus `ApiResult` | Error-handling model |
 | **Case B error is always `RawError`** — also the last arm of every Case A alias, where a block's **Error arms** bullet ends in it | Error-handling model |
 | **A trailing `request_options`** — keyword-only and optional, for per-call overrides such as a timeout, extra headers, `max_retries`, `status_codes_to_retry` or `log_level`; every signature ends with it | here (`sayso_shops_api/core/request_options.py`), Retries, Logging |
-| **Base URL `http://localhost:3000`** — this SDK's only server; override it with `base_url="https://…"` | Servers & auth |
+| **Base URL is the selected environment's** — this SDK's only server, one URL per `environment=`; override it with `base_url="https://…"` | Servers & auth |
 | **Parameter names are literal** — signatures are generated code verbatim, and everything behind the bare `*` must be passed by name | here |
 | **A parameter's wire name is its Python name** — sent as-is on the path, query string, header or body, unless the block's **Params** bullet carries a wire name beside the role | here |
 
@@ -225,9 +227,12 @@ Import paths by content type (`from <package> import <Name>`):
 
 **Auth — none.** The spec declares no security scheme, so the client sends no credentials and takes no credential keyword.
 
-**One environment, one server** (`sayso_shops_api/server/server_config.py`). The spec declares a single environment, so no `environment` keyword exists; the base URL and its override point:
+**Environments.** `environment=` selects the target environment (`sayso_shops_api/server/environment.py`); this SDK's one server (`sayso_shops_api/server/server_config.py`) has a base URL per environment:
 
-| Base URL | Override point |
-| --- | --- |
-| `http://localhost:3000` | `base_url="https://…"` |
+| Environment | Base URL | Hosting | Override point |
+| --- | --- | --- | --- |
+| `"production"` *(default)* | `https://sayso-ovph.onrender.com` | The live demo, on the PayPal sandbox. No real money moves. | `base_url="https://…"` |
+| `"environment2"` | `http://localhost:3000` | A Sayso server running locally. | `base_url="https://…"` |
+
+Pick a row with `environment=`.
 
