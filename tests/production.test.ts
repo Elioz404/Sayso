@@ -42,7 +42,7 @@ test('a paid made-to-order item goes on the board, starting the day after it was
 test('the same made-to-order item on two lines is two jobs, and the lead time is the one promised', async () => {
   const s = await stack();
   await placeOrder(s, [{ variant_id: 'var_vase_custom', quantity: 1 }, { variant_id: 'var_vase_custom', quantity: 2 }]);
-  await s.shops.setVariant('shop_maya', 'var_vase_custom', { price: 7_000 }); // later catalog changes don't rewrite the order
+  await s.shops.setVariant('shop_maya', 'var_vase_custom', { price: '70.00' }); // later catalog changes don't rewrite the order
   const jobs = await board(s);
   assert.equal(jobs.length, 2);
   assert.notEqual(jobs[0].job_id, jobs[1].job_id);

@@ -55,7 +55,7 @@ export async function stack(model?: ChatModel) {
   const shops = new Shops({ catalogs, access, paypal, model, links: site });
   const orders = new Orders({ carts, guard, paypal });
   const passkeys = new Passkeys({ store: new MemoryPasskeyStore(), access, origin: 'https://sayso.test' });
-  const saySo = new SaySo({ guard, policyFor, shops, model, passkeys });
+  const saySo = new SaySo({ guard, policyFor, shops, model, passkeys, access });
   const invoicing = new Invoicing({ guard, carts, shops, paypal, statusTtlMs: 0 }); // tests change PayPal state between reads
   const production = new Production({ carts, catalogs, guard, invoicing, jobs: new MemoryJobStore() });
   const services: ToolServices = { commerce, orders, saySo, invoicing, production, shops, catalogs, wallets, links: site };

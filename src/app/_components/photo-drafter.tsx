@@ -6,7 +6,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { MAX_DRAFT_PHOTOS } from '@/core/photo-limits.ts';
+import { MAX_DRAFT_PHOTOS, MAX_STOCK } from '@/core/limits.ts';
 import { callApi } from './api.ts';
 import { currencySymbol } from './catalog-editor.tsx';
 import { shrink } from './images.ts';
@@ -177,7 +177,7 @@ function DraftCard({ draft, currency }: { draft: DraftView; currency: string }) 
                 <input value={variants[i].price} onChange={(e) => edit(i, { price: e.target.value })} inputMode="decimal" maxLength={12} aria-label={`Price of ${v.title}`} placeholder="0.00" />
               </label>
               <label className="sell-qty">
-                <input type="number" min={0} max={100000} value={variants[i].inventory} onChange={(e) => edit(i, { inventory: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} aria-label={`Stock of ${v.title}`} />
+                <input type="number" min={0} max={MAX_STOCK} value={variants[i].inventory} onChange={(e) => edit(i, { inventory: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} aria-label={`Stock of ${v.title}`} />
                 <span>{v.madeToOrder ? 'ready now' : 'in stock'}</span>
               </label>
             </li>

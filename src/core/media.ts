@@ -4,9 +4,9 @@
 
 import { randomBytes } from 'node:crypto';
 import { HttpError } from './errors.ts';
-import { MAX_PHOTO_CHARS } from './photo-limits.ts';
+import { MAX_PHOTO_CHARS } from './limits.ts';
 
-export { MAX_DRAFT_PHOTOS, MAX_ONBOARDING_PHOTOS } from './photo-limits.ts';
+export { MAX_DRAFT_PHOTOS, MAX_ONBOARDING_PHOTOS } from './limits.ts';
 
 export interface StoredPhoto {
   id: string;

@@ -6,7 +6,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { OPS_AGENT } from '../actors.ts';
 import { KeyedLock } from '../lock.ts';
 import { evaluate, findDuplicate, historyWindowMs, minutesAgo, type Policy } from './policy.ts';
-import { matchesQuery, SPENDING_STATUSES } from './types.ts';
+import { isReleased, matchesQuery, SPENDING_STATUSES } from './types.ts';
 import type { ActionKind, AuditEvent, Decision, Executor, GuardRecord, GuardStore, ProposedAction, RecordQuery, RecordStatus, RuleHit, Verdict } from './types.ts';
 
 /** Only a person can apply these, whoever proposes them. */
@@ -139,6 +139,21 @@ export class Guard {
     if (!(await this.deps.store.updateIf(record, 'pending_approval'))) throw new GuardConflict(`Record ${recordId} was already decided`);
     await this.settled(record);
     return record;
+  }
+
+  /**
+   * What a verified record authorized was let go before anyone was charged (a buyer's purchase the shop
+   * never captured, say). The record keeps its status and gets a "released" event in its hash chain, and
+   * stops counting toward limits. Nothing for a record that moved nothing or was already released.
+   */
+  async markReleased(recordId: string, by: string, reason: string): Promise<GuardRecord | undefined> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const record = await this.deps.store.get(recordId);
+      if (!record || isReleased(record) || !['executed', 'verified', 'unverified'].includes(record.status)) return record;
+      append(record, 'released', by, { reason: reason.slice(0, 300) }, this.now());
+      if (await this.deps.store.updateIf(record, record.status)) return record;
+    }
+    throw new GuardConflict(`Record ${recordId} kept changing; not marked released`);
   }
 
   get(recordId: string): Promise<GuardRecord | undefined> {

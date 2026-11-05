@@ -54,7 +54,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     saySo.policy(shopId),
   ]);
   const report = trustReport(records, orders, shop.currency, approvalLimit(policy, 'refund.create'));
-  const week = shopMetrics(orders, records);
+  const week = shopMetrics(orders, records, { zone: shop.timeZone });
   // The shared demo shows people's details masked, as everywhere else in it.
   const inDepth = { ...report, decisions: report.decisions.map((d) => ({ ...d, why: redact(d.why) })), trail: report.trail.map((t) => ({ ...t, buyer: redact(t.buyer) })) };
   const pictureOf = (variantId?: string) => {

@@ -10,6 +10,7 @@ import type { PayPalClient } from './paypal/client.ts';
 import { addTracking } from './paypal/orders.ts';
 import { resolvePeriod, salesSummary, type SalesQuery } from './sales-summary.ts';
 import type { CartStore, StoredCart } from './stores.ts';
+import type { Shop } from './catalog.ts';
 
 export interface OrdersDeps {
   carts: CartStore;
@@ -112,16 +113,18 @@ export class Orders {
   }
 
   /** Sales, refunds and net for a period, against the one before, computed from the orders themselves. */
-  async salesSummary(shopId: string, currency: string, query: SalesQuery, now = new Date()) {
+  async salesSummary(shop: Pick<Shop, 'id' | 'currency' | 'timeZone'>, query: SalesQuery, now = new Date()) {
+    const shopId = shop.id;
+    const zone = shop.timeZone ?? 'UTC';
     // Refunds asked for since a while before the period before began (one asked earlier can be confirmed
     // later): the window decides what is read, not the store's default page size.
-    const since = new Date(resolvePeriod(query, now).previous.start - 60 * 86_400_000);
+    const since = new Date(resolvePeriod(query, now, zone).previous.start - 60 * 86_400_000);
     const [placed, refunds] = await Promise.all([
       // Orders placed since then too: one paid in the period may have been placed a little before it.
       this.deps.carts.listPlaced(shopId, { limit: SALES_LIMIT, since }),
       this.deps.guard.list(shopId, { kind: 'refund.create', status: 'verified', since, limit: SALES_LIMIT }),
     ]);
-    return salesSummary({ placed, refunds, currency, query, now, partial: placed.length >= SALES_LIMIT || refunds.length >= SALES_LIMIT });
+    return salesSummary({ placed, refunds, currency: shop.currency, query, now, zone, partial: placed.length >= SALES_LIMIT || refunds.length >= SALES_LIMIT });
   }
 
   /** Not a money movement, so no Guard round-trip; still idempotent per order + tracking number. */

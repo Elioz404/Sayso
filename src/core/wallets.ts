@@ -303,7 +303,7 @@ export class Wallets {
       const why = record.decision?.hits.map((h) => h.message).join(' ') || record.verification?.detail || 'PayPal did not accept the saved account';
       throw new HttpError(422, `Not paid: ${why}`);
     }
-    const done = await this.deps.commerce.settleSaved(cartId, wallet.payerEmail);
+    const done = await this.deps.commerce.settleSaved(cartId, wallet.payerEmail, record.id);
     return { outcome: done.payment_confirmation?.payment_status === 'CAPTURED' ? 'paid' : 'authorized_waiting_for_shop', record };
   }
 }

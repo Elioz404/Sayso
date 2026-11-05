@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { callApi } from './api.ts';
 import { shrink } from './images.ts';
 import { useAction } from './use-action.ts';
+import { MAX_STOCK } from '@/core/limits.ts';
 
 export interface EditableProduct {
   id: string;
@@ -95,7 +96,7 @@ export function ProductCard({ product, currency, readOnly, onDone }: { product: 
               id: v.id,
               ...(e.title !== v.title ? { title: e.title } : {}),
               ...(e.price !== v.price ? { price: e.price } : {}),
-              ...(v.stock !== null && e.stock !== v.stock ? { stock: e.stock } : {}),
+              ...(v.stock !== null && e.stock !== v.stock ? { stock: e.stock, expected_stock: v.stock } : {}),
             };
           })
           .filter((v) => Object.keys(v).length > 1),
@@ -165,7 +166,7 @@ export function ProductCard({ product, currency, readOnly, onDone }: { product: 
                   <span className="small soft sell-qty">{v.madeDays} days to make</span>
                 ) : (
                   <label className={`sell-qty${v.stock === 0 ? ' sell-qty-out' : ''}`}>
-                    <input type="number" min={0} max={100000} value={e.stock} readOnly={readOnly} onChange={(x) => setVariant(v.id, { stock: Math.max(0, Math.floor(Number(x.target.value) || 0)) })} aria-label={`Stock of ${e.title}`} />
+                    <input type="number" min={0} max={MAX_STOCK} value={e.stock} readOnly={readOnly} onChange={(x) => setVariant(v.id, { stock: Math.max(0, Math.floor(Number(x.target.value) || 0)) })} aria-label={`Stock of ${e.title}`} />
                     <span>{v.stock === 0 && e.stock === 0 ? 'sold out' : 'in stock'}</span>
                   </label>
                 )}

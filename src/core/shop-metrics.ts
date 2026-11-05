@@ -3,6 +3,7 @@
 // summary (charged orders by when they were charged, refunds by when PayPal confirmed them), so the
 // dashboard and the assistant never disagree. Minor units throughout; pages format them.
 
+import { addDays, dayIn, startOfDay } from './days.ts';
 import type { GuardRecord } from './guard/types.ts';
 import type { OrderSummary } from './orders.ts';
 import { confirmedRefunds } from './sales-summary.ts';
@@ -29,27 +30,26 @@ export interface ShopMetrics {
   sayso: { alone: number; approved: number; waiting: number; declined: number; blocked: number; requests: number };
 }
 
-const DAY = 86_400_000;
-const isoDay = (t: number) => new Date(t).toISOString().slice(0, 10);
-
 /**
  * `orders`: the shop's orders over (at least) the last 2 x `days`; `records`: its Guard records over the
  * same days. Charged orders count on the day they were charged; refunds on the day PayPal confirmed them.
+ * Days are the shop's own: `zone` (its time zone) decides when each starts.
  */
-export function shopMetrics(orders: readonly OrderSummary[], records: readonly GuardRecord[], now = new Date(), days = 7): ShopMetrics {
-  const end = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) + DAY; // end of today, UTC
-  const start = end - days * DAY;
-  const daily = Array.from({ length: days * 2 }, (_, i) => ({ day: isoDay(end - (days * 2 - i) * DAY), revenue: 0, refunded: 0, orders: 0 }));
+export function shopMetrics(orders: readonly OrderSummary[], records: readonly GuardRecord[], options: { now?: Date; days?: number; zone?: string } = {}): ShopMetrics {
+  const { now = new Date(), days = 7, zone = 'UTC' } = options;
+  const today = dayIn(now.getTime(), zone);
+  const start = startOfDay(addDays(today, 1 - days), zone);
+  const daily = Array.from({ length: days * 2 }, (_, i) => ({ day: addDays(today, i + 1 - days * 2), revenue: 0, refunded: 0, orders: 0 }));
   const index = new Map(daily.map((d, i) => [d.day, i]));
   for (const o of orders) {
     if (o.status !== 'paid' || !o.paidAt) continue;
-    const i = index.get(o.paidAt.slice(0, 10));
+    const i = index.get(dayIn(Date.parse(o.paidAt), zone));
     if (i === undefined) continue;
     daily[i].revenue += o.totalMinor ?? 0;
     daily[i].orders += 1;
   }
   for (const r of confirmedRefunds(records)) {
-    const i = index.get(isoDay(r.at));
+    const i = index.get(dayIn(r.at, zone));
     if (i !== undefined) daily[i].refunded += r.amount;
   }
   const recent = daily.slice(days);

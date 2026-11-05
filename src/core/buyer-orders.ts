@@ -125,7 +125,7 @@ export function orderView(links: Links, cart: StoredCart, records: readonly Guar
     id: cart.id,
     number: cart.merchantOrderNumber!,
     shop: { name: catalog?.shop.name ?? 'The shop', ...(catalog ? { url: links.shopPage(catalog.shop.slug) } : {}) },
-    placedAt: cart.paidAt ?? cart.updatedAt,
+    placedAt: placedAt(cart),
     state,
     status,
     steps: progress(cart, records, { paid, fullyRefunded, waitingRequest: waitingShown, refundedMinor: order.refundedMinor, asks: shown, owner }),
@@ -173,9 +173,9 @@ function progress(
       { label: 'Cancelled', done: true, at: cart.released.at, stop: true },
     ];
   }
-  if (!o.paid) return [{ label: 'Authorized', done: true, at: cart.updatedAt }, { label: 'Shop confirms', done: false }, { label: 'Shipped', done: false }];
+  if (!o.paid) return [{ label: 'Authorized', done: true, at: placedAt(cart) }, { label: 'Shop confirms', done: false }, { label: 'Shipped', done: false }];
 
-  const happened: { step: Step; t: number }[] = [{ step: { label: 'Paid', done: true, at: cart.paidAt ?? cart.updatedAt }, t: 0 }];
+  const happened: { step: Step; t: number }[] = [{ step: { label: 'Paid', done: true, at: placedAt(cart) }, t: 0 }];
   if (cart.tracking) {
     const t = Date.parse(cart.tracking.addedAt);
     happened.push({ step: { label: 'Preparing', done: true }, t }, { step: { label: 'Shipped', done: true, at: cart.tracking.addedAt }, t });
@@ -210,4 +210,9 @@ export function ordersForAssistant(orders: readonly BuyerOrder[]): string {
   if (!orders.length) return '';
   const lines = orders.slice(0, 10).map((o) => `- ${o.number} from ${o.shop.name} (cart_id ${o.id}, ${o.placedAt.slice(0, 10)}): ${o.status}`);
   return `The shopper's own orders (they paid with PayPal; use get_cart with the cart_id for details or request_refund to ask for a refund):\n${lines.join('\n')}`;
+}
+
+/** When the order was placed: paid, or approved and holding its stock. Older orders have only their creation time. */
+function placedAt(cart: StoredCart): string {
+  return cart.paidAt ?? cart.placedAt ?? cart.createdAt;
 }

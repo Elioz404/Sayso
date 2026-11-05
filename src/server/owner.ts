@@ -50,9 +50,6 @@ export const signedInSeller = cache(async () => {
   );
 });
 
-/** Signs a rules draft between drafting it and saving it (POST /api/owner/rules/draft, then /api/owner/rules). */
-export const RULES_DRAFT = 'rules-draft';
-
 /**
  * New credentials (an agent key, a phone link) come only from the device the owner signed in on, right
  * after signing in or with their passkey: an old or borrowed session can't keep minting them.

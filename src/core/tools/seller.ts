@@ -2,12 +2,13 @@
 // changes the rules goes through Guard; no tool can approve a say-so request.
 
 import { pricesToConfirm } from '../catalog.ts';
-import { formatMoney, parseAmount } from '../money.ts';
+import { formatMoney } from '../money.ts';
 import type { PaymentState, ProductionJob } from '../production.ts';
 import { PERIODS } from '../sales-summary.ts';
 import { money } from './args.ts';
 import { actor, shop, ToolError, type Tool } from './context.ts';
 import { catalogView, priceReferenceView, sayso } from './views.ts';
+import { MAX_STOCK } from '../limits.ts';
 
 /** A job's payment as the owner's agent should say it. */
 const PAYMENT_FOR_OWNER: Record<PaymentState, (j: ProductionJob) => string> = {
@@ -60,15 +61,15 @@ export const sellerTools: Tool[] = [
       type: 'object',
       properties: {
         period: { type: 'string', enum: [...PERIODS], description: 'Defaults to this_month' },
-        from: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'A custom range instead of period: first day, YYYY-MM-DD (UTC)' },
-        to: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'Last day included, YYYY-MM-DD (UTC)' },
+        from: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: "A custom range instead of period: first day, YYYY-MM-DD (the shop's days)" },
+        to: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'Last day included, YYYY-MM-DD' },
       },
     },
     async run(input, ctx) {
       const shopId = shop(ctx);
       const { shop: info } = await ctx.services.shops.get(shopId);
       try {
-        return await ctx.services.orders.salesSummary(shopId, info.currency, {
+        return await ctx.services.orders.salesSummary(info, {
           period: input.period as (typeof PERIODS)[number] | undefined,
           from: input.from as string | undefined,
           to: input.to as string | undefined,
@@ -113,21 +114,21 @@ export const sellerTools: Tool[] = [
   {
     name: 'update_variant',
     title: 'Update price or stock',
-    description: 'Set the price and/or stock of one variant.',
+    description: 'Set the price and/or stock of one variant. Pass expected_stock (the stock you last read) with stock, so the edit is refused instead of writing over a sale made meanwhile.',
     side: 'seller',
     annotations: { idempotentHint: true },
     inputSchema: {
       type: 'object',
-      properties: { variant_id: { type: 'string', maxLength: 80 }, price: money, stock: { type: 'integer', minimum: 0, maximum: 100_000 } },
+      properties: {
+        variant_id: { type: 'string', maxLength: 80 },
+        price: money,
+        stock: { type: 'integer', minimum: 0, maximum: MAX_STOCK },
+        expected_stock: { type: 'integer', minimum: 0, maximum: MAX_STOCK },
+      },
       required: ['variant_id'],
     },
     async run(input, ctx) {
-      const shopId = shop(ctx);
-      const catalog = await ctx.services.shops.get(shopId);
-      const price = input.price !== undefined ? parseAmount(input.price, catalog.shop.currency) : undefined;
-      if (input.price !== undefined && !price) throw new ToolError(`price must be more than zero, e.g. 24.00 (${catalog.shop.currency})`);
-      if (price === undefined && input.stock === undefined) throw new ToolError('Pass price, stock or both');
-      const updated = await ctx.services.shops.setVariant(shopId, input.variant_id, { price, inventory: input.stock });
+      const updated = await ctx.services.shops.setVariant(shop(ctx), input.variant_id, { price: input.price, inventory: input.stock, expectedInventory: input.expected_stock });
       return catalogView(updated).products.flatMap((p) => p.variants).find((v) => v.variant_id === input.variant_id);
     },
   },

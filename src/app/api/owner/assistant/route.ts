@@ -2,11 +2,10 @@
 // it (the shop comes from that session, never from the request), and it reads that one shop with the
 // read-only seller tools, acting as an agent so Guard stays in charge. The shared demo session may use it
 // too, with buyers' details masked. The browser keeps the conversation, as text only.
-import { cleanOwnerHistory, OWNER_ASSISTANT_TOOLS, ownerTurn } from '@/core/ai/owner.ts';
+import { cleanOwnerHistory, ownerAssistantTools, ownerContext, ownerTurn } from '@/core/ai/owner.ts';
 import { LlmError } from '@/core/ai/llm.ts';
 import { ConfigError, fromLlmError, HttpError } from '@/core/errors.ts';
 import { RateLimit } from '@/core/rate-limit.ts';
-import { callTool, ToolError, toolsFor, type ToolContext } from '@/core/tools/registry.ts';
 import { ready } from '@/server/context.ts';
 import { handle, readBody, requireOwnerSession } from '@/server/http.ts';
 import { clientAddress, costlyCalls } from '@/server/rate-limit.ts';
@@ -31,39 +30,17 @@ export async function POST(request: Request) {
   return handle(async () => {
     const session = await requireOwnerSession(request);
     const { messages, text } = await readBody(request, TURN, 128 * 1024);
-    const { ownerModel: model, tools, shops } = await ready();
+    const { ownerModel: model, tools: services, shops } = await ready();
     if (!model?.chat) throw new ConfigError('The assistant needs an AI key on this server (OPENAI_API_KEY or DEEPSEEK_API_KEY).');
     // Only well-formed questions count, and each limiter is reached only if the one before it said yes.
     const caller = clientAddress(request);
-    const demo = session.kind === 'demo';
-    const underLimits = perAddress.allow(caller) && (demo ? demoAll.allow(session.shopId) : perShop.allow(session.shopId));
+    const shared = session.kind === 'demo';
+    const underLimits = perAddress.allow(caller) && (shared ? demoAll.allow(session.shopId) : perShop.allow(session.shopId));
     if (!underLimits) throw new HttpError(429, "That's a lot of questions for one hour; try again in a few minutes.");
-    // The owner's shop, as an agent of it: seller tools only, scoped to this shop, masked for the shared demo.
-    const ctx: ToolContext = {
-      services: tools,
-      agent: { shopId: session.shopId, keyId: 'owner-assistant', label: 'Shop assistant', ...(demo ? { shared: true } : {}) },
-      channel: 'owner-assistant',
-      allow: (cost) => costlyCalls[cost].allow(caller),
-    };
-    const allowed = toolsFor(ctx).filter((t) => OWNER_ASSISTANT_TOOLS.has(t.name) && t.annotations?.readOnlyHint);
-    const run = async (name: string, args: unknown) => {
-      if (!allowed.some((t) => t.name === name)) return { isError: true, result: `${name} is not available here.` };
-      try {
-        return { isError: false, result: await callTool(name, args, ctx) };
-      } catch (err) {
-        if (err instanceof ToolError) return { isError: true, result: err.message };
-        throw err;
-      }
-    };
 
+    const { tools, run } = ownerAssistantTools({ services, allow: (cost) => costlyCalls[cost].allow(caller) }, session.shopId, shared);
     const { shop } = await shops.get(session.shopId);
-    const context = [
-      `The shop: ${shop.name}. Currency: ${shop.currency}. Today is ${new Date().toISOString().slice(0, 10)} (UTC).`,
-      demo ? "This is Sayso's shared demo shop, open to everyone trying Sayso; buyers' personal details are masked." : '',
-    ]
-      .filter(Boolean)
-      .join(' ');
-    const turn = await ownerTurn({ model, tools: allowed, run }, cleanOwnerHistory(messages), text, context).catch((err: unknown) => {
+    const turn = await ownerTurn({ model, tools, run }, cleanOwnerHistory(messages), text, ownerContext(shop, shared)).catch((err: unknown) => {
       throw err instanceof LlmError ? fromLlmError(err, 'The assistant failed') : err;
     });
     return Response.json(turn);

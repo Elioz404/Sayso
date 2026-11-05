@@ -544,7 +544,7 @@ export function CatalogGrid({ rows, market: marketEnabled, readOnly = false, pro
     const row = e.data;
     const field = e.colDef.field as 'price' | 'stock';
     if (reverting.current.delete(`${row.id}:${field}`) || e.oldValue === e.newValue) return;
-    const body = field === 'price' ? { price: toMoney(row.price, row.currency).value } : { stock: row.stock };
+    const body = field === 'price' ? { price: toMoney(row.price, row.currency).value } : { stock: row.stock, expected_stock: e.oldValue };
     try {
       const saved = await callApi<VariantRow>(`/api/owner/variants/${encodeURIComponent(row.id)}`, 'PATCH', body);
       e.node.setData({ ...saved, sold: row.sold });

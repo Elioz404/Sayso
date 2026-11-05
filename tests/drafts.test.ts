@@ -56,7 +56,7 @@ test('a suggested price is never published on its own: the owner confirms it fir
   const variantId = catalog.products[0].variants[0].id;
 
   await assert.rejects(shops.publish(catalog.shop.id), /Confirm the price of Stoneware mug \(Speckled white\)/);
-  await shops.setVariant(catalog.shop.id, variantId, { price: 3_200 }); // keeping the suggestion would confirm it too
+  await shops.setVariant(catalog.shop.id, variantId, { price: '32.00' }); // keeping the suggestion would confirm it too
   assert.deepEqual(pricesToConfirm(await shops.get(catalog.shop.id)), []);
   assert.equal((await shops.publish(catalog.shop.id)).catalog.shop.status, 'live');
 });

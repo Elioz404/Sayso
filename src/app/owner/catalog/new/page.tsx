@@ -4,7 +4,7 @@ import type { Metadata } from 'next';
 import { PhotoDrafter, type DraftView } from '@/app/_components/photo-drafter.tsx';
 import { Icon } from '@/app/_components/ui.tsx';
 import { formatMoney, toMoney } from '@/core/money.ts';
-import { MAX_DRAFT_PHOTOS } from '@/core/photo-limits.ts';
+import { MAX_DRAFT_PHOTOS } from '@/core/limits.ts';
 import { SHARED_DEMO_READ_ONLY } from '@/server/http.ts';
 import { ownerView } from '@/server/owner.ts';
 

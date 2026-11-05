@@ -2,6 +2,7 @@
 // Agents can read all of it and propose new rules; only `decide()` approves, and only the owner's
 // session reaches it (never a tool or the CLI).
 
+import type { Access } from './access.ts';
 import { draftPolicy } from './ai/policy-draft.ts';
 import type { ChatModel } from './ai/llm.ts';
 import { fromLlmError, HttpError, notFound } from './errors.ts';
@@ -22,12 +23,26 @@ export interface SaySoDeps {
   model?: ChatModel;
   /** Once a shop has a passkey, approving needs a signature from it. */
   passkeys?: Passkeys;
+  /** Signs a rules draft between drafting and saving it. */
+  access: Pick<Access, 'signValue' | 'verifyValue'>;
+}
+
+/** A rules draft the owner read, ready to save: signed, so what is saved is exactly what they read. */
+export interface RulesDraft {
+  policy: Policy;
+  unclear: string[];
+  /** What a passkey confirms ("rules:<version>"). */
+  version: string;
+  /** Pass back to `saveRules`. */
+  token: string;
 }
 
 export type AuditedRecord = GuardRecord & { chainIntact: boolean };
 
 /** Rule drafts per shop per hour: each one is an AI call on the server's daily budget. */
 const DRAFTS_PER_HOUR = 20;
+const RULES_DRAFT = 'rules-draft';
+const DRAFT_TTL_MS = 30 * 60_000;
 
 export class SaySo {
   private readonly deps: SaySoDeps;
@@ -63,30 +78,43 @@ export class SaySo {
 
   /** Draft rules from the owner's words and submit them. From an agent this always waits for the owner. */
   async proposePolicy(shopId: string, text: string, actor: Actor): Promise<{ record: GuardRecord; unclear: string[] }> {
-    const { policy, unclear } = await this.draftRules(shopId, text);
+    const { policy, unclear } = await this.draft(shopId, text);
     return { record: await this.submitPolicy(policy, `New rules: "${text.slice(0, 200)}"`, actor), unclear };
   }
 
-  /** Draft rules from plain words without submitting them: the owner reads them before saving. */
-  async draftRules(shopId: string, text: string): Promise<{ policy: Policy; unclear: string[] }> {
+  /**
+   * Draft rules from plain words without submitting them: the owner reads them before saving. The draft
+   * carries the version of the rules it was written against, so saving it is refused if they changed since.
+   */
+  async draftRules(shopId: string, text: string): Promise<RulesDraft> {
+    const { policy, unclear } = await this.draft(shopId, text);
+    const base = policyVersion(await this.policy(shopId));
+    const token = this.deps.access.signValue(RULES_DRAFT, Buffer.from(JSON.stringify({ policy, base })).toString('base64url'), DRAFT_TTL_MS);
+    return { policy, unclear, version: policyVersion(policy), token };
+  }
+
+  /**
+   * The owner saves a draft they read. It goes through Guard like any rule change (audited, and refused if
+   * the rules changed since it was drafted), confirmed with their passkey once the shop has one.
+   */
+  async saveRules(shopId: string, token: string, actor: Actor, proof?: PasskeyProof): Promise<GuardRecord> {
+    const value = this.deps.access.verifyValue(RULES_DRAFT, token);
+    if (!value) throw new HttpError(410, 'This draft is more than 30 minutes old; draft it again');
+    const { policy, base } = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as { policy: Policy; base: string };
+    if (policy.ownerId !== shopId) throw new HttpError(403, 'These rules are for another shop');
+    if (actor.type === 'human' && this.deps.passkeys && (await this.deps.passkeys.required(shopId))) {
+      await this.deps.passkeys.confirm(shopId, `rules:${policyVersion(policy)}`, proof);
+    }
+    return this.submitPolicy(policy, `New rules: "${(policy.source ?? '').slice(0, 200)}"`, actor, base);
+  }
+
+  private async draft(shopId: string, text: string): Promise<{ policy: Policy; unclear: string[] }> {
     if (!this.deps.model) throw new HttpError(503, 'Policy drafting needs an AI key (OPENAI_API_KEY or DEEPSEEK_API_KEY) on the server');
     if (!this.drafts.allow(shopId)) throw new HttpError(429, `Up to ${DRAFTS_PER_HOUR} rule drafts an hour; try again later`);
     const { shop } = await this.deps.shops.get(shopId);
     return draftPolicy(this.deps.model, shopId, text, shop.currency).catch((err: unknown) => {
       throw fromLlmError(err, 'Could not draft that policy');
     });
-  }
-
-  /**
-   * The owner saves rules they drafted and read. It goes through Guard like any rule change (audited, and
-   * refused if the rules changed meanwhile), confirmed with their passkey once the shop has one.
-   */
-  async saveRules(shopId: string, policy: Policy, actor: Actor, proof?: PasskeyProof): Promise<GuardRecord> {
-    if (policy.ownerId !== shopId) throw new HttpError(403, 'These rules are for another shop');
-    if (actor.type === 'human' && this.deps.passkeys && (await this.deps.passkeys.required(shopId))) {
-      await this.deps.passkeys.confirm(shopId, `rules:${policyVersion(policy)}`, proof);
-    }
-    return this.submitPolicy(policy, `New rules: "${(policy.source ?? '').slice(0, 200)}"`, actor);
   }
 
   /** Rules the owner's own approvals support, and how close the others are. Recomputed every time. */
@@ -111,10 +139,11 @@ export class SaySo {
 
   /**
    * Ask to replace a shop's rules. Goes through Guard; from an agent it always waits for the owner.
-   * It carries the version of the rules it replaces, so it is refused if they change while it waits.
+   * It carries the version of the rules it replaces (by default the current ones), so it is refused if
+   * they change while it waits.
    */
-  async submitPolicy(policy: Policy, reason: string, actor: Actor): Promise<GuardRecord> {
-    const base = policyVersion(await this.policy(policy.ownerId));
+  async submitPolicy(policy: Policy, reason: string, actor: Actor, base?: string): Promise<GuardRecord> {
+    base ??= policyVersion(await this.policy(policy.ownerId));
     return this.deps.guard.submit({ kind: 'policy.update', actor, ownerId: policy.ownerId, reason, params: { policy, base } });
   }
 

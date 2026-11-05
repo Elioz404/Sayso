@@ -17,6 +17,8 @@ export interface OnboardingInput {
   shopName?: string;
   currency?: string;
   country?: string;
+  /** The owner's IANA time zone, from their browser. */
+  timeZone?: string;
 }
 
 export interface OnboardingResult {

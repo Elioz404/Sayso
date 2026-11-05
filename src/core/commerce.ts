@@ -153,11 +153,12 @@ export class Commerce {
   }
 
   /** The shop's half of a saved-PayPal purchase: capture through the shop's Guard, or release the hold. */
-  settleSaved(cartId: string, payerEmail?: string): Promise<CheckoutResult> {
+  settleSaved(cartId: string, payerEmail?: string, buyerRecordId?: string): Promise<CheckoutResult> {
     return this.lock.run(cartId, async () => {
       const stored = await this.stored(cartId);
       if (stored.cart.status === 'COMPLETED') return completed(stored);
       if (!stored.authorizationId || !stored.orderId) throw new HttpError(422, 'Nothing was authorized for this cart');
+      if (buyerRecordId) stored.buyerRecordId = buyerRecordId;
       const authorization = await getAuthorization(this.deps.paypal, stored.authorizationId);
       return this.settle(stored, authorization, payerEmail);
     });
@@ -198,6 +199,7 @@ export class Commerce {
       }
       stored.reserved = lines;
       stored.makeDays = makeDays;
+      stored.placedAt = new Date().toISOString();
     }
     stored.payerEmail = payerEmail?.toLowerCase();
     if (payerId) stored.payerId = payerId;
@@ -284,6 +286,8 @@ export class Commerce {
       holdVoided = voided.status === 'verified';
     }
     stored.released = { at: new Date().toISOString(), reason, holdVoided };
+    // The buyer was not charged, so the purchase stops counting toward their own daily limit.
+    if (stored.buyerRecordId) await this.deps.guard.markReleased(stored.buyerRecordId, actor.id, reason).catch(() => undefined);
     const reserved = stored.reserved;
     if (reserved?.length) {
       await this.deps.catalogs.modify(stored.shopId, (catalog) => {

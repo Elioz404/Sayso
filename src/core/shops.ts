@@ -8,10 +8,12 @@ import type { Access } from './access.ts';
 import { draftCatalog, type OnboardingInput } from './ai/onboarding.ts';
 import type { ChatModel } from './ai/llm.ts';
 import { findVariant, isLive, pricesToConfirm, type Catalog, type PriceSuggestion, type Product } from './catalog.ts';
+import { knownTimeZone } from './days.ts';
 import { fromLlmError, HttpError, notFound } from './errors.ts';
 import type { Links } from './links.ts';
 import type { MarketPrices } from './market.ts';
 import { checkPhotos, MAX_DRAFT_PHOTOS, mediaIdOf, photoFromDataUrl, type MediaStore, type StoredPhoto } from './media.ts';
+import { MAX_STOCK } from './limits.ts';
 import { formatMoney, parseAmount } from './money.ts';
 import type { PayPalClient } from './paypal/client.ts';
 import { createCatalogProduct } from './paypal/products.ts';
@@ -57,18 +59,36 @@ export interface DraftEdits {
     name?: string;
     description?: string;
     remove?: boolean;
-    variants?: { id: string; title?: string; price?: string; inventory?: number }[];
+    variants?: VariantEdit[];
   }[];
-  shipping?: { id: string; price?: string; freeAbove?: string | null }[];
+  shipping?: ShippingEdit[];
 }
 
-const MAX_STOCK = 100_000;
+/** One option of a product, as typed. Amounts as text, like "24.50". */
+export interface VariantEdit {
+  id: string;
+  title?: string;
+  price?: string;
+  inventory?: number;
+  /**
+   * The stock the editor saw. When given with `inventory`, the edit is refused if the stock moved since
+   * (a sale, say), so a sale is never written over.
+   */
+  expectedInventory?: number;
+}
+
+/** A shipping method's price and free-shipping threshold, as typed ("8.95"; empty or null: no threshold). */
+export interface ShippingEdit {
+  id: string;
+  price?: string;
+  freeAbove?: string | null;
+}
 
 /** What an owner (or their agent) may change on a product that is on sale. Amounts as text, like "24.50". */
 export interface ProductEdits {
   name?: string;
   description?: string;
-  variants?: { id: string; title?: string; price?: string; inventory?: number }[];
+  variants?: VariantEdit[];
   /** A new photo, as a data URL (owner only). */
   photo?: string;
 }
@@ -86,6 +106,8 @@ export class Shops {
     const { catalog, questions, photoOf } = await draftCatalog(this.deps.model, input).catch((err: unknown) => {
       throw fromLlmError(err, 'Could not read that catalog');
     });
+    const timeZone = knownTimeZone(input.timeZone);
+    if (timeZone) catalog.shop.timeZone = timeZone;
     await this.keepPhotos(catalog, input.images ?? [], photoOf);
     await this.suggestPrices(catalog);
     questions.push(...priceQuestions(catalog));
@@ -104,11 +126,6 @@ export class Shops {
     const draft = await this.get(shopId);
     if (isLive(draft)) throw new HttpError(409, 'This shop is already live; change it from your dashboard');
     const currency = draft.shop.currency;
-    const amount = (value: string, what: string, zeroOk = false) => {
-      const minor = parseAmount(value, currency);
-      if (minor === undefined || minor < 0 || (!zeroOk && minor === 0)) throw new HttpError(400, `${what}: write an amount like 24.50`);
-      return minor;
-    };
     const prices = new Map<string, number>();
     for (const p of edits.products ?? []) {
       const product = draft.products.find((x) => x.id === p.id);
@@ -116,25 +133,15 @@ export class Shops {
       for (const v of p.variants ?? []) {
         const variant = product.variants.find((x) => x.id === v.id);
         if (!variant) continue;
-        if (v.price !== undefined) prices.set(variant.id, amount(v.price, `${product.name} (${variant.title})`));
-        if (v.inventory !== undefined && (!Number.isSafeInteger(v.inventory) || v.inventory < 0 || v.inventory > MAX_STOCK)) {
-          throw new HttpError(400, `${product.name} (${variant.title}): stock is a whole number, 0 or more`);
-        }
+        const what = optionName(product, variant.title);
+        if (v.price !== undefined) prices.set(variant.id, amountOf(v.price, currency, what));
+        checkStock(v.inventory, what);
       }
     }
     const removed = new Set((edits.products ?? []).filter((p) => p.remove).map((p) => p.id));
     if (draft.products.every((p) => removed.has(p.id))) throw new HttpError(400, 'Keep at least one piece in your shop');
-    const shipping = new Map<string, { price?: number; freeAbove?: number | null }>();
-    for (const s of edits.shipping ?? []) {
-      const rule = draft.shop.shipping.find((x) => x.id === s.id);
-      if (!rule) continue;
-      shipping.set(rule.id, {
-        ...(s.price !== undefined ? { price: amount(s.price, `Shipping (${rule.name})`, true) } : {}),
-        ...(s.freeAbove !== undefined ? { freeAbove: s.freeAbove === null || s.freeAbove.trim() === '' ? null : amount(s.freeAbove, 'Free shipping above') } : {}),
-      });
-    }
-    const name = edits.shopName?.trim().replace(/\s+/g, ' ');
-    if (name !== undefined && (name.length < 2 || name.length > 60)) throw new HttpError(400, 'A shop name is 2 to 60 characters');
+    const shipping = shippingChanges(draft, edits.shipping ?? [], false);
+    const name = cleanName(edits.shopName, SHOP_NAME, 'A shop name');
 
     const updated = await this.deps.catalogs.modify(shopId, (catalog) => {
       if (isLive(catalog)) return false;
@@ -143,12 +150,12 @@ export class Shops {
       for (const p of edits.products ?? []) {
         const product = catalog.products.find((x) => x.id === p.id);
         if (!product) continue;
-        if (p.name?.trim()) product.name = p.name.trim().slice(0, 120);
-        if (p.description !== undefined) product.description = p.description.trim().slice(0, 2_000);
+        if (p.name?.trim()) product.name = p.name.trim().slice(0, PRODUCT_NAME.max);
+        if (p.description !== undefined) product.description = p.description.trim().slice(0, DESCRIPTION_MAX);
         for (const v of p.variants ?? []) {
           const variant = product.variants.find((x) => x.id === v.id);
           if (!variant) continue;
-          if (v.title?.trim()) variant.title = v.title.trim().slice(0, 80);
+          if (v.title?.trim()) variant.title = v.title.trim().slice(0, OPTION_NAME.max);
           if (prices.has(variant.id)) {
             variant.price = prices.get(variant.id)!;
             delete variant.priceToConfirm; // the owner gave this price, even if it is the suggestion
@@ -156,13 +163,7 @@ export class Shops {
           if (v.inventory !== undefined) variant.inventory = v.inventory;
         }
       }
-      for (const rule of catalog.shop.shipping) {
-        const change = shipping.get(rule.id);
-        if (!change) continue;
-        if (change.price !== undefined) rule.price = change.price;
-        if (change.freeAbove === null) delete rule.freeAbove;
-        else if (change.freeAbove !== undefined) rule.freeAbove = change.freeAbove;
-      }
+      applyShipping(catalog, shipping);
       return true;
     });
     if (!updated && isLive(await this.get(shopId))) throw new HttpError(409, 'This shop is already live; change it from your dashboard');
@@ -174,8 +175,7 @@ export class Shops {
    * links and MCP URLs already shared keep working.
    */
   async rename(shopId: string, name: string): Promise<Catalog> {
-    const clean = name.trim().replace(/\s+/g, ' ');
-    if (clean.length < 2 || clean.length > 60) throw new HttpError(400, 'A shop name is 2 to 60 characters');
+    const clean = cleanName(name, SHOP_NAME, 'A shop name')!;
     const renamed = await this.deps.catalogs.modify(shopId, (catalog) => {
       if (catalog.shop.name === clean) return false;
       catalog.shop.name = clean;
@@ -209,22 +209,15 @@ export class Shops {
     return { catalog: published ?? catalog, warnings };
   }
 
-  /** Set a variant's price (minor units) and/or stock. The owner's grid and the agent's tool both land here. */
-  async setVariant(shopId: string, variantId: string, patch: { price?: number; inventory?: number }): Promise<Catalog> {
-    if (patch.price !== undefined && (!Number.isSafeInteger(patch.price) || patch.price <= 0)) throw new HttpError(400, 'Price must be a positive amount');
-    if (patch.inventory !== undefined && (!Number.isSafeInteger(patch.inventory) || patch.inventory < 0)) throw new HttpError(400, 'Stock must be a whole number, 0 or more');
-    const updated = await this.deps.catalogs.modify(shopId, (catalog) => {
-      const found = findVariant(catalog, variantId);
-      if (!found) return false;
-      if (patch.price !== undefined) {
-        found.variant.price = patch.price;
-        delete found.variant.priceToConfirm; // setting a price, even the suggested one, is the owner's confirmation
-      }
-      if (patch.inventory !== undefined) found.variant.inventory = patch.inventory;
-      return true;
-    });
-    if (!updated) throw notFound(`Variant ${variantId}`);
-    return updated;
+  /**
+   * Set one option's price (as typed, "24.50") and/or stock. The owner's grid and the agent's tool both
+   * land here, and it is the same edit as `editProduct`, so they follow the same checks.
+   */
+  async setVariant(shopId: string, variantId: string, edit: Omit<VariantEdit, 'id' | 'title'>): Promise<Catalog> {
+    if (edit.price === undefined && edit.inventory === undefined) throw new HttpError(400, 'Send a price, a stock count or both');
+    const found = findVariant(await this.get(shopId), variantId);
+    if (!found) throw notFound(`Variant ${variantId}`);
+    return this.editProduct(shopId, found.product.id, { variants: [{ id: variantId, ...edit }] });
   }
 
   /**
@@ -236,22 +229,16 @@ export class Shops {
     const product = catalog.products.find((p) => p.id === productId);
     if (!product) throw notFound(`Product ${productId}`);
     const currency = catalog.shop.currency;
-    const name = edits.name?.trim().replace(/\s+/g, ' ');
-    if (name !== undefined && (name.length < 2 || name.length > 120)) throw new HttpError(400, 'A name is 2 to 120 characters');
-    if (edits.description !== undefined && edits.description.length > 2_000) throw new HttpError(400, 'A description is up to 2,000 characters');
+    const name = cleanName(edits.name, PRODUCT_NAME, 'A name');
+    if (edits.description !== undefined && edits.description.length > DESCRIPTION_MAX) throw new HttpError(400, 'A description is up to 2,000 characters');
     const prices = new Map<string, number>();
     for (const v of edits.variants ?? []) {
       const variant = product.variants.find((x) => x.id === v.id);
       if (!variant) throw notFound(`Option ${v.id}`);
-      if (v.price !== undefined) {
-        const minor = parseAmount(v.price, currency);
-        if (!minor || minor <= 0) throw new HttpError(400, `${product.name} (${variant.title}): write a price like 24.50`);
-        prices.set(variant.id, minor);
-      }
-      if (v.inventory !== undefined && (!Number.isSafeInteger(v.inventory) || v.inventory < 0 || v.inventory > MAX_STOCK)) {
-        throw new HttpError(400, `${product.name} (${variant.title}): stock is a whole number, 0 or more`);
-      }
-      if (v.title !== undefined && (v.title.trim().length < 1 || v.title.length > 80)) throw new HttpError(400, 'An option name is 1 to 80 characters');
+      const what = optionName(product, variant.title);
+      if (v.price !== undefined) prices.set(variant.id, amountOf(v.price, currency, what));
+      checkStock(v.inventory, what);
+      cleanName(v.title, OPTION_NAME, 'An option name');
     }
     let photo: StoredPhoto | undefined;
     if (edits.photo !== undefined) {
@@ -260,9 +247,15 @@ export class Shops {
       await this.deps.media.put(photo);
     }
     const old = product.imageUrl;
+    let moved: { title: string; inventory: number } | undefined;
     const updated = await this.deps.catalogs.modify(shopId, (c) => {
       const p = c.products.find((x) => x.id === productId);
       if (!p) return false;
+      for (const v of edits.variants ?? []) {
+        const variant = p.variants.find((x) => x.id === v.id);
+        if (variant && v.inventory !== undefined && v.expectedInventory !== undefined && variant.inventory !== v.expectedInventory) moved = variant;
+      }
+      if (moved) return false;
       if (name) p.name = name;
       if (edits.description !== undefined) p.description = edits.description.trim();
       if (photo) p.imageUrl = this.deps.links.media(photo.id);
@@ -278,6 +271,10 @@ export class Shops {
       }
       return true;
     });
+    if (moved) {
+      if (photo) await this.deps.media?.remove(shopId, [photo.id]);
+      throw new HttpError(409, `${optionName(product, moved.title)} now has ${moved.inventory} in stock (it changed while you were editing). Check it and save again.`);
+    }
     if (!updated) throw notFound(`Product ${productId}`);
     if (photo && old && !updated.products.some((p) => p.imageUrl === old)) await this.forgetPhotos(shopId, [{ ...product, imageUrl: old }]);
     return updated;
@@ -292,6 +289,8 @@ export class Shops {
       removed = c.products.find((p) => p.id === productId);
       if (!removed || c.products.length <= 1) return false;
       c.products = c.products.filter((p) => p.id !== productId);
+      // Orders keep pointing at these ids, so a later product never takes them.
+      c.retired = [...new Set([...(c.retired ?? []), removed.id, ...removed.variants.map((v) => v.id)])];
       return true;
     });
     if (!updated || !removed) throw notFound(`Product ${productId}`);
@@ -300,31 +299,11 @@ export class Shops {
   }
 
   /** Owner only. Shipping prices and the free-shipping threshold of each method, as amounts like "8.95". */
-  async editShipping(shopId: string, edits: { id: string; price?: string; freeAbove?: string | null }[]): Promise<Catalog> {
+  async editShipping(shopId: string, edits: ShippingEdit[]): Promise<Catalog> {
     const catalog = await this.get(shopId);
-    const currency = catalog.shop.currency;
-    const amount = (value: string, what: string, zeroOk: boolean) => {
-      const minor = parseAmount(value, currency);
-      if (minor === undefined || minor < 0 || (!zeroOk && minor === 0)) throw new HttpError(400, `${what}: write an amount like 8.95`);
-      return minor;
-    };
-    const changes = new Map<string, { price?: number; freeAbove?: number | null }>();
-    for (const e of edits) {
-      const rule = catalog.shop.shipping.find((s) => s.id === e.id);
-      if (!rule) throw notFound(`Shipping method ${e.id}`);
-      changes.set(rule.id, {
-        ...(e.price !== undefined ? { price: amount(e.price, rule.name, true) } : {}),
-        ...(e.freeAbove !== undefined ? { freeAbove: e.freeAbove === null || e.freeAbove.trim() === '' ? null : amount(e.freeAbove, 'Free shipping above', false) } : {}),
-      });
-    }
+    const changes = shippingChanges(catalog, edits, true);
     const updated = await this.deps.catalogs.modify(shopId, (c) => {
-      for (const rule of c.shop.shipping) {
-        const change = changes.get(rule.id);
-        if (!change) continue;
-        if (change.price !== undefined) rule.price = change.price;
-        if (change.freeAbove === null) delete rule.freeAbove;
-        else if (change.freeAbove !== undefined) rule.freeAbove = change.freeAbove;
-      }
+      applyShipping(c, changes);
       return true;
     });
     return updated ?? catalog;
@@ -350,7 +329,7 @@ export class Shops {
     let added: Product[] = [];
     let dropped: Product[] = [];
     await this.deps.catalogs.modify(shopId, (catalog) => {
-      const taken = new Set([...catalog.products, ...(catalog.drafts ?? [])].flatMap((p) => [p.id, ...p.variants.map((v) => v.id)]));
+      const taken = new Set([...[...catalog.products, ...(catalog.drafts ?? [])].flatMap((p) => [p.id, ...p.variants.map((v) => v.id)]), ...(catalog.retired ?? [])]);
       const unique = (id: string) => {
         let next = id;
         for (let n = 2; taken.has(next); n++) next = `${id}_${n}`;
@@ -377,7 +356,7 @@ export class Shops {
   async releaseDraft(shopId: string, productId: string, variants: { id: string; price: number; inventory: number }[], name?: string, description?: string): Promise<Catalog> {
     for (const v of variants) {
       if (!Number.isSafeInteger(v.price) || v.price <= 0) throw new HttpError(400, 'Every price must be a positive amount');
-      if (!Number.isSafeInteger(v.inventory) || v.inventory < 0) throw new HttpError(400, 'Stock must be a whole number, 0 or more');
+      checkStock(v.inventory, 'Stock');
     }
     const draft = (await this.get(shopId)).drafts?.find((p) => p.id === productId);
     if (!draft) throw notFound(`Draft ${productId}`);
@@ -392,8 +371,8 @@ export class Shops {
         variant.inventory = set.inventory;
         delete variant.priceToConfirm;
       }
-      if (name?.trim()) current.name = name.trim().slice(0, 120);
-      if (description !== undefined) current.description = description.trim().slice(0, 2_000);
+      if (name?.trim()) current.name = name.trim().slice(0, PRODUCT_NAME.max);
+      if (description !== undefined) current.description = description.trim().slice(0, DESCRIPTION_MAX);
       catalog.drafts = catalog.drafts!.filter((p) => p.id !== productId);
       catalog.products.push(current);
       return true;
@@ -505,4 +484,64 @@ function priceQuestions(catalog: Catalog): string[] {
       ? `${what}: similar items sell for ${money(suggested.low)} to ${money(suggested.high)} (${suggested.listings} listings), so Sayso put ${money(suggested.median)}. Keep it or set your own before publishing.`
       : `What does ${what} cost? Set a price before publishing.`;
   });
+}
+
+const SHOP_NAME = { min: 2, max: 60 };
+const PRODUCT_NAME = { min: 2, max: 120 };
+const OPTION_NAME = { min: 1, max: 80 };
+const DESCRIPTION_MAX = 2_000;
+
+/** "Mug (Sage)", or just "Mug" for a product with one unnamed option. */
+function optionName(product: Product, title: string): string {
+  return title === 'Default' ? product.name : `${product.name} (${title})`;
+}
+
+/** An amount typed by a person or a model ("24.50") in minor units; `zeroOk` where free is a real price. */
+function amountOf(value: string, currency: string, what: string, zeroOk = false): number {
+  const minor = parseAmount(value, currency);
+  if (minor === undefined || minor < 0 || (!zeroOk && minor === 0)) throw new HttpError(400, `${what}: write an amount like 24.50`);
+  return minor;
+}
+
+function checkStock(value: number | undefined, what: string): void {
+  if (value !== undefined && (!Number.isSafeInteger(value) || value < 0 || value > MAX_STOCK)) {
+    throw new HttpError(400, `${what}: stock is a whole number from 0 to ${MAX_STOCK.toLocaleString('en-US')}`);
+  }
+}
+
+/** A name with its spaces tidied, or undefined when none was given; refused outside its length. */
+function cleanName(value: string | undefined, length: { min: number; max: number }, what: string): string | undefined {
+  const clean = value?.trim().replace(/\s+/g, ' ');
+  if (clean !== undefined && (clean.length < length.min || clean.length > length.max)) throw new HttpError(400, `${what} is ${length.min} to ${length.max} characters`);
+  return clean;
+}
+
+type ShippingChange = { price?: number; freeAbove?: number | null };
+
+/** Shipping edits checked against the catalog, in minor units. `strict`: an unknown method is an error, not skipped. */
+function shippingChanges(catalog: Catalog, edits: readonly ShippingEdit[], strict: boolean): Map<string, ShippingChange> {
+  const currency = catalog.shop.currency;
+  const changes = new Map<string, ShippingChange>();
+  for (const e of edits) {
+    const rule = catalog.shop.shipping.find((x) => x.id === e.id);
+    if (!rule) {
+      if (strict) throw notFound(`Shipping method ${e.id}`);
+      continue;
+    }
+    changes.set(rule.id, {
+      ...(e.price !== undefined ? { price: amountOf(e.price, currency, `Shipping (${rule.name})`, true) } : {}),
+      ...(e.freeAbove !== undefined ? { freeAbove: e.freeAbove === null || e.freeAbove.trim() === '' ? null : amountOf(e.freeAbove, currency, 'Free shipping above') } : {}),
+    });
+  }
+  return changes;
+}
+
+function applyShipping(catalog: Catalog, changes: ReadonlyMap<string, ShippingChange>): void {
+  for (const rule of catalog.shop.shipping) {
+    const change = changes.get(rule.id);
+    if (!change) continue;
+    if (change.price !== undefined) rule.price = change.price;
+    if (change.freeAbove === null) delete rule.freeAbove;
+    else if (change.freeAbove !== undefined) rule.freeAbove = change.freeAbove;
+  }
 }

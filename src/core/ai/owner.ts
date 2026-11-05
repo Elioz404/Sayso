@@ -7,6 +7,9 @@
 // Kept apart from the buyers' shopping assistant on purpose: its own prompt, its own route under the
 // owner area, its own tools. A buyer's assistant never gets these tools, and this one never gets theirs.
 
+import type { Shop } from '../catalog.ts';
+import { dayIn } from '../days.ts';
+import { callTool, ToolError, toolsFor, type ToolContext } from '../tools/registry.ts';
 import type { ChatMessage, ChatModel } from './llm.ts';
 import { toolLoop, type LoopTool, type RunTool } from './tool-loop.ts';
 
@@ -38,6 +41,41 @@ export const OWNER_PROMPT = [
   'Never invent figures, orders, buyers or products. If a tool fails or the data is missing, say so.',
 ].join('\n');
 
+/**
+ * The owner's shop as an agent of it: the read-only seller tools, scoped to `shopId` (from the owner's
+ * session, never from the request), with buyers' details masked for the shared demo. Every call is checked
+ * against the allowlist again, whatever the model asks for.
+ */
+export function ownerAssistantTools(base: Pick<ToolContext, 'services' | 'allow'>, shopId: string, shared = false): { tools: LoopTool[]; run: RunTool } {
+  const ctx: ToolContext = {
+    ...base,
+    agent: { shopId, keyId: 'owner-assistant', label: 'Shop assistant', ...(shared ? { shared: true } : {}) },
+    channel: 'owner-assistant',
+  };
+  const tools = toolsFor(ctx).filter((t) => OWNER_ASSISTANT_TOOLS.has(t.name) && t.annotations?.readOnlyHint);
+  const run: RunTool = async (name, args) => {
+    if (!tools.some((t) => t.name === name)) return { isError: true, result: `${name} is not available here.` };
+    try {
+      return { isError: false, result: await callTool(name, args, ctx) };
+    } catch (err) {
+      if (err instanceof ToolError) return { isError: true, result: err.message };
+      throw err;
+    }
+  };
+  return { tools, run };
+}
+
+/** What the model is told about the shop besides its tools: its name, currency and today, in its own days. */
+export function ownerContext(shop: Pick<Shop, 'name' | 'currency' | 'timeZone'>, shared: boolean, now = new Date()): string {
+  const zone = shop.timeZone ?? 'UTC';
+  return [
+    `The shop: ${shop.name}. Currency: ${shop.currency}. Today is ${dayIn(now.getTime(), zone)} (${zone}).`,
+    shared ? "This is Sayso's shared demo shop, open to everyone trying Sayso; buyers' personal details are masked." : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
 /** Only the owner's and the assistant's words come back from the browser: never tool calls or results. */
 export function cleanOwnerHistory(raw: unknown): ChatMessage[] {
   if (!Array.isArray(raw)) return [];
@@ -54,8 +92,8 @@ export function cleanOwnerHistory(raw: unknown): ChatMessage[] {
 }
 
 /**
- * One owner turn. `tools` and `run` must already be limited to OWNER_ASSISTANT_TOOLS and the owner's shop
- * (the route does both); the loop refuses any other name. `context`: the shop's name, currency and today.
+ * One owner turn. `tools` and `run` come from ownerAssistantTools; the loop refuses any other name all the
+ * same. `context`: from ownerContext.
  */
 export async function ownerTurn(deps: { model: ChatModel; tools: LoopTool[]; run: RunTool }, history: ChatMessage[], text: string, context: string) {
   const tools = deps.tools.filter((t) => OWNER_ASSISTANT_TOOLS.has(t.name));

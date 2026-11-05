@@ -13,7 +13,7 @@ test('a product on sale is edited in one go, or not at all', async () => {
   const mug = (await s.catalogs.byShopId('shop_maya'))!.products.find((p) => p.variants.some((v) => v.id === 'var_mug_sage'))!;
 
   // A bad price anywhere changes nothing, not even the name.
-  await assert.rejects(s.shops.editProduct('shop_maya', mug.id, { name: 'Renamed', variants: [{ id: 'var_mug_sage', price: 'cheap' }] }), /write a price/);
+  await assert.rejects(s.shops.editProduct('shop_maya', mug.id, { name: 'Renamed', variants: [{ id: 'var_mug_sage', price: 'cheap' }] }), /write an amount/);
   assert.equal((await s.shops.get('shop_maya')).products.find((p) => p.id === mug.id)!.name, mug.name);
 
   await s.shops.editProduct('shop_maya', mug.id, { name: '  Sage   Mug ', description: 'Hand-thrown, 12 oz.', variants: [{ id: 'var_mug_sage', title: 'Sage', price: '36.50', inventory: 9 }] });
@@ -28,12 +28,33 @@ test('a product on sale is edited in one go, or not at all', async () => {
   await assert.rejects(s.shops.editProduct('shop_maya', 'prod_nope', { name: 'x y' }), /not found/i);
 });
 
-test('taking a product off sale, but never the last one', async () => {
+test('a stock edit never writes over a sale made while the owner was editing', async () => {
   const s = await stack();
-  const ids = (await s.shops.get('shop_maya')).products.map((p) => p.id);
+  const before = (await variant(s, 'var_mug_sage')).inventory;
+  await s.shops.setVariant('shop_maya', 'var_mug_sage', { inventory: before - 1 }); // a sale, say
+  await assert.rejects(s.shops.setVariant('shop_maya', 'var_mug_sage', { inventory: 20, expectedInventory: before }), (e: Error & { status?: number }) => e.status === 409 && /now has/.test(e.message));
+  assert.equal((await variant(s, 'var_mug_sage')).inventory, before - 1, 'nothing changed');
+  await s.shops.setVariant('shop_maya', 'var_mug_sage', { inventory: 20, expectedInventory: before - 1 });
+  assert.equal((await variant(s, 'var_mug_sage')).inventory, 20);
+
+  // The agent's tool is the same edit.
+  const stale = await s.call('update_variant', { variant_id: 'var_mug_sage', stock: 3, expected_stock: 7 }, s.owner);
+  assert.equal(stale.isError, true);
+  const ok = await s.call('update_variant', { variant_id: 'var_mug_sage', price: '30.00', stock: 3, expected_stock: 20 }, s.owner);
+  assert.equal(ok.isError, false, ok.text);
+  assert.deepEqual([(await variant(s, 'var_mug_sage')).price, (await variant(s, 'var_mug_sage')).inventory], [3_000, 3]);
+  assert.equal((await s.call('update_variant', { variant_id: 'var_mug_sage', price: '0' }, s.owner)).isError, true);
+});
+
+test('taking a product off sale, but never the last one; its ids are never given out again', async () => {
+  const s = await stack();
+  const products = (await s.shops.get('shop_maya')).products;
+  const ids = products.map((p) => p.id);
   for (const id of ids.slice(1)) await s.shops.removeProduct('shop_maya', id);
   assert.deepEqual((await s.shops.get('shop_maya')).products.map((p) => p.id), [ids[0]]);
   await assert.rejects(s.shops.removeProduct('shop_maya', ids[0]), /at least one product/);
+  const retired = (await s.shops.get('shop_maya')).retired ?? [];
+  for (const p of products.slice(1)) for (const id of [p.id, ...p.variants.map((v) => v.id)]) assert.ok(retired.includes(id), id);
 });
 
 test('shipping prices and free shipping above', async () => {

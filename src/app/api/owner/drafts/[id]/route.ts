@@ -4,6 +4,7 @@ import { HttpError } from '@/core/errors.ts';
 import { parseAmount } from '@/core/money.ts';
 import { ready } from '@/server/context.ts';
 import { handle, readBody, requireOwnShop } from '@/server/http.ts';
+import { MAX_STOCK } from '@/core/limits.ts';
 
 const RELEASE = {
   type: 'object',
@@ -16,7 +17,7 @@ const RELEASE = {
       maxItems: 10,
       items: {
         type: 'object',
-        properties: { id: { type: 'string', maxLength: 120 }, price: { type: 'string', maxLength: 20 }, inventory: { type: 'integer', minimum: 0, maximum: 100_000 } },
+        properties: { id: { type: 'string', maxLength: 120 }, price: { type: 'string', maxLength: 20 }, inventory: { type: 'integer', minimum: 0, maximum: MAX_STOCK } },
         required: ['id', 'price', 'inventory'],
       },
     },

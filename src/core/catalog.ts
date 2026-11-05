@@ -75,6 +75,8 @@ export interface Shop {
   currency: string;
   /** Country the seller ships from (ISO-3166 alpha-2). */
   country: string;
+  /** The owner's IANA time zone ("America/Los_Angeles"): where the shop's days start. Missing: UTC. */
+  timeZone?: string;
   shipping: ShippingRule[];
   /** Tax in basis points by destination country (or "US-CA" style region). Missing means 0. */
   taxBps: Record<string, number>;
@@ -113,6 +115,8 @@ export interface Catalog {
    * joins `products` only when the owner confirms its price and puts it on sale.
    */
   drafts?: Product[];
+  /** Ids of products (and their options) taken off sale. Old orders still point at them, so none is given out again. */
+  retired?: string[];
 }
 
 export function findVariant(catalog: Catalog, variantId: string): { product: Product; variant: Variant } | undefined {

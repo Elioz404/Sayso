@@ -15,6 +15,8 @@ export interface StoredCart {
   approvalUrl?: string;
   authorizationId?: string;
   captureId?: string;
+  /** When the buyer approved the payment and the order took its stock: the order was placed. */
+  placedAt?: string;
   /** When the capture went through: the buyer has paid. */
   paidAt?: string;
   /** Who paid, as PayPal reports it. Trust decisions use this, never the email typed into the cart. */
@@ -33,6 +35,8 @@ export interface StoredCart {
   tracking?: { carrier: string; number: string; addedAt: string };
   /** How the buyer paid: approved in PayPal (default), or with their saved PayPal within their limits. */
   paidWith?: 'saved-paypal';
+  /** With saved PayPal: the buyer's own Guard record that allowed it, released too if the order is. */
+  buyerRecordId?: string;
   /** The owner's own PayPal merchant id the PayPal order pays into. Missing: Sayso's account. */
   payee?: string;
   /** Who was shopping, as far as we know: e.g. "chatgpt", "mcp-client". */

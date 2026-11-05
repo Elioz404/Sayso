@@ -1,11 +1,11 @@
 // GET: every published shop. POST (onboarding): { text?, images?: data URLs, shop_name?, currency?,
-// country? } -> a draft shop and a first agent key, returned exactly once. Where owners sign in with
+// country?, time_zone? (the owner's, from their browser) } -> a draft shop and a first agent key, returned exactly once. Where owners sign in with
 // PayPal, this browser may then claim the shop (claim_url); otherwise the owner secret comes back, once.
 import { HttpError } from '@/core/errors.ts';
 import { draftView } from '@/core/catalog-view.ts';
 import { checkPhotos } from '@/core/media.ts';
 import { formatMoney } from '@/core/money.ts';
-import { MAX_ONBOARDING_PHOTOS } from '@/core/photo-limits.ts';
+import { MAX_ONBOARDING_PHOTOS } from '@/core/limits.ts';
 import { shopSummary } from '@/core/search.ts';
 import { ready } from '@/server/context.ts';
 import { handle, PHOTO_BODY_LIMIT, readBody } from '@/server/http.ts';
@@ -20,6 +20,7 @@ const ONBOARDING = {
     shop_name: { type: 'string', maxLength: 80 },
     currency: { type: 'string', pattern: '^[A-Za-z]{3}$' },
     country: { type: 'string', pattern: '^[A-Za-z]{2}$' },
+    time_zone: { type: 'string', maxLength: 64 },
     agent_label: { type: 'string', maxLength: 60 },
     // The web flow connects an agent later, from Agents; the CLI (sayso init) wants a key now.
     agent_key: { type: 'boolean' },
@@ -42,7 +43,7 @@ export async function POST(request: Request) {
 
     const { shops, links, paypalLogin, tours } = await ready();
     const result = await shops.onboard(
-      { text: body.text, images, shopName: body.shop_name, currency: body.currency, country: body.country },
+      { text: body.text, images, shopName: body.shop_name, currency: body.currency, country: body.country, timeZone: body.time_zone },
       body.agent_label || 'my agent',
       { ownerSecret: !paypalLogin, agentKey: body.agent_key !== false },
     );

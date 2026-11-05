@@ -1,7 +1,7 @@
 // New products from the owner's photos: POST { images: data URLs, note? } -> drafts that wait for the
 // owner's price before buyers see them.
 import { HttpError } from '@/core/errors.ts';
-import { MAX_DRAFT_PHOTOS } from '@/core/photo-limits.ts';
+import { MAX_DRAFT_PHOTOS } from '@/core/limits.ts';
 import { ready } from '@/server/context.ts';
 import { handle, PHOTO_BODY_LIMIT, readBody, requireOwnShop } from '@/server/http.ts';
 import { limitAi, photoReads } from '@/server/rate-limit.ts';

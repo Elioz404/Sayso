@@ -89,9 +89,15 @@ export type RecordStatus =
 /** Statuses where money moved or may move: they count toward limits and duplicate checks. */
 export const SPENDING_STATUSES: readonly RecordStatus[] = ['pending_approval', 'executing', 'executed', 'verified', 'unverified'];
 
+/** A record whose money was let go before it was charged: kept in the audit trail, no longer counted. */
+export function isReleased(record: GuardRecord): boolean {
+  return record.events.some((e) => e.type === 'released');
+}
+
 export interface AuditEvent {
   at: string; // ISO timestamp
-  type: 'proposed' | 'simulated' | 'decided' | 'approved' | 'rejected' | 'executed' | 'verified' | 'unverified' | 'failed';
+  /** `released`: what a verified record authorized was let go before it was charged (see Guard.markReleased). */
+  type: 'proposed' | 'simulated' | 'decided' | 'approved' | 'rejected' | 'executed' | 'verified' | 'unverified' | 'failed' | 'released';
   by: string;
   data?: Record<string, unknown>;
   /** sha256(prevHash + this event) — a tamper-evident chain per record. */

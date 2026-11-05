@@ -1,5 +1,8 @@
-// How many photos and how big, in one place for the server checks (src/core/media.ts) and the browser
-// screens that pick and downscale them. Plain constants, safe to import anywhere.
+// Limits shared by the server checks and the browser screens: how many photos and how big, how much
+// stock. Plain constants, safe to import anywhere.
+
+/** Stock of one option. */
+export const MAX_STOCK = 100_000;
 
 /** Photos per request: a new shop can bring a few more than a batch of new products. */
 export const MAX_ONBOARDING_PHOTOS = 8;

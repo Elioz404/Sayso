@@ -163,7 +163,7 @@ async function create(): Promise<Context> {
   const shops = new Shops({ catalogs, access, paypal, model, ownerModel, links: site, media, market });
   const sellers = new Sellers({ store: db ? new PgSellerStore(db) : new MemorySellerStore(), catalogs });
   const orders = new Orders({ carts, guard, paypal });
-  const saySo = new SaySo({ guard, policyFor, shops, model: ownerModel, passkeys });
+  const saySo = new SaySo({ guard, policyFor, shops, model: ownerModel, passkeys, access });
   const invoicing = new Invoicing({ guard, carts, shops, paypal });
   const production = new Production({ carts, catalogs, guard, invoicing, jobs });
   const wallets = new Wallets({ store: walletStore, policies, guard, commerce, paypal, links: site });

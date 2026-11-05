@@ -3,7 +3,7 @@
 // never decides whether money moves: these rules do.
 
 import { formatMoney, majorUnits } from '../money.ts';
-import { ACTIONS, SPENDING_STATUSES, type ActionKind, type Decision, type GuardRecord, type ProposedAction, type RuleHit, type Verdict } from './types.ts';
+import { ACTIONS, isReleased, SPENDING_STATUSES, type ActionKind, type Decision, type GuardRecord, type ProposedAction, type RuleHit, type Verdict } from './types.ts';
 
 type Escalation = Exclude<Verdict, 'allow'>;
 
@@ -47,7 +47,7 @@ export function historyWindowMs(policy: Policy): number {
 }
 
 export function countsAsSpent(record: GuardRecord): boolean {
-  return SPENDING_STATUSES.includes(record.status);
+  return SPENDING_STATUSES.includes(record.status) && !isReleased(record);
 }
 
 /**

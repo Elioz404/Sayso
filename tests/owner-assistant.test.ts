@@ -5,8 +5,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { ChatModel, ChatRequest, ToolCall } from '../src/core/ai/llm.ts';
-import { cleanOwnerHistory, OWNER_ASSISTANT_TOOLS, ownerTurn } from '../src/core/ai/owner.ts';
-import { callTool, TOOLS, ToolError, toolsFor, type ToolContext } from '../src/core/tools/registry.ts';
+import { cleanOwnerHistory, OWNER_ASSISTANT_TOOLS, ownerAssistantTools, ownerContext, ownerTurn } from '../src/core/ai/owner.ts';
+import { TOOLS, toolsFor } from '../src/core/tools/registry.ts';
 import { address, stack } from './stack.ts';
 
 type Stack = Awaited<ReturnType<typeof stack>>;
@@ -26,22 +26,15 @@ function scripted(replies: { content?: string; toolCalls?: ToolCall[] }[]) {
   return { model, seen };
 }
 
-/** What the route builds: the owner's shop as an agent of it, read-only tools, the allowlist checked again on every call. */
+/** What the route builds, with every call the model makes noted. */
 function ownerTools(s: Stack, shopId = 'shop_maya', demo = false) {
-  const ctx: ToolContext = { services: s.services, agent: { shopId, keyId: 'owner-assistant', label: 'Shop assistant', ...(demo ? { shared: true } : {}) }, channel: 'owner-assistant' };
-  const tools = toolsFor(ctx).filter((t) => OWNER_ASSISTANT_TOOLS.has(t.name) && t.annotations?.readOnlyHint);
+  const built = ownerAssistantTools({ services: s.services }, shopId, demo);
   const calls: string[] = [];
-  const run = async (name: string, args: unknown) => {
+  const run: typeof built.run = (name, args) => {
     calls.push(name);
-    if (!tools.some((t) => t.name === name)) return { isError: true, result: `${name} is not available here.` };
-    try {
-      return { isError: false, result: await callTool(name, args, ctx) };
-    } catch (err) {
-      if (err instanceof ToolError) return { isError: true, result: err.message };
-      throw err;
-    }
+    return built.run(name, args);
   };
-  return { tools, run, calls };
+  return { tools: built.tools, run, calls };
 }
 
 async function paidOrder(s: Stack) {
@@ -151,4 +144,11 @@ test("the shared demo never gets an invoice's PayPal page, which shows who it wa
   const masked = maskDeep({ invoices: [{ to: 'grace@example.com', payer_url: 'https://www.sandbox.paypal.com/invoice/p/#INV2-XXXX' }] });
   assert.equal(masked.invoices[0].payer_url, '•••');
   assert.equal(masked.invoices[0].to, 'g***@example.com');
+});
+
+test("the assistant is told today in the shop's own days", () => {
+  const evening = new Date('2026-11-05T03:00:00Z'); // still Nov 4 in Los Angeles
+  assert.match(ownerContext({ name: 'Maya', currency: 'USD', timeZone: 'America/Los_Angeles' }, false), /America\/Los_Angeles/);
+  assert.match(ownerContext({ name: 'Maya', currency: 'USD', timeZone: 'America/Los_Angeles' }, false, evening), /Today is 2026-11-04 /);
+  assert.match(ownerContext({ name: 'Maya', currency: 'USD' }, true, evening), /Today is 2026-11-05 \(UTC\).*shared demo/);
 });

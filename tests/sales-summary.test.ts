@@ -87,6 +87,20 @@ test('a finished period has no estimate; a custom range compares with the days b
   assert.equal(range.compared_with.refunds, '$10.00');
 });
 
+test("periods follow the shop's own days, daylight saving included", () => {
+  const LA = 'America/Los_Angeles';
+  const evening = new Date('2026-11-05T03:00:00Z'); // 7 pm on Nov 4 in Los Angeles (PST, UTC-8)
+  const today = resolvePeriod({ period: 'today' }, evening, LA).current;
+  assert.deepEqual([new Date(today.start).toISOString(), new Date(today.end).toISOString()], ['2026-11-04T08:00:00.000Z', '2026-11-05T08:00:00.000Z']);
+  // November began on summer time (UTC-7); clocks went back that night.
+  const month = resolvePeriod({ period: 'this_month' }, evening, LA).current;
+  assert.equal(new Date(month.start).toISOString(), '2026-11-01T07:00:00.000Z');
+  const summary = salesSummary({ placed: [order('late', '2026-11-05T02:00:00Z', '20.00')], refunds: [], currency: 'USD', query: { period: 'today' }, now: evening, zone: LA });
+  assert.deepEqual([summary.from, summary.to, summary.time_zone, summary.orders], ['2026-11-04', '2026-11-04', LA, 1]);
+  assert.equal(salesSummary({ placed: [order('late', '2026-11-05T02:00:00Z', '20.00')], refunds: [], currency: 'USD', query: { period: 'today' }, now: evening }).orders, 1, 'in UTC it is Nov 5 too');
+  assert.equal(salesSummary({ placed: [order('late', '2026-11-04T07:00:00Z', '20.00')], refunds: [], currency: 'USD', query: { period: 'today' }, now: evening, zone: LA }).orders, 0, '11 pm on Nov 3 in Los Angeles');
+});
+
 test('periods and the limits on custom ranges', () => {
   const week = resolvePeriod({ period: 'this_week' }, NOW); // Friday Nov 20 -> Monday Nov 16
   assert.equal(new Date(week.current.start).toISOString().slice(0, 10), '2026-11-16');

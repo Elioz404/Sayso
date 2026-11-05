@@ -54,7 +54,7 @@ test('this week against the week before: charged orders by when they were charge
     order('2026-10-01', 9000), // too old for either week
   ];
   // A $10 refund confirmed this week (on any order), and one from long ago.
-  const m = shopMetrics(orders, [refund(1000, '2026-11-03T10:00:00Z'), refund(500, '2026-09-01T10:00:00Z')], NOW);
+  const m = shopMetrics(orders, [refund(1000, '2026-11-03T10:00:00Z'), refund(500, '2026-09-01T10:00:00Z')], { now: NOW });
 
   assert.equal(m.daily.length, 14);
   assert.equal(m.daily[0].day, '2026-10-22');
@@ -79,7 +79,7 @@ test("the agents' week: money by outcome in minor units, a buyer's checkout and 
     asked(agent, 9900, 'verified', '2026-10-20T10:00:00Z', true), // two weeks ago
     asked(OPS_AGENT, 7000, 'verified', '2026-11-03T10:00:00Z'), // a buyer's own checkout: a sale, not a request
   ];
-  const m = shopMetrics([], records, NOW);
+  const m = shopMetrics([], records, { now: NOW });
   assert.deepEqual(m.sayso, { alone: 500, approved: 0, waiting: 6050, declined: 0, blocked: 25_000, requests: 3 });
 });
 
@@ -103,4 +103,13 @@ test('sold in the last 14 days counts placed orders only, per variant', () => {
     since,
   );
   assert.deepEqual(Object.fromEntries(sold), { var_a: 5, var_b: 1 });
+});
+
+test("the chart's days are the shop's own", () => {
+  const evening = new Date('2026-11-05T03:00:00Z'); // Nov 4 in Los Angeles
+  const late = order('2026-11-05', 2_000, { paidAt: '2026-11-05T02:00:00Z' });
+  const la = shopMetrics([late], [], { now: evening, zone: 'America/Los_Angeles' });
+  assert.equal(la.daily.at(-1)?.day, '2026-11-04');
+  assert.equal(la.daily.at(-1)?.revenue, 2_000);
+  assert.equal(shopMetrics([late], [], { now: evening }).daily.at(-1)?.day, '2026-11-05');
 });

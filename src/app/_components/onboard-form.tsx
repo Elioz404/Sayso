@@ -8,7 +8,7 @@
 
 import { useState } from 'react';
 import type { DraftView } from '@/core/catalog-view.ts';
-import { MAX_ONBOARDING_PHOTOS } from '@/core/photo-limits.ts';
+import { MAX_ONBOARDING_PHOTOS, MAX_STOCK } from '@/core/limits.ts';
 import { callApi } from './api.ts';
 import { CopyField } from './client-ui.tsx';
 import { PhotoDrop } from './photo-drop.tsx';
@@ -118,6 +118,7 @@ function Upload({ photos, setPhotos, onDraft }: { photos: string[]; setPhotos: (
           shop_name: form.get('name') || undefined,
           currency: String(form.get('currency') || '').toUpperCase() || undefined,
           country: String(form.get('country') || '').toUpperCase() || undefined,
+          time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           text: text.trim() || undefined,
         }).catch((err: Error) => setError(err.message));
       }}
@@ -294,7 +295,7 @@ function Review({ created, paypalLogin, onStartOver }: { created: Created; paypa
                           <span className="small soft sell-qty">{v.made_to_order_days} days to make</span>
                         ) : (
                           <label className="sell-qty">
-                            <input type="number" min={0} max={100000} value={edit.stock} onChange={(e) => setVariant(v.id, { stock: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} aria-label={`Stock of ${edit.title}`} />
+                            <input type="number" min={0} max={MAX_STOCK} value={edit.stock} onChange={(e) => setVariant(v.id, { stock: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} aria-label={`Stock of ${edit.title}`} />
                             <span>in stock</span>
                           </label>
                         )}

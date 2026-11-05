@@ -149,6 +149,34 @@ test('a purchase over the buyer\'s limits goes to PayPal approval and leaves not
   assert.deepEqual(s.approvals, [], 'the shop owner is not asked about a buyer\'s limits');
 });
 
+test("a purchase the shop never charged stops counting toward the buyer's daily limit", async () => {
+  const s = await stack();
+  await s.policies.put(askForCaptures);
+  const connect = await s.call('connect_paypal', { assistant_name: 'ChatGPT' }, s.buyer);
+  const walletId = new URL(connect.data.connect_url).pathname.split('/').pop()!;
+  await s.wallets.startConnect(walletId, { perOrder: '50', daily: '80' });
+  s.pp.approveSetup((await s.wallets.get(walletId)).setupTokenId!);
+  const { pairingCode } = await s.wallets.finishConnect(walletId);
+  await s.call('wallet_status', { wallet_key: connect.data.wallet_key, claim_code: pairingCode }, s.buyer);
+  const buy = async () => {
+    const cart = await s.call('create_cart', { items: [{ variant_id: 'var_mug_sage', quantity: 1 }], shipping_address: address }, s.buyer);
+    return (await s.call('pay_with_paypal', { cart_id: cart.data.cart_id, wallet_key: connect.data.wallet_key }, s.buyer)).data;
+  };
+
+  // $44.99 inside the limits; the shop's owner says no, so the hold is voided and nobody is charged.
+  const first = await buy();
+  assert.equal(first.status, 'authorized_waiting_for_shop', JSON.stringify(first));
+  const [capture] = await s.saySo.pending('shop_maya');
+  await s.saySo.decide('shop_maya', capture.id, 'reject', 'owner:shop_maya');
+  const [allowed] = await s.guard.list(walletId, { status: 'verified' });
+  assert.ok(allowed.events.some((e) => e.type === 'released'), "the buyer's record says so, in its audit chain");
+
+  // Another $44.99 today is still inside $80: the first one was never charged.
+  assert.equal((await buy()).status, 'authorized_waiting_for_shop');
+  // A third would be over it.
+  assert.equal((await buy()).status, 'needs_buyer_approval');
+});
+
 // ---- Guard on its own, with a fake executor ----
 
 function refundAction(amount: number): ProposedAction {
@@ -213,11 +241,11 @@ test('editing a price keeps stock a checkout just took, and bad edits change not
   const s = await stack();
   const { cartId, token } = await approvedCart(s, [{ variant_id: 'var_mug_sage', quantity: 2 }]);
   await pay(s, cartId, token);
-  await s.shops.setVariant('shop_maya', 'var_mug_sage', { price: 3_600 });
+  await s.shops.setVariant('shop_maya', 'var_mug_sage', { price: '36.00' });
   assert.equal(await stock(s, 'var_mug_sage'), 4, 'the sale is not undone by the edit');
 
   await assert.rejects(s.shops.setVariant('shop_maya', 'var_mug_sage', { inventory: -1 }), /whole number/);
-  await assert.rejects(s.shops.setVariant('shop_maya', 'var_nope', { price: 100 }), /not found/);
+  await assert.rejects(s.shops.setVariant('shop_maya', 'var_nope', { price: '1.00' }), /not found/);
   const row = variantRows((await s.catalogs.byShopId('shop_maya'))!).find((r) => r.id === 'var_mug_sage');
   assert.deepEqual([row?.price, row?.stock], [3_600, 4]);
   const vase = variantRows((await s.catalogs.byShopId('shop_maya'))!).find((r) => r.id === 'var_vase_custom');

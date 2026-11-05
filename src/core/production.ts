@@ -208,7 +208,7 @@ function orderJobs(cart: StoredCart, catalog: Catalog, refunds: readonly GuardRe
           state,
           amount: item.price ? formatMoney(toMinor(item.price) * item.quantity, currency) : '-',
           since: dayOf(cart.createdAt),
-          paidOn: state === 'paid' ? dayOf(cart.paidAt ?? cart.updatedAt) : undefined,
+          paidOn: state === 'paid' ? dayOf(cart.paidAt ?? cart.placedAt ?? cart.createdAt) : undefined,
         },
         makeDays,
         blockedBy: state === 'held' ? ('owner' as const) : undefined,
