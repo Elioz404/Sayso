@@ -126,15 +126,27 @@ export function ShopSwitcher({ shops, current }: { shops: ShopChoice[]; current:
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string>();
   const box = useRef<HTMLDivElement>(null);
+  // The menu floats over the page, placed under the button, so it never makes the rail scroll.
+  const [place, setPlace] = useState<{ top: number; left: number; width: number }>();
   useEffect(() => {
     if (!open) return;
+    const rect = box.current?.getBoundingClientRect();
+    if (rect) {
+      const width = Math.min(Math.max(rect.width, 260), window.innerWidth - 16);
+      setPlace({ top: rect.bottom + 6, left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)), width });
+    }
     const outside = (e: MouseEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
     const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    const away = () => setOpen(false);
     document.addEventListener('mousedown', outside);
     document.addEventListener('keydown', esc);
+    window.addEventListener('resize', away);
+    document.addEventListener('scroll', away, true);
     return () => {
       document.removeEventListener('mousedown', outside);
       document.removeEventListener('keydown', esc);
+      window.removeEventListener('resize', away);
+      document.removeEventListener('scroll', away, true);
     };
   }, [open]);
   const here = shops.find((s) => s.slug === current) ?? shops[0];
@@ -148,7 +160,7 @@ export function ShopSwitcher({ shops, current }: { shops: ShopChoice[]; current:
         </svg>
       </button>
       {open && (
-        <div className="shop-menu" role="menu" aria-label="Your shops">
+        <div className="shop-menu" role="menu" aria-label="Your shops" style={place ? { position: 'fixed', top: place.top, left: place.left, width: place.width } : undefined}>
           {shops.map((s) => (
             <button
               key={s.slug}

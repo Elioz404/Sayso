@@ -39,7 +39,7 @@ const KEEP = 40;
 const SEND = 24;
 
 /** `chat`: this shop and this kind of session (the shared demo and its owner never share a conversation). */
-export function OwnerAssistant({ chat }: { chat: string }) {
+export function OwnerAssistant({ chat, compact = false }: { chat: string; compact?: boolean }) {
   const key = `${OWNER_CHAT_PREFIX}${chat}`;
   const [lines, setLines] = useState<Line[]>([]);
   const [text, setText] = useState('');
@@ -101,7 +101,7 @@ export function OwnerAssistant({ chat }: { chat: string }) {
   }
 
   return (
-    <div className="assistant">
+    <div className={compact ? 'assistant assistant-compact' : 'assistant'}>
       <div className="assistant-log" ref={log} aria-live="polite">
         {lines.length === 0 ? (
           <div className="assistant-empty">
@@ -146,7 +146,7 @@ export function OwnerAssistant({ chat }: { chat: string }) {
           Send
         </button>
       </form>
-      {lines.length > 0 && (
+      {lines.length > 0 && !compact && (
         <button type="button" className="link-button small assistant-new" onClick={() => setLines([])} disabled={busy}>
           New chat
         </button>

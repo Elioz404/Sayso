@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { connection } from 'next/server';
 import { RailDrawer, RailNav, TabBar } from '@/app/_components/client-ui.tsx';
 import { LoginForm, ShopSwitcher, SignOut } from '@/app/_components/owner-actions.tsx';
+import { OwnerDock } from '@/app/_components/owner-dock.tsx';
 import { When } from '@/app/_components/time.tsx';
 import { Icon, Mark, Status } from '@/app/_components/ui.tsx';
 import { demoEnabled, paypalLoginEnabled } from '@/server/context.ts';
@@ -98,6 +99,7 @@ export default async function OwnerLayout({ children }: { children: React.ReactN
         </div>
       </main>
       <TabBar waiting={pending} />
+      <OwnerDock chat={`${shopId}:${view.demo ? 'demo' : 'owner'}`} shopName={shop.name} />
     </div>
   );
 }
