@@ -322,6 +322,11 @@ export default async function Docs() {
               never past anything you turned down. Your agent can ask for that rule too, but only you can say yes: agents earn autonomy, they never
               take it.
             </p>
+            <p>
+              Money can also move in PayPal itself: you refund from your PayPal account, PayPal reverses a payment, a hold runs out, a buyer opens a
+              dispute. PayPal tells Sayso through its webhooks; Sayso checks the signature, reads what changed back from PayPal and records it, so your
+              orders, sales and Activity always match PayPal. Disputes show on the order with their deadline, and you answer them in PayPal.
+            </p>
           </section>
 
           <section id="paypal" className="doc-section">

@@ -43,6 +43,9 @@ create index if not exists sayso_cart_payer on sayso_docs ((data->>'payerId')) w
 -- A shop's placed orders, newest first (orders, sales, production), without scanning abandoned carts.
 create index if not exists sayso_cart_placed on sayso_docs (owner, created_at desc) where kind = 'cart' and data->'cart'->>'status' = 'COMPLETED';
 create index if not exists sayso_cart_payer_email on sayso_docs (lower(data->>'payerEmail')) where kind = 'cart';
+-- PayPal's webhooks name a payment by its capture or authorization id; this finds its order.
+create index if not exists sayso_cart_capture on sayso_docs ((data->>'captureId')) where kind = 'cart';
+create index if not exists sayso_cart_authorization on sayso_docs ((data->>'authorizationId')) where kind = 'cart';
 `;
 
 type Kind = 'catalog' | 'cart' | 'guard' | 'owner' | 'key' | 'policy' | 'wallet' | 'wallet-key' | 'jobs' | 'tour' | 'seller' | 'media' | 'passkey' | 'push' | 'epoch' | 'once' | 'ai-spend';
@@ -167,6 +170,10 @@ export class PgCatalogStore implements CatalogStore {
     await this.db.remove('catalog', shopId);
     this.live = undefined;
   }
+  async byPayoutMerchant(merchantId: string) {
+    const [found] = await this.db.list<Catalog>('catalog', null, { where: ["data->'shop'->'payout'->>'merchantId' = $3"], params: [merchantId], limit: 1 });
+    return found;
+  }
   /** Row-locked, so two checkouts can't both take the last mug and an edit can't undo a sale. */
   modify(shopId: string, change: (catalog: Catalog) => boolean) {
     return this.db.transaction(async (client) => {
@@ -218,6 +225,10 @@ export class PgCartStore implements CartStore {
       limit,
     });
     return found.filter((c) => paidByPayer(c, payer));
+  }
+  async byPayment(paypalId: string) {
+    const [found] = await this.db.list<StoredCart>('cart', null, { where: ["(data->>'captureId' = $3 or data->>'authorizationId' = $3)"], params: [paypalId], limit: 1 });
+    return found;
   }
 }
 

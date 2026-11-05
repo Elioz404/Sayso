@@ -11,6 +11,7 @@ import { addTracking } from './paypal/orders.ts';
 import { resolvePeriod, salesSummary, type SalesQuery } from './sales-summary.ts';
 import type { CartStore, StoredCart } from './stores.ts';
 import type { Shop } from './catalog.ts';
+import { isOpenDispute } from './order-words.ts';
 
 export interface OrdersDeps {
   carts: CartStore;
@@ -39,6 +40,8 @@ export interface OrderSummary {
   refunded?: string;
   /** When it was charged (absent while held or cancelled). */
   paidAt?: string;
+  /** The buyer opened a dispute in PayPal: still open, or settled. */
+  dispute?: 'open' | 'resolved';
   createdAt: string;
 }
 
@@ -49,6 +52,8 @@ const MISSED = new Set(['INVENTORY_ISSUE', 'DATA_ERROR', 'SHIPPING_ERROR', 'BUSI
 const DEFAULT_LIMIT = 200;
 /** Orders read for a sales summary: a safety cap, the period itself decides what is read. */
 const SALES_LIMIT = 2_000;
+/** Buyers can open a PayPal dispute up to 180 days after paying. */
+const DISPUTE_WINDOW_DAYS = 180;
 /** Carts still with shoppers are only ever counted among the most recent ones. */
 const OPEN_SCAN = 200;
 const OPEN: readonly OrderStatus[] = ['awaiting_buyer', 'needs_info'];
@@ -112,6 +117,12 @@ export class Orders {
       reason: input.reason.trim().slice(0, 300) || 'Refund',
       params: { orderId: cart.orderId, cartId: cart.id },
     });
+  }
+
+  /** Orders with a dispute still open in PayPal: the owner answers each one there. */
+  async openDisputes(shopId: string): Promise<StoredCart[]> {
+    const since = new Date(Date.now() - DISPUTE_WINDOW_DAYS * 86_400_000);
+    return (await this.deps.carts.listPlaced(shopId, { limit: SALES_LIMIT, since, released: true })).filter((c) => c.disputes?.some(isOpenDispute));
   }
 
   /** Sales, refunds and net for a period, against the one before, computed from the orders themselves. */
@@ -182,6 +193,7 @@ export function summarize(c: StoredCart, records: readonly GuardRecord[] = []): 
     refundedMinor,
     refunded: refundedMinor ? formatMoney(refundedMinor, currency) : undefined,
     ...(c.captureId && c.paidAt ? { paidAt: c.paidAt } : {}),
+    ...(c.disputes?.length ? { dispute: c.disputes.some(isOpenDispute) ? ('open' as const) : ('resolved' as const) } : {}),
     createdAt: c.createdAt,
   };
 }

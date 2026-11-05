@@ -122,6 +122,8 @@ export interface OrderRow {
   image?: string;
   /** Carrier and tracking number once shipped. */
   shipping?: string;
+  /** The buyer has a dispute open in PayPal. */
+  dispute?: boolean;
 }
 
 /** The quick views over the orders: what usually needs doing first. */
@@ -130,6 +132,7 @@ const ORDER_VIEWS = [
   { id: 'ship', label: 'To ship', test: (r: OrderRow) => r.status === 'paid' && !r.shipping },
   { id: 'waiting', label: 'Waiting for you', test: (r: OrderRow) => r.status === 'awaiting_owner' },
   { id: 'refunded', label: 'Refunded', test: (r: OrderRow) => r.refundedMinor > 0 },
+  { id: 'dispute', label: 'Disputes', test: (r: OrderRow) => Boolean(r.dispute) },
 ] as const;
 
 function OrderCell({ data }: ICellRendererParams<OrderRow>) {
@@ -138,7 +141,10 @@ function OrderCell({ data }: ICellRendererParams<OrderRow>) {
       <Thumb src={data?.image} />
       <span className="cell-two">
         <b className="mono">{data?.number}</b>
-        <small>{data && formatWhen(data.placed)}</small>
+        <small>
+          {data && formatWhen(data.placed)}
+          {data?.dispute && <span className="status status-stop cell-flag">Dispute</span>}
+        </small>
       </span>
     </span>
   );
@@ -206,7 +212,8 @@ export function OrdersGrid({ rows }: { rows: OrderRow[] }) {
     <div className="stack" style={{ gap: 'var(--s3)' }}>
       <div className="row grid-toolbar">
         <div className="dock-tabs" role="group" aria-label="Show orders">
-          {ORDER_VIEWS.map((v) => {
+          {/* Disputes only when there are some: no empty filter for something that rarely happens. */}
+          {ORDER_VIEWS.filter((v) => v.id !== 'dispute' || rows.some(v.test)).map((v) => {
             const n = rows.filter(v.test).length;
             return (
               <button key={v.id} type="button" aria-pressed={viewId === v.id} className="dock-tab" onClick={() => setViewId(v.id)}>

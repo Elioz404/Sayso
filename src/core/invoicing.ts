@@ -119,6 +119,11 @@ export class Invoicing {
     return statuses.some((status) => PAID.has(status));
   }
 
+  /** PayPal said the invoice changed (a webhook): the next read asks PayPal instead of the cache. */
+  forget(invoiceId: string): void {
+    this.live.delete(invoiceId);
+  }
+
   /** The invoice as PayPal has it now (cached briefly), or undefined if it was never sent. */
   async liveStatus(record: GuardRecord): Promise<Invoice | undefined> {
     const id = typeof record.result?.invoice_id === 'string' ? record.result.invoice_id : undefined;

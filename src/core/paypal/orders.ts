@@ -20,18 +20,31 @@ export interface OrderAuthorization {
   status: string;
   amount: Money;
   expiration_time?: string;
+  /** The cart id Sayso put on the order. */
+  custom_id?: string;
 }
 
 export interface OrderCapture {
   id: string;
   status: string;
   amount: Money;
+  custom_id?: string;
 }
 
 export interface OrderRefund {
   id: string;
   status: string;
   amount: Money;
+  /** Set by Sayso on its own refunds (the Guard record's idempotency key). */
+  custom_id?: string;
+  /** "up" points at the capture it refunds. */
+  links?: PayPalLink[];
+}
+
+/** The capture a refund belongs to, from its "up" link. */
+export function refundedCaptureId(refund: Pick<OrderRefund, 'links'>): string | undefined {
+  const up = refund.links?.find((l) => l.rel === 'up')?.href;
+  return up?.match(/\/captures\/([^/?#]+)/)?.[1];
 }
 
 export interface Order {
@@ -132,8 +145,12 @@ export const voidAuthorization = (client: PayPalClient, authorizationId: string,
 
 export const getCapture = (client: PayPalClient, captureId: string) => client.get<OrderCapture>(`/v2/payments/captures/${captureId}`);
 
+/**
+ * Refund a capture. The refund carries `idempotencyKey` as its custom_id too, so when PayPal's webhook
+ * reports it later, Sayso knows the refund is its own and not one made in PayPal.
+ */
 export const refundCapture = (client: PayPalClient, captureId: string, amount: Money, note: string, idempotencyKey: string) =>
-  client.post<OrderRefund>(`/v2/payments/captures/${captureId}/refund`, { amount, note_to_payer: note.slice(0, 255) }, idempotencyKey);
+  client.post<OrderRefund>(`/v2/payments/captures/${captureId}/refund`, { amount, note_to_payer: note.slice(0, 255), custom_id: idempotencyKey.slice(0, 127) }, idempotencyKey);
 
 export const getRefund = (client: PayPalClient, refundId: string) => client.get<OrderRefund>(`/v2/payments/refunds/${refundId}`);
 

@@ -337,6 +337,7 @@ body:has(.owner) .site-header, body:has(.owner) .site-footer { display: none; }
 
 /* ---------- AG Grid cells ---------- */
 .cell-two { display: flex; flex-direction: column; justify-content: center; line-height: 1.3; height: 100%; }
+.cell-flag { margin-left: var(--s2); }
 .cell-two small { color: var(--ink-3); font-size: var(--t-xs); }
 .grid-clickable .ag-row { cursor: pointer; }
 /* Editable cells say so: a dotted underline at rest, a tinted field on hover. */
@@ -400,6 +401,7 @@ body:has(.owner) .site-header, body:has(.owner) .site-footer { display: none; }
 
 /* ---------- earned rules ---------- */
 .callout-say { background: var(--say-soft); }
+.callout-stop { background: var(--stop-soft); }
 .earned { display: flex; gap: var(--s5); align-items: center; justify-content: space-between; flex-wrap: wrap; border-color: var(--say); background: var(--say-soft); }
 .earned > .stack { flex: 1 1 320px; }
 .learning { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--s3); }

@@ -2,12 +2,12 @@
 // came from, and each order's money trail checked against PayPal and the audit chain. Plain rows, one
 // table per question, so a reporting tool can slice them; nothing here decides anything.
 
-import { OPS_AGENT } from './actors.ts';
+import { IN_PAYPAL, OPS_AGENT } from './actors.ts';
 import { ACTIONS, type ActionKind, type GuardRecord, type RecordStatus } from './guard/types.ts';
 import { formatMoney, toMoney } from './money.ts';
 import type { OrderSummary } from './orders.ts';
 
-export type Outcome = 'Allowed by your rules' | 'You said OK' | 'Waiting for you' | 'You said no' | 'Blocked by a rule' | 'Failed';
+export type Outcome = 'Allowed by your rules' | 'You said OK' | 'Waiting for you' | 'You said no' | 'Blocked by a rule' | 'Failed' | 'Done in PayPal';
 
 /** The colour an outcome shows in (the status-* classes). */
 export type Tone = 'ok' | 'hold' | 'stop' | 'quiet';
@@ -18,8 +18,9 @@ export const OUTCOME_TONE: Readonly<Record<Outcome, Tone>> = {
   'You said no': 'quiet',
   'Blocked by a rule': 'stop',
   Failed: 'stop',
+  'Done in PayPal': 'quiet',
 };
-export type Who = 'Your agents' | "Buyers' assistants" | 'You' | 'Sayso checkout';
+export type Who = 'Your agents' | "Buyers' assistants" | 'You' | 'Sayso checkout' | 'In PayPal';
 
 /** One request Guard handled, with one money column per outcome so totals by outcome are simple sums. */
 export interface DecisionRow {
@@ -81,7 +82,8 @@ export interface TrustReport {
 
 const SPENT: readonly RecordStatus[] = ['executing', 'executed', 'verified', 'unverified'];
 
-export function outcomeOf(record: Pick<GuardRecord, 'status' | 'events'>): Outcome {
+export function outcomeOf(record: Pick<GuardRecord, 'status' | 'events'> & { action?: Pick<GuardRecord['action'], 'actor'> }): Outcome {
+  if (record.action?.actor.id === IN_PAYPAL.id) return 'Done in PayPal';
   switch (record.status) {
     case 'pending_approval':
       return 'Waiting for you';
@@ -97,6 +99,7 @@ export function outcomeOf(record: Pick<GuardRecord, 'status' | 'events'>): Outco
 }
 
 export function whoOf({ actor }: Pick<GuardRecord['action'], 'actor'>): Who {
+  if (actor.id === IN_PAYPAL.id) return 'In PayPal';
   if (actor.type === 'human') return 'You';
   if (actor.id === OPS_AGENT.id) return 'Sayso checkout';
   return actor.side === 'buyer' ? "Buyers' assistants" : 'Your agents';
@@ -124,13 +127,19 @@ export function channelName(channel?: string): string {
 }
 
 const day = (iso: string) => iso.slice(0, 10);
+const NOT_ASKED: ReadonlySet<Who> = new Set<Who>(['Sayso checkout', 'In PayPal']);
+
+/** Whether a record is a request someone made of the owner's money (not a buyer's checkout, not PayPal's own doing). */
+export function wasAsked(record: Pick<GuardRecord, 'action'>): boolean {
+  return !NOT_ASKED.has(whoOf(record.action));
+}
 
 export function trustReport(records: (GuardRecord & { chainIntact: boolean })[], orders: OrderSummary[], currency: string, refundLimit?: number): TrustReport {
   // Amounts as numbers in the shop's currency (minor units stay internal), for sums and charts.
   const money = (minor = 0) => Number(toMoney(minor, currency).value);
-  // Captures after a buyer approved in PayPal are the buyer's own payment (they show under sales), not a
-  // request an agent made of the owner's money.
-  const asked = records.filter((r) => whoOf(r.action) !== 'Sayso checkout');
+  // Captures after a buyer approved in PayPal are the buyer's own payment (they show under sales), and
+  // what happened in PayPal itself shows in the money trail: neither is a request made of the owner's money.
+  const asked = records.filter(wasAsked);
   const decisions: DecisionRow[] = asked.map((r) => {
     const outcome = outcomeOf(r);
     const amount = r.action.kind === 'policy.update' ? 0 : money(r.action.amount ?? r.simulation?.amount);

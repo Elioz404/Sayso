@@ -33,6 +33,8 @@ export interface StoredCart {
   /** The order will not go through (capture rejected or failed): when, why, and whether PayPal confirmed the hold is gone. */
   released?: { at: string; reason: string; holdVoided: boolean };
   tracking?: { carrier: string; number: string; addedAt: string };
+  /** Disputes the buyer opened in PayPal about this order, as PayPal reports them (newest state). */
+  disputes?: OrderDispute[];
   /** How the buyer paid: approved in PayPal (default), or with their saved PayPal within their limits. */
   paidWith?: 'saved-paypal';
   /** With saved PayPal: the buyer's own Guard record that allowed it, released too if the order is. */
@@ -43,6 +45,23 @@ export interface StoredCart {
   channel?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/** A buyer's dispute in PayPal: the owner answers it in PayPal's Resolution Center, by `respondBy`. */
+export interface OrderDispute {
+  id: string;
+  /** PayPal's reason code, e.g. MERCHANDISE_OR_SERVICE_NOT_RECEIVED. */
+  reason: string;
+  /** PayPal's status, e.g. WAITING_FOR_SELLER_RESPONSE, RESOLVED. */
+  status: string;
+  /** Minor units, in the order's currency. */
+  amount: number;
+  currency: string;
+  openedAt: string;
+  updatedAt: string;
+  respondBy?: string;
+  /** How it ended, once resolved (PayPal's outcome code). */
+  outcome?: string;
 }
 
 export interface CartStore {
@@ -61,6 +80,8 @@ export interface CartStore {
   paidBy(shopId: string, email: string): Promise<boolean>;
   /** Orders a PayPal account paid for, in every shop, newest first: by its payer id, or by its email for orders saved without one. */
   listByPayer(payer: PayerRef, limit?: number): Promise<StoredCart[]>;
+  /** The order a PayPal payment belongs to: by its capture id or its authorization id. */
+  byPayment(paypalId: string): Promise<StoredCart | undefined>;
 }
 
 export interface PlacedQuery {
@@ -92,6 +113,8 @@ export interface CatalogStore {
   /** Every shop a seller owns, drafts and private ones too, newest first. */
   listBySeller(sellerId: string): Promise<Catalog[]>;
   remove(shopId: string): Promise<void>;
+  /** The shop whose sales are paid into this PayPal merchant account, if any. */
+  byPayoutMerchant(merchantId: string): Promise<Catalog | undefined>;
   /**
    * Change a catalog atomically: `change` edits it and returns true to save, false to leave it as it
    * was. Nothing else writes the catalog in between, so a checkout taking the last unit and the owner
@@ -132,6 +155,10 @@ export class MemoryCartStore implements CartStore {
       .slice(0, limit)
       .map((c) => structuredClone(c));
   }
+  async byPayment(paypalId: string) {
+    const c = [...this.carts.values()].find((x) => x.captureId === paypalId || x.authorizationId === paypalId);
+    return c && structuredClone(c);
+  }
   private ofShop(shopId: string): StoredCart[] {
     return [...this.carts.values()].filter((c) => c.shopId === shopId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
@@ -164,6 +191,10 @@ export class MemoryCatalogStore implements CatalogStore {
   }
   async remove(shopId: string) {
     this.catalogs.delete(shopId);
+  }
+  async byPayoutMerchant(merchantId: string) {
+    const c = [...this.catalogs.values()].find((x) => x.shop.payout?.merchantId === merchantId);
+    return c && structuredClone(c);
   }
   // Synchronous between reading and writing, which is all the atomicity one process needs.
   async modify(shopId: string, change: (catalog: Catalog) => boolean) {

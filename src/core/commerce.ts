@@ -9,7 +9,7 @@
 // Whatever happens, an order that will not ship releases its hold and gives its stock back (release()).
 
 import { randomBytes } from 'node:crypto';
-import { OPS_AGENT } from './actors.ts';
+import { IN_PAYPAL, OPS_AGENT } from './actors.ts';
 import { findVariant, isLive, returnStock, stockLines, takeStock, type Catalog } from './catalog.ts';
 import { isPayable, priceCart } from './cart/engine.ts';
 import { parseCartInput } from './cart/input.ts';
@@ -22,7 +22,7 @@ import { KeyedLock } from './lock.ts';
 import { toMinor, type Money } from './money.ts';
 import type { PayPalClient } from './paypal/client.ts';
 import { approvalUrl, authorizeOrder, createOrderFromCart, getAuthorization, getOrder, type OrderAuthorization } from './paypal/orders.ts';
-import type { CartStore, CatalogStore, StoredCart } from './stores.ts';
+import type { CartStore, CatalogStore, OrderDispute, StoredCart } from './stores.ts';
 
 export interface CommerceDeps {
   paypal: PayPalClient;
@@ -274,11 +274,39 @@ export class Commerce {
     });
   }
 
+  /**
+   * PayPal ended the hold of a placed order itself (voided in PayPal, or it ran out before the owner
+   * decided). Nothing can be charged any more, so the order is released and its stock given back; the
+   * hold is gone already, so nothing is voided. `status` is the authorization's, as read back from PayPal.
+   */
+  async holdEndedInPayPal(cartId: string, status: string): Promise<boolean> {
+    return this.lock.run(cartId, async () => {
+      const stored = await this.stored(cartId);
+      if (stored.released || stored.captureId || stored.cart.status !== 'COMPLETED') return false;
+      const why = status === 'EXPIRED' ? 'The PayPal hold ran out before the order was charged.' : 'The PayPal hold was voided in PayPal.';
+      await this.release(stored, why, IN_PAYPAL, { holdGone: true });
+      return true;
+    });
+  }
+
+  /** A buyer's dispute in PayPal, as PayPal has it now, kept on its order. Whether anything changed. */
+  async noteDispute(cartId: string, dispute: OrderDispute): Promise<boolean> {
+    return this.lock.run(cartId, async () => {
+      const stored = await this.stored(cartId);
+      const before = stored.disputes?.find((d) => d.id === dispute.id);
+      if (before && JSON.stringify(before) === JSON.stringify(dispute)) return false;
+      stored.disputes = [...(stored.disputes ?? []).filter((d) => d.id !== dispute.id), dispute];
+      stored.updatedAt = new Date().toISOString();
+      await this.deps.carts.put(stored);
+      return true;
+    });
+  }
+
   /** The order will not go through: release the PayPal hold and give back any stock it took. */
-  private async release(stored: StoredCart, reason: string, actor: Actor): Promise<void> {
+  private async release(stored: StoredCart, reason: string, actor: Actor, options: { holdGone?: boolean } = {}): Promise<void> {
     if (stored.released) return;
-    let holdVoided = false;
-    if (stored.authorizationId) {
+    let holdVoided = Boolean(options.holdGone);
+    if (stored.authorizationId && !options.holdGone) {
       const voided = await this.deps.guard.submit(
         { kind: 'payment.void', actor, ownerId: stored.shopId, resourceId: stored.authorizationId, reason: reason.slice(0, 300), params: { cartId: stored.id } },
         { idempotencyKey: `${stored.id}-void`, notify: false },

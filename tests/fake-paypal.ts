@@ -1,6 +1,6 @@
 // A tiny in-memory stand-in for the PayPal sandbox REST API, enough to run the merchant-cart flow
 // offline: OAuth, Orders v2 (create / get / authorize / track), Payments v2 (authorizations, captures,
-// refunds), Vault, Invoicing and Catalog Products. Like PayPal, it refuses impossible calls (capturing a
+// refunds, disputes), Vault, Invoicing and Catalog Products. Like PayPal, it refuses impossible calls (capturing a
 // voided hold, refunding more than was captured), and it records every PayPal-Request-Id to prove
 // idempotency. `failReads` makes GETs under a path fail, to test what happens when a read-back breaks.
 
@@ -27,6 +27,19 @@ export interface FakePayPal {
   onboard(trackingId: string, merchantId: string, grants?: { refund?: boolean; receivable?: boolean }): void;
   /** Log in with PayPal: a one-time code for this person, as PayPal's sign-in page would send back. */
   signInCode(person: { user_id: string; payer_id?: string; email?: string; name?: string; verified?: boolean }): string;
+  /** What happens in PayPal without Sayso. Each returns the resource a webhook would point at. */
+  inPayPal: {
+    /** The owner refunds from their PayPal account (no custom_id: not Sayso's). */
+    refund(captureId: string, amount?: Json): Json;
+    /** PayPal reverses the whole payment (a chargeback). */
+    reverse(captureId: string): Json;
+    /** The hold is voided in PayPal, or runs out (`EXPIRED`). */
+    void(authorizationId: string, status?: 'VOIDED' | 'EXPIRED'): Json;
+    /** The buyer opens a dispute about a capture. */
+    dispute(captureId: string, reason?: string): Json;
+    /** The seller takes back the permissions they gave Sayso. */
+    revoke(merchantId: string): void;
+  };
 }
 
 export function fakePayPal(): FakePayPal {
@@ -34,6 +47,7 @@ export function fakePayPal(): FakePayPal {
   const authorizations = new Map<string, Json>();
   const captures = new Map<string, Json>();
   const refunds = new Map<string, Json>();
+  const disputes = new Map<string, Json>();
   const captureOrder = new Map<string, Json>();
   const authOrder = new Map<string, Json>();
   const catalogProducts: Json[] = [];
@@ -59,6 +73,24 @@ export function fakePayPal(): FakePayPal {
   const notFound = () => json({ name: 'RESOURCE_NOT_FOUND' }, 404);
   const refuse = (issue: string) => json({ name: 'UNPROCESSABLE_ENTITY', details: [{ issue }] }, 422);
   const minor = (m: Json) => Math.round(Number(m.value) * 100);
+
+  const withoutPayee = ({ payee: _payee, ...shown }: Json) => shown;
+  const payeeOf = (captureId: string) => captureOrder.get(captureId)?.purchase_units[0].payee?.merchant_id;
+  /** A refund of `captureId`, as PayPal keeps it: linked up to its capture, with its owner's merchant id. */
+  const newRefund = (captureId: string, amount: Json, customId?: string) => {
+    const refund = {
+      id: id('REF'),
+      status: 'COMPLETED',
+      amount,
+      ...(customId ? { custom_id: customId } : {}),
+      links: [{ rel: 'up', href: `https://api-m.sandbox.paypal.com/v2/payments/captures/${captureId}`, method: 'GET' }],
+      payee: payeeOf(captureId),
+    };
+    refunds.set(refund.id, refund);
+    const payments = captureOrder.get(captureId)?.purchase_units[0].payments;
+    if (payments) payments.refunds = [...(payments.refunds ?? []), refund];
+    return refund;
+  };
 
   const handler = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
@@ -110,13 +142,13 @@ export function fakePayPal(): FakePayPal {
       if (!token) return json({ name: 'UNPROCESSABLE_ENTITY', details: [{ issue: 'INVALID_VAULT_ID' }] }, 422);
       const orderId = id('ORDER');
       const amount = { currency_code: body.purchase_units[0].amount.currency_code, value: body.purchase_units[0].amount.value };
-      const auth = { id: id('AUTH'), status: 'CREATED', amount, expiration_time: new Date(Date.now() + 29 * 86_400_000).toISOString() };
+      const auth = { id: id('AUTH'), status: 'CREATED', amount, custom_id: body.purchase_units[0].custom_id, expiration_time: new Date(Date.now() + 29 * 86_400_000).toISOString() };
       const order = {
         id: orderId,
         intent: body.intent,
         status: 'COMPLETED',
         payer: { payer_id: 'BUYER123', email_address: token.payment_source.paypal.email_address },
-        purchase_units: [{ reference_id: body.purchase_units[0].reference_id, amount, payee: body.purchase_units[0].payee, payments: { authorizations: [auth] } }],
+        purchase_units: [{ reference_id: body.purchase_units[0].reference_id, custom_id: body.purchase_units[0].custom_id, amount, payee: body.purchase_units[0].payee, payments: { authorizations: [auth] } }],
         links: [],
       };
       orders.set(orderId, order);
@@ -167,7 +199,7 @@ export function fakePayPal(): FakePayPal {
         id: orderId,
         intent: body.intent,
         status: 'PAYER_ACTION_REQUIRED',
-        purchase_units: body.purchase_units.map((u: Json) => ({ reference_id: u.reference_id, payee: u.payee, amount: { currency_code: u.amount.currency_code, value: u.amount.value } })),
+        purchase_units: body.purchase_units.map((u: Json) => ({ reference_id: u.reference_id, custom_id: u.custom_id, payee: u.payee, amount: { currency_code: u.amount.currency_code, value: u.amount.value } })),
         links: [{ rel: 'payer-action', href: `https://www.sandbox.paypal.com/checkoutnow?token=${orderId}` }],
       };
       orders.set(orderId, order);
@@ -181,7 +213,7 @@ export function fakePayPal(): FakePayPal {
       const order = orders.get(m[1]);
       if (!order) return notFound();
       if (order.status !== 'APPROVED') return refuse('ORDER_NOT_APPROVED');
-      const auth = { id: id('AUTH'), status: 'CREATED', amount: order.purchase_units[0].amount, expiration_time: new Date(Date.now() + 29 * 86_400_000).toISOString() };
+      const auth = { id: id('AUTH'), status: 'CREATED', amount: order.purchase_units[0].amount, custom_id: order.purchase_units[0].custom_id, expiration_time: new Date(Date.now() + 29 * 86_400_000).toISOString() };
       authorizations.set(auth.id, auth);
       authOrder.set(auth.id, order);
       order.status = 'COMPLETED';
@@ -196,7 +228,7 @@ export function fakePayPal(): FakePayPal {
       const amount = body.amount ?? auth.amount;
       if (minor(amount) > minor(auth.amount)) return refuse('CAPTURE_AMOUNT_EXCEEDS_AUTHORIZED');
       auth.status = 'CAPTURED';
-      const capture = { id: id('CAP'), status: 'COMPLETED', amount };
+      const capture = { id: id('CAP'), status: 'COMPLETED', amount, custom_id: auth.custom_id };
       captures.set(capture.id, capture);
       const order = authOrder.get(auth.id);
       if (order) {
@@ -223,17 +255,20 @@ export function fakePayPal(): FakePayPal {
       const refunded = (payments?.refunds ?? []).reduce((sum: number, r: Json) => sum + minor(r.amount), 0);
       const amount = body.amount ?? capture.amount;
       if (minor(amount) > minor(capture.amount) - refunded) return refuse('REFUND_AMOUNT_EXCEEDED');
-      const refund = { id: id('REF'), status: 'COMPLETED', amount, payee };
-      refunds.set(refund.id, refund);
-      if (payments) payments.refunds = [...(payments.refunds ?? []), refund];
-      return remember(refund);
+      const refund = newRefund(m[1], amount, body.custom_id);
+      return remember(withoutPayee(refund));
     }
     if (method === 'GET' && (m = /^\/v2\/payments\/refunds\/([^/]+)$/.exec(path))) {
       const refund = refunds.get(m[1]);
       if (!refund) return notFound();
       if (refund.payee && actingFor(headers) !== refund.payee) return json({ name: 'NOT_AUTHORIZED', details: [{ issue: 'PERMISSION_DENIED' }] }, 403);
-      const { payee: _payee, ...shown } = refund;
-      return json(shown);
+      return json(withoutPayee(refund));
+    }
+    if (method === 'GET' && (m = /^\/v1\/customer\/disputes\/([^/]+)$/.exec(path))) {
+      const dispute = disputes.get(m[1]);
+      if (!dispute) return notFound();
+      if (dispute.payee && actingFor(headers) !== dispute.payee) return json({ name: 'NOT_AUTHORIZED', details: [{ issue: 'PERMISSION_DENIED' }] }, 403);
+      return json(withoutPayee(dispute));
     }
     if (method === 'POST' && path === '/v2/customer/partner-referrals') {
       return remember({ links: [{ rel: 'action_url', href: `https://www.sandbox.paypal.com/bizsignup/partner/entry?referralToken=${body.tracking_id}` }] }, 201);
@@ -260,6 +295,40 @@ export function fakePayPal(): FakePayPal {
   };
 
   return {
+    inPayPal: {
+      refund(captureId, amount) {
+        return withoutPayee(newRefund(captureId, amount ?? captures.get(captureId)!.amount));
+      },
+      reverse(captureId) {
+        const capture = captures.get(captureId)!;
+        capture.status = 'REVERSED';
+        return capture;
+      },
+      void(authorizationId, status = 'VOIDED') {
+        const auth = authorizations.get(authorizationId)!;
+        auth.status = status;
+        return auth;
+      },
+      dispute(captureId, reason = 'MERCHANDISE_OR_SERVICE_NOT_RECEIVED') {
+        const capture = captures.get(captureId)!;
+        const dispute = {
+          dispute_id: id('PP-D-'),
+          reason,
+          status: 'WAITING_FOR_SELLER_RESPONSE',
+          dispute_amount: capture.amount,
+          disputed_transactions: [{ seller_transaction_id: captureId }],
+          create_time: new Date().toISOString(),
+          update_time: new Date().toISOString(),
+          seller_response_due_date: new Date(Date.now() + 10 * 86_400_000).toISOString(),
+          payee: payeeOf(captureId),
+        };
+        disputes.set(dispute.dispute_id, dispute);
+        return withoutPayee(dispute);
+      },
+      revoke(merchantId) {
+        for (const [tracking, integration] of onboarded) if (integration.merchant_id === merchantId) onboarded.delete(tracking);
+      },
+    },
     onboard(trackingId, merchantId, grants = {}) {
       const scopes = ['https://uri.paypal.com/services/payments/payment/authcapture', ...(grants.refund === false ? [] : ['https://uri.paypal.com/services/payments/refund'])];
       onboarded.set(trackingId, {

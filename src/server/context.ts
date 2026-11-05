@@ -40,6 +40,8 @@ import { notifyOwner } from './notify.ts';
 import { Db, PgAccessStore, PgCartStore, PgCatalogStore, PgGuardStore, PgJobStore, PgMediaStore, PgPasskeyStore, PgPolicyStore, PgPushStore, PgSellerStore, PgSpendStore, PgTourStore, PgWalletStore } from './pg-stores.ts';
 import { vapidFrom, webPushSender } from './push-sender.ts';
 import { showDevSecret } from './log.ts';
+import { PayPalEvents } from '@/core/paypal-events.ts';
+import { WebhookVerifier } from '@/core/paypal/webhooks.ts';
 
 export interface Context {
   carts: CartStore;
@@ -76,6 +78,10 @@ export interface Context {
   push: Push;
   /** What browsers subscribe to push with (the VAPID public key). */
   pushKey: string;
+  /** What PayPal's webhooks report, kept in step with Sayso's state. */
+  paypalEvents: PayPalEvents;
+  /** Checks a webhook delivery is PayPal's; undefined until PAYPAL_WEBHOOK_ID is set. */
+  webhooks?: WebhookVerifier;
 }
 
 const globalForSayso = globalThis as unknown as { sayso?: Promise<Context> };
@@ -187,9 +193,23 @@ async function create(): Promise<Context> {
         })
       : undefined;
 
+  const paypalEvents = new PayPalEvents({ paypal, carts, guard, commerce, invoicing, payouts });
+  const webhooks = webhookVerifier();
+
   await seedDemo(catalogs, policies, access);
   const paypalLogin = paypalLoginEnabled();
-  return { carts, catalogs, access, model, ownerModel, guard, commerce, shops, media, sellers, payouts, paypal, paypalLogin, orders, saySo, invoicing, production, tours, housekeeping, wallets, market, tools, links: site, passkeys, push, pushKey: vapid.publicKey };
+  return { carts, catalogs, access, model, ownerModel, guard, commerce, shops, media, sellers, payouts, paypal, paypalLogin, orders, saySo, invoicing, production, tours, housekeeping, wallets, market, tools, links: site, passkeys, push, pushKey: vapid.publicKey, paypalEvents, webhooks };
+}
+
+/**
+ * PayPal webhooks are on once PAYPAL_WEBHOOK_ID (from the webhook created on the PayPal app) is set.
+ * PAYPAL_WEBHOOK_SIMULATOR=true also accepts PayPal's Webhooks Simulator, on the sandbox only.
+ */
+function webhookVerifier(): WebhookVerifier | undefined {
+  const webhookId = process.env.PAYPAL_WEBHOOK_ID?.trim();
+  if (!webhookId) return undefined;
+  const sandbox = process.env.PAYPAL_ENV !== 'live';
+  return new WebhookVerifier({ webhookId, acceptSimulator: sandbox && process.env.PAYPAL_WEBHOOK_SIMULATOR === 'true' });
 }
 
 function sessionSecret(): string {

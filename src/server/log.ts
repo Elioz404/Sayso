@@ -16,3 +16,8 @@ export function showDevSecret(what: string, secret: string, envName: string): vo
   if (process.env.NODE_ENV === 'production') console.warn(`[sayso] ${what} was generated; set ${envName} to know it`);
   else console.log(`[sayso] ${what}: ${secret}`);
 }
+
+/** One line about something that happened, with ids only (never payer details). */
+export function logInfo(scope: string, line: string): void {
+  console.log(`[${scope}] ${line}`);
+}

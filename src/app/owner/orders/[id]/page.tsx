@@ -14,6 +14,8 @@ import { formatMoney, toMinor } from '@/core/money.ts';
 import { trackingLink } from '@/core/shipping.ts';
 import { channelName } from '@/core/trust-report.ts';
 import { ownerView } from '@/server/owner.ts';
+import { disputeReason, isOpenDispute } from '@/core/order-words.ts';
+import { resolutionCenterUrl } from '@/core/paypal/disputes.ts';
 
 export const metadata: Metadata = { title: 'Order' };
 
@@ -96,6 +98,33 @@ export default async function OrderDetail({ params }: { params: Promise<{ id: st
             Review
           </a>
         </section>
+      )}
+      {/* A dispute is answered in PayPal, where its evidence and deadline live; Sayso keeps it in view. */}
+      {(cart.disputes ?? []).map((d) =>
+        isOpenDispute(d) ? (
+          <section key={d.id} className="callout callout-stop" aria-label="Dispute">
+            <span className="small">
+              <b>
+                {disputeReason(d.reason)}: a {formatMoney(d.amount, d.currency)} dispute in PayPal.
+              </b>{' '}
+              {d.respondBy ? (
+                <>
+                  Answer it in PayPal by <When iso={d.respondBy} />.
+                </>
+              ) : (
+                'PayPal is looking into it.'
+              )}
+            </span>
+            <a className="btn btn-small" href={resolutionCenterUrl(view.paypal.webBase)} target="_blank" rel="noopener noreferrer">
+              Open in PayPal ↗
+            </a>
+          </section>
+        ) : (
+          <p key={d.id} className="small soft">
+            A dispute about this order ({disputeReason(d.reason).replace(/^The buyer /, 'the buyer ')}) was settled in PayPal
+            {d.outcome ? ` (${d.outcome.replace(/_/g, ' ').toLowerCase()})` : ''}.
+          </p>
+        ),
       )}
       {toShip && (
         <section className="panel order-ship" aria-labelledby="ship">

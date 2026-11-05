@@ -9,6 +9,7 @@ import { money } from './args.ts';
 import { actor, shop, ToolError, type Tool } from './context.ts';
 import { catalogView, priceReferenceView, sayso } from './views.ts';
 import { MAX_STOCK } from '../limits.ts';
+import { disputeReason } from '../order-words.ts';
 
 /** A job's payment as the owner's agent should say it. */
 const PAYMENT_FOR_OWNER: Record<PaymentState, (j: ProductionJob) => string> = {
@@ -215,13 +216,30 @@ export const sellerTools: Tool[] = [
   {
     name: 'get_order',
     title: 'Order details',
-    description: 'One order with its items, payment state, tracking and every say-so record attached to it.',
+    description: "One order with its items, payment state, tracking, any buyer dispute in PayPal and every say-so record attached to it (including what was done in PayPal itself).",
     side: 'seller',
     annotations: { readOnlyHint: true },
     inputSchema: { type: 'object', properties: { order_id: { type: 'string', maxLength: 60 } }, required: ['order_id'] },
     async run(input, ctx) {
       const { order, cart, records } = await ctx.services.orders.get(shop(ctx), input.order_id);
-      return { ...order, totals: cart.cart.totals, ship_to: cart.cart.shipping_address, say_so: records.map((r) => sayso(r, ctx)) };
+      return {
+        ...order,
+        totals: cart.cart.totals,
+        ship_to: cart.cart.shipping_address,
+        ...(cart.disputes?.length
+          ? {
+              disputes: cart.disputes.map((d) => ({
+                what: disputeReason(d.reason),
+                status: d.status,
+                amount: formatMoney(d.amount, d.currency),
+                ...(d.respondBy ? { answer_by: d.respondBy } : {}),
+                ...(d.outcome ? { outcome: d.outcome } : {}),
+                answered_in: "PayPal's Resolution Center, by the owner",
+              })),
+            }
+          : {}),
+        say_so: records.map((r) => sayso(r, ctx)),
+      };
     },
   },
   {

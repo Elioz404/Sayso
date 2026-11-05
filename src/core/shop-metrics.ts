@@ -7,7 +7,7 @@ import { addDays, dayIn, startOfDay } from './days.ts';
 import type { GuardRecord } from './guard/types.ts';
 import type { OrderSummary } from './orders.ts';
 import { confirmedRefunds } from './sales-summary.ts';
-import { outcomeOf, whoOf } from './trust-report.ts';
+import { outcomeOf, wasAsked } from './trust-report.ts';
 
 export interface Kpi {
   now: number;
@@ -60,8 +60,8 @@ export function shopMetrics(orders: readonly OrderSummary[], records: readonly G
   // Running averages and rates read better as a line than day-by-day zeros.
   const running = (f: (rows: typeof daily) => number) => recent.map((_, i) => f(daily.slice(i + 1, days + i + 1)));
 
-  // What agents asked of the owner's money this week (a buyer's own checkout is a sale, not a request).
-  const week = records.filter((r) => Date.parse(r.createdAt) >= start && whoOf(r.action) !== 'Sayso checkout');
+  // What agents asked of the owner's money this week (a buyer's own checkout is a sale, PayPal's own doing a fact, not requests).
+  const week = records.filter((r) => Date.parse(r.createdAt) >= start && wasAsked(r));
   const by = (outcome: ReturnType<typeof outcomeOf>) =>
     week.filter((r) => outcomeOf(r) === outcome && r.action.kind !== 'policy.update').reduce((n, r) => n + (r.action.amount ?? r.simulation?.amount ?? 0), 0);
   return {

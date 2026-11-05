@@ -1,6 +1,7 @@
 // How core objects read to an agent: plain JSON with formatted amounts, a status in words, and what to
 // do next. Buyer views never carry internal ids or anything about other buyers.
 
+import { IN_PAYPAL } from '../actors.ts';
 import { actionAmount } from '../guard/describe.ts';
 import type { Catalog } from '../catalog.ts';
 import type { Links } from '../links.ts';
@@ -115,7 +116,12 @@ export function refundRequestForBuyer(record: GuardRecord) {
 export function sayso(record: GuardRecord, ctx: ToolContext) {
   const next: Record<RecordStatus, string> = {
     pending_approval: `Waiting for the owner. Tell them what you asked for and why; they approve or reject at ${ctx.services.links.approve(record.id)}. You cannot approve it. Check back with get_say_so.`,
-    verified: record.action.kind === 'policy.update' ? 'Done: the new rules apply from now on.' : 'Done and confirmed with PayPal.',
+    verified:
+      record.action.actor.id === IN_PAYPAL.id
+        ? 'Done in PayPal itself (by the owner in their PayPal account, or by PayPal), not through Sayso; Sayso recorded it from PayPal. Do not repeat it.'
+        : record.action.kind === 'policy.update'
+          ? 'Done: the new rules apply from now on.'
+          : 'Done and confirmed with PayPal.',
     unverified: 'PayPal accepted it but the confirmation read-back failed. Treat it as done; the owner can check it in PayPal. Do not retry.',
     executed: 'Sent to PayPal; confirmation pending.',
     denied: record.decision?.hits.some((h) => h.ruleId === 'simulation')

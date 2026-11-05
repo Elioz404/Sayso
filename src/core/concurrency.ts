@@ -30,4 +30,7 @@ export class BoundedCache<K, V> {
     this.entries.set(key, value);
     while (this.entries.size > this.max) this.entries.delete(this.entries.keys().next().value as K);
   }
+  delete(key: K): boolean {
+    return this.entries.delete(key);
+  }
 }

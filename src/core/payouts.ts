@@ -73,6 +73,20 @@ export class Payouts {
     });
   }
 
+  /**
+   * PayPal said a connected seller's account changed (they took back the permissions they gave Sayso,
+   * say). Asks PayPal how it stands now: still fully connected, it stays; otherwise new sales go to
+   * Sayso's account again. Returns whether it is still connected.
+   */
+  async recheck(merchantId: string): Promise<{ shopId: string; connected: boolean } | undefined> {
+    const catalog = await this.deps.catalogs.byPayoutMerchant(merchantId);
+    if (!catalog || !this.enabled) return undefined;
+    const seller = await connectedSeller(this.deps.paypal, this.deps.partnerMerchantId!, catalog.shop.id);
+    const connected = Boolean(seller && seller.merchantId === merchantId && seller.permissionsGranted && seller.paymentsReceivable);
+    if (!connected) await this.disconnect(catalog.shop.id);
+    return { shopId: catalog.shop.id, connected };
+  }
+
   /** The merchant id a shop's sales are paid into, if the owner connected one. */
   async merchantFor(shopId: string): Promise<string | undefined> {
     return (await this.deps.catalogs.byShopId(shopId))?.shop.payout?.merchantId;

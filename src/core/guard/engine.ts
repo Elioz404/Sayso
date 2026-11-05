@@ -142,6 +142,30 @@ export class Guard {
   }
 
   /**
+   * Money that already moved in PayPal without Sayso: the owner refunded from their PayPal account, or
+   * PayPal reversed a payment. It is recorded as it happened, read back from PayPal by the caller, so the
+   * audit trail, the order and the sales figures match PayPal. No rules run (it has already happened)
+   * and no executor is called. `paypalId` is the refund's (or reversal's) id: each is recorded once.
+   */
+  async recordExternal(action: ProposedAction, moved: { paypalId: string; status: string; detail: string; eventId?: string }): Promise<GuardRecord> {
+    const id = `pp_${createHash('sha256').update(`${action.ownerId}:${moved.paypalId}`).digest('hex').slice(0, 16)}`;
+    return this.serialize(action.ownerId, async () => {
+      const existing = await this.deps.store.get(id);
+      if (existing) return existing;
+      const now = this.now();
+      const record: GuardRecord = { id, createdAt: now.toISOString(), action, status: 'verified', idempotencyKey: moved.paypalId, events: [] };
+      append(record, 'proposed', action.actor.id, { reason: action.reason, ...(moved.eventId ? { paypal_event: moved.eventId } : {}) }, now);
+      record.result = { paypal_id: moved.paypalId, status: moved.status, external: true };
+      append(record, 'executed', action.actor.id, record.result, now);
+      record.verification = { ok: true, detail: moved.detail };
+      append(record, 'verified', 'sayso', { ...record.verification }, now);
+      await this.deps.store.insert(record);
+      await this.settled(record);
+      return record;
+    });
+  }
+
+  /**
    * What a verified record authorized was let go before anyone was charged (a buyer's purchase the shop
    * never captured, say). The record keeps its status and gets a "released" event in its hash chain, and
    * stops counting toward limits. Nothing for a record that moved nothing or was already released.

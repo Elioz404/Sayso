@@ -29,6 +29,7 @@ export default async function Orders() {
       return photo ? { image: photo } : {};
     })(),
     ...(o.tracking ? { shipping: `${o.tracking.carrier} · ${o.tracking.number}` } : {}),
+    ...(o.dispute === 'open' ? { dispute: true } : {}),
   }));
 
   return (

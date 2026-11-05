@@ -47,7 +47,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   // Only the two weeks the numbers below compare (a day more, for the shop's time zone); the in-depth
   // report reads its own 90 days when it comes into view.
   const since = new Date(Date.now() - (2 * METRIC_DAYS + 1) * 86_400_000);
-  const [approvals, orders, latest, { suggestions }, passkey, devices, records] = await Promise.all([
+  const [approvals, orders, latest, { suggestions }, passkey, devices, records, disputes] = await Promise.all([
     pendingFor(shopId),
     shopOrders.list(shopId, { since }),
     shopOrders.list(shopId, { limit: RECENT_ORDERS }),
@@ -55,6 +55,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
     view.passkeys.required(shopId),
     view.push.list(shopId),
     guard.list(shopId, { since, limit: WEEK_RECORDS }),
+    shopOrders.openDisputes(shopId),
   ]);
   const week = shopMetrics(orders, records, { zone: shop.timeZone, days: METRIC_DAYS });
   const pictureOf = (variantId?: string) => {
@@ -126,6 +127,21 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         <FlashNotice params={['payouts', 'published']} className={`callout small ${shop.payout || asked.published === '1' ? 'callout-say' : ''}`}>
           {outcome}
         </FlashNotice>
+      )}
+
+      {/* Disputes are answered in PayPal; Sayso only makes sure the owner knows. */}
+      {disputes.length > 0 && (
+        <section className="callout callout-stop" aria-label="Disputes">
+          <span className="small">
+            <b>
+              {disputes.length === 1 ? 'A buyer opened a dispute in PayPal.' : `${disputes.length} buyers opened disputes in PayPal.`}
+            </b>{' '}
+            Answer {disputes.length === 1 ? 'it' : 'each one'} in PayPal before its deadline.
+          </span>
+          <Link className="btn btn-small" href={disputes.length === 1 ? `/owner/orders/${disputes[0].id}` : '/owner/orders'}>
+            {disputes.length === 1 ? 'See the order' : 'See the orders'}
+          </Link>
+        </section>
       )}
 
       <section className="block" aria-labelledby="waiting">

@@ -27,3 +27,26 @@ export function paymentWords(status?: string): string {
   if (status === 'AUTHORIZED_PENDING_MERCHANT_REVIEW') return PAYMENT_FOR_BUYER.awaiting_owner;
   return ORDER_STATE_LABEL.paid + '.';
 }
+
+/** PayPal's dispute reasons, as the buyer would put them. */
+const DISPUTE_REASONS: Readonly<Record<string, string>> = {
+  MERCHANDISE_OR_SERVICE_NOT_RECEIVED: 'says it never arrived',
+  MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED: 'says it is not as described',
+  UNAUTHORISED: "says they didn't make this payment",
+  CREDIT_NOT_PROCESSED: 'is waiting for a refund',
+  DUPLICATE_TRANSACTION: 'says they were charged twice',
+  INCORRECT_AMOUNT: 'says the amount is wrong',
+  PAYMENT_BY_OTHER_MEANS: 'says they paid another way',
+  CANCELED_RECURRING_BILLING: 'cancelled a recurring payment',
+  PROBLEM_WITH_REMITTANCE: 'reports a problem with the payment',
+};
+
+/** "The buyer says it never arrived". */
+export function disputeReason(code: string): string {
+  return `The buyer ${DISPUTE_REASONS[code] ?? 'opened a dispute'}`;
+}
+
+/** A dispute still waiting to be settled in PayPal. */
+export function isOpenDispute(dispute: { status: string }): boolean {
+  return dispute.status !== 'RESOLVED';
+}
