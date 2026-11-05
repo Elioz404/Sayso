@@ -1,4 +1,5 @@
 // The owner's catalog, in two tabs: Products (edited in place, ten to a page) and Shipping.
+import Link from 'next/link';
 import type { Metadata } from 'next';
 import { ShippingEditor, type EditableProduct } from '@/app/_components/catalog-editor.tsx';
 import { CatalogGrid } from '@/app/_components/grids.tsx';
@@ -52,10 +53,10 @@ export default async function Catalog({ searchParams }: { searchParams: Promise<
             connected agent can change them too.
           </p>
         </div>
-        <a className="btn btn-primary" href="/owner/catalog/new">
+        <Link className="btn btn-primary" href="/owner/catalog/new">
           <Icon name="camera" size={18} /> Add from a photo
           {catalog.drafts?.length ? <span className="count-badge">{catalog.drafts.length}</span> : null}
-        </a>
+        </Link>
       </div>
 
       {added && (
@@ -67,12 +68,12 @@ export default async function Catalog({ searchParams }: { searchParams: Promise<
       )}
 
       <nav className="tabs" aria-label="Catalog">
-        <a href="/owner/catalog" aria-current={shipping ? undefined : 'page'}>
+        <Link href="/owner/catalog" aria-current={shipping ? undefined : 'page'}>
           Products <span className="tabs-count">{catalog.products.length}</span>
-        </a>
-        <a href="/owner/catalog?tab=shipping" aria-current={shipping ? 'page' : undefined}>
+        </Link>
+        <Link href="/owner/catalog?tab=shipping" aria-current={shipping ? 'page' : undefined}>
           Shipping <span className="tabs-count">{shop.shipping.length}</span>
-        </a>
+        </Link>
       </nav>
 
       {shipping ? (
@@ -105,19 +106,19 @@ export default async function Catalog({ searchParams }: { searchParams: Promise<
           {pages > 1 && (
             <nav className="pager" aria-label="Pages">
               {page > 1 && (
-                <a href={`/owner/catalog?page=${page - 1}`} aria-label="Previous page">
+                <Link href={`/owner/catalog?page=${page - 1}`} aria-label="Previous page">
                   ‹
-                </a>
+                </Link>
               )}
               {Array.from({ length: pages }, (_, i) => i + 1).map((n) => (
-                <a key={n} href={`/owner/catalog?page=${n}`} aria-current={n === page ? 'page' : undefined}>
+                <Link key={n} href={`/owner/catalog?page=${n}`} aria-current={n === page ? 'page' : undefined}>
                   {n}
-                </a>
+                </Link>
               ))}
               {page < pages && (
-                <a href={`/owner/catalog?page=${page + 1}`} aria-label="Next page">
+                <Link href={`/owner/catalog?page=${page + 1}`} aria-label="Next page">
                   ›
-                </a>
+                </Link>
               )}
             </nav>
           )}

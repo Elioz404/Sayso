@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ActionRules } from '@/core/guard/rules-by-action.ts';
 import { callApi } from './api.ts';
 import { CopyField } from './client-ui.tsx';
+import { Modal } from './modal.tsx';
 import { forgetOwnerChats } from './owner-assistant.tsx';
 import { signChallenge, usePasskeyChallenge } from './passkey-client.ts';
 import { RulesTable } from './rules-table.tsx';
@@ -416,13 +417,16 @@ const APPS: Record<AppChoice, { name: string; open: string; where: string }> = {
  */
 export function ConnectAgent({ endpoint, quiet = false, passkey = false }: { endpoint: string; quiet?: boolean; passkey?: boolean }) {
   const router = useRouter();
-  const dialog = useRef<HTMLDialogElement>(null);
+  const [open, setOpen] = useState(false);
   const [step, setStep] = useState<'choose' | AppChoice | 'other'>('choose');
   const [name, setName] = useState('');
   const [issued, setIssued] = useState<IssuedKey>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const close = () => dialog.current?.close();
+  const close = () => {
+    setOpen(false);
+    router.refresh(); // an app allowed meanwhile (in another tab) shows in the list
+  };
   const app = step === 'chatgpt' || step === 'claude' ? APPS[step] : undefined;
   // A new key is a new credential: confirmed with the passkey once the shop has one.
   const confirm = usePasskeyChallenge(passkey && step === 'other' && !issued ? { purpose: 'confirm', what: 'agent-key' } : undefined);
@@ -437,154 +441,146 @@ export function ConnectAgent({ endpoint, quiet = false, passkey = false }: { end
           setIssued(undefined);
           setName('');
           setError(undefined);
-          dialog.current?.showModal();
+          setOpen(true);
         }}
       >
         Connect an agent
       </button>
-      <dialog
-        ref={dialog}
-        className="modal"
-        aria-labelledby="connect-title"
-        // The backdrop closes it, except while a key is on screen: it is shown only once.
-        onClick={(e) => e.target === dialog.current && !issued && close()}
-        // An app allowed meanwhile (in another tab) shows in the list once this closes.
-        onClose={() => router.refresh()}
-      >
-        <div className="modal-body">
-          <button type="button" className="modal-close" aria-label="Close" onClick={close}>
-            ×
-          </button>
-          {step === 'choose' ? (
-            <div className="connect">
-              <div className="stack" style={{ gap: 4 }}>
-                <h2 id="connect-title" className="h3">
-                  Connect an agent
-                </h2>
-                <p className="small soft">Each agent gets its own key, so you see what it did and can cut it off alone.</p>
-              </div>
-              <div className="connect-choices">
-                {(Object.keys(APPS) as AppChoice[]).map((id) => (
-                  <button key={id} type="button" className="connect-choice" onClick={() => setStep(id)}>
-                    <b>{APPS[id].name}</b>
-                    <span className="small soft">Signs in with Sayso. No key to copy.</span>
-                  </button>
-                ))}
-                <button type="button" className="connect-choice" onClick={() => setStep('other')}>
-                  <b>Another app or a terminal</b>
-                  <span className="small soft">Any MCP app, a script or the Sayso CLI, with a key you copy.</span>
-                </button>
-              </div>
+      {/* Escape and the backdrop don't close it while a key is on screen: it is shown only once. */}
+      <Modal open={open} onClose={close} dismissible={!issued} labelledBy="connect-title">
+        {step === 'choose' ? (
+          <div className="connect">
+            <div className="stack" style={{ gap: 4 }}>
+              <h2 id="connect-title" className="h3">
+                Connect an agent
+              </h2>
+              <p className="small soft">Each agent gets its own key, so you see what it did and can cut it off alone.</p>
             </div>
-          ) : app ? (
-            <div className="connect">
-              <div className="stack" style={{ gap: 4 }}>
-                <h2 id="connect-title" className="h3">
-                  Connect {app.name}
-                </h2>
-                <p className="small soft">{app.name} needs a plan that allows custom connectors.</p>
-              </div>
-              <ol className="connect-steps">
-                <li>
-                  <b>Copy this address</b>
-                  <CopyField value={endpoint} />
-                </li>
-                <li>
-                  <b>Add it in {app.name}</b>
-                  <span className="small soft">{app.where}</span>
-                  <a className="btn btn-small connect-open" href={app.open} target="_blank" rel="noopener noreferrer">
-                    Open {app.name} ↗
-                  </a>
-                </li>
-                <li>
-                  <b>Allow it here</b>
-                  <span className="small soft">{app.name} sends you to Sayso to say yes. It then shows under Connected agents.</span>
-                </li>
-              </ol>
-              <div className="connect-actions">
-                <button type="button" className="btn btn-quiet" onClick={() => setStep('choose')}>
-                  Back
+            <div className="connect-choices">
+              {(Object.keys(APPS) as AppChoice[]).map((id) => (
+                <button key={id} type="button" className="connect-choice" onClick={() => setStep(id)}>
+                  <b>{APPS[id].name}</b>
+                  <span className="small soft">Signs in with Sayso. No key to copy.</span>
                 </button>
-                <button type="button" className="btn btn-primary" onClick={close}>
-                  Done
-                </button>
-              </div>
+              ))}
+              <button type="button" className="connect-choice" onClick={() => setStep('other')}>
+                <b>Another app or a terminal</b>
+                <span className="small soft">Any MCP app, a script or the Sayso CLI, with a key you copy.</span>
+              </button>
             </div>
-          ) : issued ? (
-            <div className="connect">
-              <div className="stack" style={{ gap: 4 }}>
-                <h2 id="connect-title" className="h3">
-                  {issued.label} has its key
-                </h2>
-                <p className="small soft">Copy it now. Sayso shows it only once.</p>
-              </div>
-              <ol className="connect-steps">
-                <li>
-                  <b>In an MCP app</b>
-                  <span className="small soft">Add a custom connector and paste this URL.</span>
-                  <CopyField value={issued.mcp_url} secret />
-                </li>
-                <li>
-                  <b>Or in a terminal</b>
-                  <CopyField value={issued.cli_login} secret />
-                </li>
-              </ol>
-              <details className="connect-more">
-                <summary className="small">Clients that send headers</summary>
-                <div className="stack" style={{ gap: 'var(--s2)' }}>
-                  <CopyField value={endpoint} />
-                  <CopyField value={`Authorization: Bearer ${issued.key}`} secret />
-                </div>
-              </details>
-              <p className="small muted">It works like a password. If it leaks, revoke it here.</p>
+          </div>
+        ) : app ? (
+          <div className="connect">
+            <div className="stack" style={{ gap: 4 }}>
+              <h2 id="connect-title" className="h3">
+                Connect {app.name}
+              </h2>
+              <p className="small soft">{app.name} needs a plan that allows custom connectors.</p>
+            </div>
+            <ol className="connect-steps">
+              <li>
+                <b>Copy this address</b>
+                <CopyField value={endpoint} />
+              </li>
+              <li>
+                <b>Add it in {app.name}</b>
+                <span className="small soft">{app.where}</span>
+                <a className="btn btn-small connect-open" href={app.open} target="_blank" rel="noopener noreferrer">
+                  Open {app.name} ↗
+                </a>
+              </li>
+              <li>
+                <b>Allow it here</b>
+                <span className="small soft">{app.name} sends you to Sayso to say yes. It then shows under Connected agents.</span>
+              </li>
+            </ol>
+            <div className="connect-actions">
+              <button type="button" className="btn btn-quiet" onClick={() => setStep('choose')}>
+                Back
+              </button>
               <button type="button" className="btn btn-primary" onClick={close}>
                 Done
               </button>
             </div>
-          ) : (
-            <form
-              className="connect"
-              onSubmit={async (e) => {
-                e.preventDefault();
-                setBusy(true);
-                setError(undefined);
-                try {
-                  let proof;
-                  if (passkey) {
-                    if (!confirm.challenge) throw new Error(confirm.error ?? 'Getting the passkey ready, try again in a second');
-                    proof = await signChallenge(confirm.challenge);
-                  }
-                  setIssued(await callApi<IssuedKey>('/api/owner/keys', 'POST', { label: name.trim() || 'My agent', proof }));
-                  router.refresh();
-                } catch (err) {
-                  setError((err as Error).message);
+          </div>
+        ) : issued ? (
+          <div className="connect">
+            <div className="stack" style={{ gap: 4 }}>
+              <h2 id="connect-title" className="h3">
+                {issued.label} has its key
+              </h2>
+              <p className="small soft">Copy it now. Sayso shows it only once.</p>
+            </div>
+            <ol className="connect-steps">
+              <li>
+                <b>In an MCP app</b>
+                <span className="small soft">Add a custom connector and paste this URL.</span>
+                <CopyField value={issued.mcp_url} secret />
+              </li>
+              <li>
+                <b>Or in a terminal</b>
+                <CopyField value={issued.cli_login} secret />
+              </li>
+            </ol>
+            <details className="connect-more">
+              <summary className="small">Clients that send headers</summary>
+              <div className="stack" style={{ gap: 'var(--s2)' }}>
+                <CopyField value={endpoint} />
+                <CopyField value={`Authorization: Bearer ${issued.key}`} secret />
+              </div>
+            </details>
+            <p className="small muted">It works like a password. If it leaks, revoke it here.</p>
+            <button type="button" className="btn btn-primary" onClick={close}>
+              Done
+            </button>
+          </div>
+        ) : (
+          <form
+            className="connect"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setBusy(true);
+              setError(undefined);
+              try {
+                let proof;
+                if (passkey) {
+                  if (!confirm.challenge) throw new Error(confirm.error ?? 'Getting the passkey ready, try again in a second');
+                  proof = await signChallenge(confirm.challenge);
                 }
-                setBusy(false);
-              }}
-            >
-              <div className="stack" style={{ gap: 4 }}>
-                <h2 id="connect-title" className="h3">
-                  Another app or a terminal
-                </h2>
-                <p className="small soft">Name it so you can tell it apart later.</p>
-              </div>
-              <div className="field">
-                <label htmlFor="agent-name">Name</label>
-                <input id="agent-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="My laptop, a script…" maxLength={60} autoComplete="off" />
-              </div>
-              {error && <p className="error small">{error}</p>}
-              <div className="connect-actions">
-                <button type="button" className="btn btn-quiet" onClick={() => setStep('choose')}>
-                  Back
-                </button>
-                <button className="btn btn-primary" disabled={busy}>
-                  {busy ? 'Creating the key…' : 'Create key'}
-                </button>
-              </div>
-            </form>
-          )}
-        </div>
-      </dialog>
+                setIssued(await callApi<IssuedKey>('/api/owner/keys', 'POST', { label: name.trim() || 'My agent', proof }));
+                // The list refreshes when this closes: refreshing now could swap the page under the key, shown only once.
+              } catch (err) {
+                setError((err as Error).message);
+              }
+              setBusy(false);
+            }}
+          >
+            <div className="stack" style={{ gap: 4 }}>
+              <h2 id="connect-title" className="h3">
+                Another app or a terminal
+              </h2>
+              <p className="small soft">Name it so you can tell it apart later.</p>
+            </div>
+            <div className="field">
+              <label htmlFor="agent-name">Name</label>
+              <input id="agent-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="My laptop, a script…" maxLength={60} autoComplete="off" />
+            </div>
+            {error && (
+              <p className="error small" role="alert">
+                {error}
+              </p>
+            )}
+            <div className="connect-actions">
+              <button type="button" className="btn btn-quiet" onClick={() => setStep('choose')}>
+                Back
+              </button>
+              <button className="btn btn-primary" disabled={busy}>
+                {busy ? 'Creating the key…' : 'Create key'}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
     </>
   );
 }

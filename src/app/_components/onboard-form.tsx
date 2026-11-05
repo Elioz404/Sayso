@@ -13,6 +13,8 @@ import { callApi } from './api.ts';
 import { CopyField } from './client-ui.tsx';
 import { PhotoDrop } from './photo-drop.tsx';
 import { Icon } from './ui.tsx';
+import { variantTitle } from '@/core/catalog.ts';
+import { currencySymbol } from '@/core/money.ts';
 
 interface Created {
   shop: { slug: string; name: string };
@@ -282,7 +284,7 @@ function Review({ created, paypalLogin, onStartOver }: { created: Created; paypa
                     const waiting = !edit.confirmed || !edit.price.trim();
                     return (
                       <li key={v.id} className="sell-variant">
-                        {p.variants.length > 1 || v.title !== 'Default' ? (
+                        {p.variants.length > 1 || variantTitle(v.title) ? (
                           <input className="sell-vtitle" value={edit.title} onChange={(e) => setVariant(v.id, { title: e.target.value })} maxLength={80} aria-label="Variant" />
                         ) : (
                           <span className="sell-vtitle small soft">Price and stock</span>
@@ -386,12 +388,4 @@ function Suggestion({ waiting, edits, symbol, onKeep }: { waiting: DraftView['pr
       )}
     </div>
   );
-}
-
-function currencySymbol(currency: string): string {
-  try {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency }).formatToParts(0).find((p) => p.type === 'currency')?.value ?? currency;
-  } catch {
-    return currency;
-  }
 }

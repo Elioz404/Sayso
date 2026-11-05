@@ -7,7 +7,7 @@
 import type { Access } from './access.ts';
 import { draftCatalog, type OnboardingInput } from './ai/onboarding.ts';
 import type { ChatModel } from './ai/llm.ts';
-import { findVariant, isLive, pricesToConfirm, type Catalog, type PriceSuggestion, type Product } from './catalog.ts';
+import { type Catalog, findVariant, isLive, pricesToConfirm, type PriceSuggestion, type Product, variantLabel, variantTitle } from './catalog.ts';
 import { knownTimeZone } from './days.ts';
 import { fromLlmError, HttpError, notFound } from './errors.ts';
 import type { Links } from './links.ts';
@@ -133,7 +133,7 @@ export class Shops {
       for (const v of p.variants ?? []) {
         const variant = product.variants.find((x) => x.id === v.id);
         if (!variant) continue;
-        const what = optionName(product, variant.title);
+        const what = variantLabel(product.name, variant.title);
         if (v.price !== undefined) prices.set(variant.id, amountOf(v.price, currency, what));
         checkStock(v.inventory, what);
       }
@@ -189,7 +189,7 @@ export class Shops {
     const catalog = await this.get(shopId);
     const unpriced = pricesToConfirm(catalog);
     if (unpriced.length) {
-      const names = unpriced.map(({ product, variant }) => (variant.title === 'Default' ? product.name : `${product.name} (${variant.title})`));
+      const names = unpriced.map(({ product, variant }) => variantLabel(product.name, variant.title));
       throw new HttpError(409, `Confirm the price of ${names.slice(0, 3).join(', ')}${names.length > 3 ? ` and ${names.length - 3} more` : ''} before publishing`);
     }
     const warnings: string[] = [];
@@ -235,7 +235,7 @@ export class Shops {
     for (const v of edits.variants ?? []) {
       const variant = product.variants.find((x) => x.id === v.id);
       if (!variant) throw notFound(`Option ${v.id}`);
-      const what = optionName(product, variant.title);
+      const what = variantLabel(product.name, variant.title);
       if (v.price !== undefined) prices.set(variant.id, amountOf(v.price, currency, what));
       checkStock(v.inventory, what);
       cleanName(v.title, OPTION_NAME, 'An option name');
@@ -273,7 +273,7 @@ export class Shops {
     });
     if (moved) {
       if (photo) await this.deps.media?.remove(shopId, [photo.id]);
-      throw new HttpError(409, `${optionName(product, moved.title)} now has ${moved.inventory} in stock (it changed while you were editing). Check it and save again.`);
+      throw new HttpError(409, `${variantLabel(product.name, moved.title)} now has ${moved.inventory} in stock (it changed while you were editing). Check it and save again.`);
     }
     if (!updated) throw notFound(`Product ${productId}`);
     if (photo && old && !updated.products.some((p) => p.imageUrl === old)) await this.forgetPhotos(shopId, [{ ...product, imageUrl: old }]);
@@ -475,7 +475,7 @@ function priceQuestions(catalog: Catalog): string[] {
   const byProduct = new Map<string, { name: string; titles: string[]; suggested?: PriceSuggestion }>();
   for (const { product, variant } of pricesToConfirm(catalog)) {
     const entry = byProduct.get(product.id) ?? { name: product.name, titles: [], suggested: variant.priceToConfirm?.suggested };
-    if (variant.title !== 'Default') entry.titles.push(variant.title);
+    if (variantTitle(variant.title)) entry.titles.push(variant.title);
     byProduct.set(product.id, entry);
   }
   return [...byProduct.values()].map(({ name, titles, suggested }) => {
@@ -490,11 +490,6 @@ const SHOP_NAME = { min: 2, max: 60 };
 const PRODUCT_NAME = { min: 2, max: 120 };
 const OPTION_NAME = { min: 1, max: 80 };
 const DESCRIPTION_MAX = 2_000;
-
-/** "Mug (Sage)", or just "Mug" for a product with one unnamed option. */
-function optionName(product: Product, title: string): string {
-  return title === 'Default' ? product.name : `${product.name} (${title})`;
-}
 
 /** An amount typed by a person or a model ("24.50") in minor units; `zeroOk` where free is a real price. */
 function amountOf(value: string, currency: string, what: string, zeroOk = false): number {

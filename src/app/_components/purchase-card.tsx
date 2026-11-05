@@ -6,6 +6,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react';
 import type { BuyerOrder } from '@/core/buyer-orders.ts';
+import { ORDER_STATE_LABEL } from '@/core/order-words.ts';
 import { callApi } from './api.ts';
 
 export interface PurchaseLine {
@@ -34,15 +35,6 @@ export interface Purchase {
   cartId?: string;
 }
 
-const BADGE: Record<BuyerOrder['state'], string> = {
-  paid: 'Paid with PayPal',
-  shipped: 'Shipped',
-  waiting: 'Authorized in PayPal',
-  'refund-asked': 'Refund asked',
-  refunded: 'Refunded',
-  cancelled: 'Cancelled, not charged',
-};
-
 /** Where a paid order stands now, from the shop (shipped, refunded...), once the card is shown. */
 function useLiveOrder(cartId?: string): BuyerOrder | undefined {
   const [order, setOrder] = useState<BuyerOrder>();
@@ -57,19 +49,6 @@ function useLiveOrder(cartId?: string): BuyerOrder | undefined {
     };
   }, [cartId]);
   return order;
-}
-
-/** What PayPal's payment status means for the buyer, in the words the assistant uses too. */
-export function paymentWords(status?: string): string {
-  if (status === 'CAPTURED') return 'Charged. The shop is preparing the order.';
-  if (status === 'AUTHORIZED_PENDING_MERCHANT_REVIEW') return 'Authorized in PayPal. The shop confirms it before charging.';
-  return 'Paid with PayPal.';
-}
-
-/** "Hand-thrown Mug - Sage Green" (how carts name a line) into the product and its variant. */
-export function splitName(name: string): { name: string; detail?: string } {
-  const at = name.lastIndexOf(' - ');
-  return at > 0 ? { name: name.slice(0, at), detail: name.slice(at + 3) } : { name };
 }
 
 /** `onCancel`: a cart not paid yet can be dropped. `onDismiss`: a receipt can be put away. */
@@ -89,7 +68,7 @@ export function PurchaseCard({ data: given, state, children, onCancel, onDismiss
     <section className={`purchase purchase-${state}`} aria-label={paid ? `Receipt${data.order ? ` for order ${data.order}` : ''}` : 'Cart ready to pay'}>
       <header className="purchase-head">
         <span className="purchase-badge">
-          <span aria-hidden="true">{paid ? '✓' : '●'}</span> {paid ? (live ? BADGE[live.state] : 'Paid with PayPal') : 'Ready to pay'}
+          <span aria-hidden="true">{paid ? '✓' : '●'}</span> {paid ? ORDER_STATE_LABEL[live?.state ?? 'paid'] : 'Ready to pay'}
         </span>
         <span className="purchase-meta">
           {data.order && <span className="mono">{data.order}</span>}

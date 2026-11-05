@@ -1,5 +1,6 @@
 // One order, as the owner works it: where it stands (the same steps the buyer sees), the one thing to do
 // next if there is one, what was bought, who it goes to, and every money movement on it.
+import Link from 'next/link';
 import { actionAmount } from '@/core/guard/describe.ts';
 import type { Metadata } from 'next';
 import { LabelScanner } from '@/app/_components/label-scanner.tsx';
@@ -38,7 +39,7 @@ export default async function OrderDetail({ params }: { params: Promise<{ id: st
     return (
       <div className="stack">
         <h1>Order not found</h1>
-        <a href="/owner/orders">Back to orders</a>
+        <Link href="/owner/orders">Back to orders</Link>
       </div>
     );
   }
@@ -58,9 +59,9 @@ export default async function OrderDetail({ params }: { params: Promise<{ id: st
   return (
     <>
       <div className="stack" style={{ gap: 'var(--s3)' }}>
-        <a href="/owner/orders" className="small row" style={{ gap: 4 }}>
+        <Link href="/owner/orders" className="small row" style={{ gap: 4 }}>
           <Icon name="back" size={14} /> All orders
-        </a>
+        </Link>
         <div className="view-head">
           <div>
             <h1>{order.number ?? order.id}</h1>

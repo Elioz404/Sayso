@@ -1,11 +1,13 @@
 // The owner's own agents: who is connected (each with its own key), what each has asked for, what any
 // agent may do here and what only the owner can, and where shoppers' assistants find the shop.
+import Link from 'next/link';
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { CopyField, RefreshWhenBack } from '@/app/_components/client-ui.tsx';
 import { ConnectAgent, RevokeKey } from '@/app/_components/owner-actions.tsx';
 import { Ago, When } from '@/app/_components/time.tsx';
 import type { AgentKey } from '@/core/access.ts';
+import { keyOf } from '@/core/actors.ts';
 import { approvalLimit } from '@/core/guard/policy.ts';
 import type { ActionKind, GuardRecord } from '@/core/guard/types.ts';
 import { formatMoney } from '@/core/money.ts';
@@ -14,19 +16,21 @@ import { ownerView } from '@/server/owner.ts';
 
 export const metadata: Metadata = { title: 'Agents' };
 
+/** The most recent records counted per key. */
+const ASKED_RECORDS = 500;
+
 interface Asked {
   total: number;
   neededYou: number;
   waiting: number;
 }
 
-/** What each key's agent asked Guard for: refunds, invoices, rule changes. Its actor id ends with the key id. */
+/** What each key's agent asked Guard for: refunds, invoices, rule changes. */
 function askedByKey(records: readonly GuardRecord[]): Map<string, Asked> {
   const byKey = new Map<string, Asked>();
   for (const r of records) {
-    const { actor } = r.action;
-    if (actor.type !== 'agent' || !actor.id.startsWith('agent:')) continue;
-    const keyId = actor.id.split(':').at(-1)!;
+    const keyId = keyOf(r.action.actor);
+    if (!keyId) continue;
     const asked = byKey.get(keyId) ?? { total: 0, neededYou: 0, waiting: 0 };
     asked.total++;
     if (r.status === 'pending_approval') asked.waiting++;
@@ -39,8 +43,8 @@ function askedByKey(records: readonly GuardRecord[]): Map<string, Asked> {
 export default async function Agents() {
   const view = await ownerView();
   if (!view) return null;
-  const { access, saySo, shopId, shop, links, demo } = view;
-  const [keys, records, policy, passkey] = await Promise.all([access.listKeys(shopId), saySo.audit(shopId, 500), saySo.policy(shopId), view.passkeys.required(shopId)]);
+  const { access, guard, saySo, shopId, shop, links, demo } = view;
+  const [keys, records, policy, passkey] = await Promise.all([access.listKeys(shopId), guard.list(shopId, { limit: ASKED_RECORDS }), saySo.policy(shopId), view.passkeys.required(shopId)]);
   const live = keys.filter((k) => !k.revokedAt);
   const revoked = keys.filter((k) => k.revokedAt);
   const asked = askedByKey(records);
@@ -124,9 +128,9 @@ export default async function Agents() {
               </span>
             </li>
           </ul>
-          <a className="small" href="/owner/rules">
+          <Link className="small" href="/owner/rules">
             Your rules →
-          </a>
+          </Link>
         </section>
       </div>
 
@@ -173,9 +177,9 @@ function AgentRow({ agent: k, asked, action }: { agent: AgentKey; asked?: Asked;
           {asked ? `${asked.total} request${asked.total === 1 ? '' : 's'}${asked.neededYou ? ` · ${asked.neededYou} needed your OK` : ''}` : 'No requests yet'}
         </span>
         {asked?.waiting ? (
-          <a className="agent-waiting" href="/owner#waiting">
+          <Link className="agent-waiting" href="/owner#waiting">
             {asked.waiting} waiting for you
-          </a>
+          </Link>
         ) : null}
       </span>
       {k.shared ? <span className="small muted agent-end">Shared demo key</span> : action && <span className="agent-end">{action}</span>}

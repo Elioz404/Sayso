@@ -5,7 +5,7 @@
 // here (ids, money, stock, limits), and anything it could not tell comes back as a question.
 
 import { randomUUID } from 'node:crypto';
-import { slugify, type Catalog, type Product, type ShippingRule, type Variant } from '../catalog.ts';
+import { type Catalog, DEFAULT_VARIANT, type Product, type ShippingRule, slugify, type Variant } from '../catalog.ts';
 import { DEFAULT_CURRENCY, parseAmount } from '../money.ts';
 import type { ChatModel } from './llm.ts';
 
@@ -107,7 +107,7 @@ export function normalizeDraft(raw: unknown, input: OnboardingInput = {}): Onboa
 
     for (const v of arr(pd.variants).slice(0, MAX_VARIANTS)) {
       const vd = obj(v);
-      const title = str(vd.title)?.slice(0, 80) || 'Default';
+      const title = str(vd.title)?.slice(0, 80) || DEFAULT_VARIANT;
       const price = parsePrice(vd.price, currency);
       const madeToOrder = int(vd.made_to_order_days);
       const quantity = int(vd.quantity);

@@ -3,14 +3,15 @@
 // for, once the buyer signs in with that account. Their pieces, totals, where the order stands, tracking
 // and refunds; never the owner's notes, other buyers or Sayso's internal records.
 
-import { findVariant, type Catalog } from './catalog.ts';
+import { type Catalog, findVariant, splitLineName } from './catalog.ts';
 import type { AuditEvent, GuardRecord } from './guard/types.ts';
 import type { Links } from './links.ts';
 import { formatMoney, toMinor, type Money } from './money.ts';
 import { summarize, type Orders } from './orders.ts';
 import { carrierName, trackingLink } from './shipping.ts';
 import type { CartStore, CatalogStore, PayerRef, StoredCart } from './stores.ts';
-import { PAYMENT_FOR_BUYER, refundRequestForBuyer } from './tools/views.ts';
+import { PAYMENT_FOR_BUYER, type BuyerOrderState } from './order-words.ts';
+import { refundRequestForBuyer } from './tools/views.ts';
 
 export interface BuyerOrderDeps {
   carts: CartStore;
@@ -19,8 +20,7 @@ export interface BuyerOrderDeps {
   links: Links;
 }
 
-/** paid: charged, being prepared; waiting: authorized, the shop confirms before charging; refund-asked: the buyer's refund request waits for the owner. */
-export type BuyerOrderState = 'paid' | 'waiting' | 'shipped' | 'refund-asked' | 'refunded' | 'cancelled';
+export type { BuyerOrderState };
 
 export interface BuyerOrder {
   /** The order's link: /order/<id>. */
@@ -131,10 +131,8 @@ export function orderView(links: Links, cart: StoredCart, records: readonly Guar
     steps: progress(cart, records, { paid, fullyRefunded, waitingRequest: waitingShown, refundedMinor: order.refundedMinor, asks: shown, owner }),
     items: cart.cart.items.map((i) => {
       const found = catalog && i.variant_id ? findVariant(catalog, i.variant_id) : undefined;
-      const at = (i.name ?? '').lastIndexOf(' - ');
       return {
-        name: at > 0 ? i.name!.slice(0, at) : (i.name ?? found?.product.name ?? 'Item'),
-        ...(at > 0 ? { detail: i.name!.slice(at + 3) } : {}),
+        ...splitLineName(i.name ?? found?.product.name ?? 'Item'),
         qty: i.quantity,
         ...(i.price ? { amount: formatMoney(toMinor(i.price) * i.quantity, i.price.currency_code) } : {}),
         ...(found?.product.imageUrl ? { image: links.asset(found.product.imageUrl) } : {}),

@@ -2,11 +2,12 @@
 // checklist while the shop isn't fully set up. Then the week: four headline numbers against the week
 // before, what the shop's agents did with its money, the latest orders and revenue by day, and the whole
 // story in depth (AG Studio): every request and what Guard did, sales by channel, each order's money trail.
+import Link from 'next/link';
 import { actionAmount } from '@/core/guard/describe.ts';
 import { ConnectPayouts, Decision, FlashNotice, KeepPrice, PublishButton, ShopName } from '@/app/_components/owner-actions.tsx';
 import { actionLabel, Icon, Status, Who } from '@/app/_components/ui.tsx';
 import { Ago } from '@/app/_components/time.tsx';
-import { pricesToConfirm } from '@/core/catalog.ts';
+import { pricesToConfirm, variantTitle } from '@/core/catalog.ts';
 import { decimalsFor, formatMoney, toMoney } from '@/core/money.ts';
 import { ChannelBadge, Thumb } from '@/app/_components/owner-bits.tsx';
 import { KpiCard, SaysoBar } from '@/app/_components/metrics.tsx';
@@ -85,9 +86,9 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         note: 'Buyers don’t see them until you set a price.',
         done: false,
         action: (
-          <a className="btn btn-small" href="/owner/catalog/new">
+          <Link className="btn btn-small" href="/owner/catalog/new">
             Set prices
-          </a>
+          </Link>
         ),
       });
     if (payouts.enabled && !onTour)
@@ -106,9 +107,9 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       note: passkey && devices.length > 0 ? 'A ping when an agent needs you; your fingerprint or face says OK.' : 'Get a ping when an agent needs you, and say OK with your fingerprint or face.',
       done: Boolean(passkey && devices.length > 0),
       action: (
-        <a className="btn btn-small" href="/owner/phone">
+        <Link className="btn btn-small" href="/owner/phone">
           Set it up
-        </a>
+        </Link>
       ),
     });
   }
@@ -169,14 +170,14 @@ export default async function Overview({ searchParams }: { searchParams: Promise
       </section>
 
       {suggestions.length > 0 && (
-        <a className="nudge" href="/owner/rules#earned">
+        <Link className="nudge" href="/owner/rules#earned">
           <span className="stack" style={{ gap: 2, minWidth: 0 }}>
             <span className="small nudge-label">Sayso noticed</span>
             <b>{suggestions[0].title}?</b>
             <span className="small soft">{suggestions[0].evidence}</span>
           </span>
           <span className="btn btn-small">Review</span>
-        </a>
+        </Link>
       )}
 
       {setup.some((step) => !step.done) && (
@@ -208,9 +209,9 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         <section className="block" aria-labelledby="confirm">
           <div className="block-head">
             <h2 id="confirm">Prices to confirm</h2>
-            <a className="note" href="/owner/catalog">
+            <Link className="note" href="/owner/catalog">
               Set your own in Catalog
-            </a>
+            </Link>
           </div>
           <ul className="list">
             {unconfirmed.map(({ product, variant }) => {
@@ -220,7 +221,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                   <span className="stack" style={{ gap: 2, minWidth: 0 }}>
                     <b>
                       {product.name}
-                      {variant.title !== 'Default' ? ` (${variant.title})` : ''}
+                      {variantTitle(variant.title) ? ` (${variant.title})` : ''}
                     </b>
                     <span className="small soft">
                       {s
@@ -265,7 +266,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
         <section className="panel-card" aria-labelledby="recent">
           <div className="panel-card-head">
             <h2 id="recent">Latest orders</h2>
-            {recent.length > 0 && <a className="small" href="/owner/orders">All orders</a>}
+            {recent.length > 0 && <Link className="small" href="/owner/orders">All orders</Link>}
           </div>
           {recent.length === 0 ? (
             <div className="empty">
@@ -278,7 +279,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
             <ul className="order-list">
               {recent.map((o) => (
                 <li key={o.id}>
-                  <a href={`/owner/orders/${o.id}`}>
+                  <Link href={`/owner/orders/${o.id}`}>
                     <Thumb src={pictureOf(o.items[0]?.variant_id)} />
                     <span className="stack" style={{ gap: 2, minWidth: 0 }}>
                       <span className="row" style={{ gap: 'var(--s2)', flexWrap: 'nowrap', minWidth: 0 }}>
@@ -291,7 +292,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
                       <span className="num" style={{ fontWeight: 650 }}>{o.total}</span>
                       <Status value={o.status} />
                     </span>
-                  </a>
+                  </Link>
                 </li>
               ))}
             </ul>

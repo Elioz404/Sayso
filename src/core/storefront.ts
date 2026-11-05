@@ -1,7 +1,7 @@
 // How a shop reads to people on its pages: stock in plain words, and what to ask an assistant for.
 // Framework-free so the shop page, the product page and tests share it.
 
-import { available, type Catalog, type Product, type Variant } from './catalog.ts';
+import { available, type Catalog, type Product, type Variant, variantTitle } from './catalog.ts';
 import type { Links } from './links.ts';
 
 export type StockTone = 'ok' | 'low' | 'out' | 'made';
@@ -21,7 +21,7 @@ export function assistantPrompt({ shop, products }: Catalog, product?: Product):
   const pool = (product ? [product] : products).flatMap((p) => p.variants.map((v) => ({ p, v })));
   const pick = pool.find(({ v }) => v.madeToOrderDays === undefined && v.inventory > 1) ?? pool.find(({ v }) => available(v) > 0);
   if (!pick) return product ? `Ask ${shop.name} on Sayso when the ${product.name} is back.` : `Show me what ${shop.name} sells on Sayso.`;
-  const named = pick.v.title && pick.v.title !== 'Default' ? `${pick.v.title} ${pick.p.name}` : pick.p.name;
+  const named = variantTitle(pick.v.title) ? `${pick.v.title} ${pick.p.name}` : pick.p.name;
   return `Buy a ${named} from ${shop.name} on Sayso and ship it to me.`;
 }
 
@@ -57,7 +57,7 @@ export function cartLine({ shop }: Catalog, product: Product, variant: Variant, 
     variantId: variant.id,
     productId: product.id,
     name: product.name,
-    variant: variant.title && variant.title !== 'Default' ? variant.title : '',
+    variant: variantTitle(variant.title),
     price: variant.price,
     currency: shop.currency,
     ...(product.imageUrl ? { image: links.asset(product.imageUrl) } : {}),

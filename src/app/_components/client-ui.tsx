@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Icon } from './ui.tsx';
@@ -16,13 +17,13 @@ export function NavLinks() {
   return (
     <nav className="nav" aria-label="Main">
       {links.map((l) => (
-        <a key={l.href} href={l.href} className={l.wide ? 'nav-link nav-link-wide' : 'nav-link'} aria-current={path.startsWith(l.href) || Boolean(l.also && path.startsWith(l.also)) ? 'page' : undefined}>
+        <Link key={l.href} href={l.href} className={l.wide ? 'nav-link nav-link-wide' : 'nav-link'} aria-current={path.startsWith(l.href) || Boolean(l.also && path.startsWith(l.also)) ? 'page' : undefined}>
           {l.label}
-        </a>
+        </Link>
       ))}
-      <a href="/owner" className="btn btn-small" aria-current={path.startsWith('/owner') ? 'page' : undefined}>
+      <Link href="/owner" className="btn btn-small" aria-current={path.startsWith('/owner') ? 'page' : undefined}>
         Your shop
-      </a>
+      </Link>
     </nav>
   );
 }
@@ -42,7 +43,7 @@ export function RailNav({ items }: { items: RailItem[] }) {
       {items.map((item) => {
         const current = item.href === '/owner' ? path === '/owner' : path.startsWith(item.href);
         return (
-          <a key={item.href} href={item.href} aria-current={current ? 'page' : undefined}>
+          <Link key={item.href} href={item.href} aria-current={current ? 'page' : undefined}>
             <Icon name={item.icon} size={18} />
             {item.label}
             {item.count ? (
@@ -50,7 +51,7 @@ export function RailNav({ items }: { items: RailItem[] }) {
                 {item.count}
               </span>
             ) : null}
-          </a>
+          </Link>
         );
       })}
     </nav>
@@ -209,7 +210,7 @@ export function TabBar({ waiting }: { waiting: number }) {
       {items.map((item) => {
         const current = item.exact ? path === item.href : path.startsWith(item.href);
         return (
-          <a key={item.href} href={item.href} className={item.primary ? 'tabbar-add' : undefined} aria-current={current ? 'page' : undefined}>
+          <Link key={item.href} href={item.href} className={item.primary ? 'tabbar-add' : undefined} aria-current={current ? 'page' : undefined}>
             <span className="tabbar-icon">
               <Icon name={item.icon} size={item.primary ? 24 : 22} />
               {item.exact && waiting > 0 && (
@@ -219,7 +220,7 @@ export function TabBar({ waiting }: { waiting: number }) {
               )}
             </span>
             <span className="tabbar-label">{item.label}</span>
-          </a>
+          </Link>
         );
       })}
     </nav>

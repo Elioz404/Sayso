@@ -22,6 +22,11 @@ export interface Actor {
   /** "agent:<label>:<key id>", "buyer-agent:<channel>", "owner:<shop id>" or a system actor. */
   id: string;
   side: Side;
+  /** The owner's agent key it acted with, and that key's label (see agentActor). */
+  keyId?: string;
+  label?: string;
+  /** A buyer's assistant: where it shopped from ("mcp", "sayso-assistant"). */
+  channel?: string;
 }
 
 export interface ProposedAction {

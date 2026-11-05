@@ -8,11 +8,12 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { MAX_DRAFT_PHOTOS, MAX_STOCK } from '@/core/limits.ts';
 import { callApi } from './api.ts';
-import { currencySymbol } from './catalog-editor.tsx';
+import { currencySymbol } from '@/core/money.ts';
 import { shrink } from './images.ts';
 import { PhotoDrop } from './photo-drop.tsx';
 import { Icon } from './ui.tsx';
 import { useAction } from './use-action.ts';
+import { variantTitle } from '@/core/catalog.ts';
 
 /** Must match the cache public/sw.js puts shared photos in. */
 const SHARE_CACHE = 'sayso-share';
@@ -171,7 +172,7 @@ function DraftCard({ draft, currency }: { draft: DraftView; currency: string }) 
         <ul className="sell-variants">
           {draft.variants.map((v, i) => (
             <li key={v.id} className="sell-variant">
-              {draft.variants.length > 1 || v.title !== 'Default' ? <span className="sell-vtitle small">{v.title}</span> : <span className="sell-vtitle small soft">Price and stock</span>}
+              {draft.variants.length > 1 || variantTitle(v.title) ? <span className="sell-vtitle small">{v.title}</span> : <span className="sell-vtitle small soft">Price and stock</span>}
               <label className={variants[i].price.trim() ? 'sell-price' : 'sell-price sell-price-waiting'}>
                 <span aria-hidden="true">{symbol}</span>
                 <input value={variants[i].price} onChange={(e) => edit(i, { price: e.target.value })} inputMode="decimal" maxLength={12} aria-label={`Price of ${v.title}`} placeholder="0.00" />

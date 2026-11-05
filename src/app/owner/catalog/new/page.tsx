@@ -1,5 +1,6 @@
 // New products from the camera: snap or share photos, Sayso drafts each product with a market price
 // suggestion, and it goes on sale once the owner sets the price.
+import Link from 'next/link';
 import type { Metadata } from 'next';
 import { PhotoDrafter, type DraftView } from '@/app/_components/photo-drafter.tsx';
 import { Icon } from '@/app/_components/ui.tsx';
@@ -33,9 +34,9 @@ export default async function NewFromPhoto({ searchParams }: { searchParams: Pro
   return (
     <>
       <div className="stack" style={{ gap: 'var(--s3)' }}>
-        <a href="/owner/catalog" className="small row" style={{ gap: 4 }}>
+        <Link href="/owner/catalog" className="small row" style={{ gap: 4 }}>
           <Icon name="back" size={14} /> Catalog
-        </a>
+        </Link>
         <div className="view-head">
           <div>
             <h1>Add from a photo</h1>

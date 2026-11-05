@@ -6,7 +6,7 @@ import { connection } from 'next/server';
 import { CopyField } from '@/app/_components/client-ui.tsx';
 import { ShopPhoto } from '@/app/_components/photo.tsx';
 import { Icon } from '@/app/_components/ui.tsx';
-import { isLive } from '@/core/catalog.ts';
+import { isLive, variantTitle } from '@/core/catalog.ts';
 import { jsonLdScript, shopJsonLd } from '@/core/discovery.ts';
 import { formatMoney } from '@/core/money.ts';
 import { AddToCart } from '@/app/_components/cart-actions.tsx';
@@ -117,7 +117,7 @@ export default async function ShopPage({ params }: { params: Promise<{ slug: str
                     return (
                       <li key={v.id} className={note.tone === 'out' ? 'is-out' : undefined}>
                         <span className="stack" style={{ gap: 0 }}>
-                          <span>{v.title && v.title !== 'Default' ? v.title : p.name}</span>
+                          <span>{variantTitle(v.title) || p.name}</span>
                           <span className={`stock stock-${note.tone}`}>{note.text}</span>
                         </span>
                         <span className="good-buy-row">

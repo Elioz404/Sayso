@@ -3,6 +3,7 @@
 
 import type { Catalog } from '../catalog.ts';
 import type { Commerce } from '../commerce.ts';
+import { agentActor, buyerAgentActor } from '../actors.ts';
 import type { Actor } from '../guard/types.ts';
 import type { Invoicing } from '../invoicing.ts';
 import type { Links } from '../links.ts';
@@ -79,11 +80,11 @@ export function shop(ctx: ToolContext): string {
 }
 
 export function actor(ctx: ToolContext): Actor {
-  return { type: 'agent', id: `agent:${ctx.agent?.label ?? 'unknown'}:${ctx.agent?.keyId ?? '-'}`, side: 'merchant' };
+  return agentActor({ keyId: ctx.agent?.keyId ?? '-', label: ctx.agent?.label ?? 'unknown' });
 }
 
 export function buyerActor(ctx: ToolContext): Actor {
-  return { type: 'agent', id: `buyer-agent:${ctx.channel}`, side: 'buyer' };
+  return buyerAgentActor(ctx.channel);
 }
 
 /** The shop of a shop-scoped endpoint, if it is open. */

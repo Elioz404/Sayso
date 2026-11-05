@@ -11,7 +11,9 @@ import { formatMoney, toMinor } from '@/core/money.ts';
 import { callApi } from './api.ts';
 import { ordersInThisBrowser } from './order-list.tsx';
 import { PayPalCheckout, type Paid } from './paypal-checkout.tsx';
-import { PurchaseCard, paymentWords, splitName, type Purchase } from './purchase-card.tsx';
+import { paymentWords } from '@/core/order-words.ts';
+import { PurchaseCard, type Purchase } from './purchase-card.tsx';
+import { splitLineName } from '@/core/catalog.ts';
 
 type Money = { currency_code: string; value: string };
 /** What create_cart, update_cart and get_cart return, as far as the chat reads it. */
@@ -299,7 +301,7 @@ export function ShopperChat({ paypalClientId, request, compact = false, onTurns,
       shop: slug ? (known.shops.get(slug) ?? undefined) : undefined,
       order: done?.order ?? told?.order?.number,
       lines: (cart.items ?? []).map((i) => ({
-        ...splitName(i.name ?? i.variant_id ?? 'Item'),
+        ...splitLineName(i.name ?? i.variant_id ?? 'Item'),
         qty: i.quantity,
         amount: i.price ? formatMoney(toMinor(i.price) * i.quantity, i.price.currency_code) : undefined,
         image: i.variant_id ? known.images.get(i.variant_id) : undefined,

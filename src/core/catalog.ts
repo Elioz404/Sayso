@@ -119,6 +119,34 @@ export interface Catalog {
   retired?: string[];
 }
 
+/** The title of a product's only option when it has no name of its own. */
+export const DEFAULT_VARIANT = 'Default';
+
+/** An option's own name, or '' for a product's only, unnamed option. */
+export function variantTitle(title: string | undefined): string {
+  return title && title !== DEFAULT_VARIANT ? title : '';
+}
+
+/** "Mug (Sage)", or just "Mug" for an unnamed option. */
+export function variantLabel(productName: string, title: string | undefined): string {
+  const own = variantTitle(title);
+  return own ? `${productName} (${own})` : productName;
+}
+
+/** How a cart names a line: "Mug - Sage", or just "Mug". */
+export function lineName(productName: string, title: string | undefined): string {
+  const own = variantTitle(title);
+  return own ? `${productName} - ${own}` : productName;
+}
+
+/** A cart line's name back into its product and option ("Mug - Sage" -> Mug, Sage). */
+export function splitLineName(name: string): { name: string; detail?: string } {
+  const at = name.lastIndexOf(' - ');
+  if (at <= 0) return { name };
+  const detail = variantTitle(name.slice(at + 3));
+  return detail ? { name: name.slice(0, at), detail } : { name: name.slice(0, at) };
+}
+
 export function findVariant(catalog: Catalog, variantId: string): { product: Product; variant: Variant } | undefined {
   for (const product of catalog.products) {
     const variant = product.variants.find((v) => v.id === variantId);

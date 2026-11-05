@@ -11,12 +11,38 @@ export function ownerActor(shopId: string): Actor {
   return { type: 'human', id: `owner:${shopId}`, side: 'merchant' };
 }
 
+/** The owner's own agent, acting with one of the shop's agent keys. */
+export function agentActor(key: { keyId: string; label: string }): Actor {
+  return { type: 'agent', id: `agent:${key.label}:${key.keyId}`, side: 'merchant', keyId: key.keyId, label: key.label };
+}
+
+/** A buyer's assistant, shopping from `channel`. */
+export function buyerAgentActor(channel: string): Actor {
+  return { type: 'agent', id: `buyer-agent:${channel}`, side: 'buyer', channel };
+}
+
+type ActorLike = Pick<Actor, 'type' | 'id'> & Partial<Actor>;
+
+/**
+ * The agent key an owner's agent acted with. Records written before actors carried it have it only at the
+ * end of their id ("agent:<label>:<key id>"), and records are never rewritten, so it is read from there.
+ */
+export function keyOf(actor: ActorLike): string | undefined {
+  if (actor.type !== 'agent' || !actor.id.startsWith('agent:')) return undefined;
+  return actor.keyId ?? (actor.id.split(':').length > 2 ? actor.id.split(':').at(-1) : undefined);
+}
+
 /** How an actor reads to the owner: their agents by label, buyers' assistants as such, people as "You". */
-export function actorName(actor: { type: 'agent' | 'human'; id: string; side?: 'buyer' | 'merchant' }): string {
+export function actorName(actor: ActorLike): string {
   if (actor.type !== 'agent') return actor.id.startsWith('owner:') ? 'You' : actor.id;
   if (actor.id === OPS_AGENT.id) return 'Sayso checkout';
-  const label = actor.id.split(':')[1] ?? actor.id;
-  return actor.side === 'buyer' ? `Buyer's assistant (${BUYER_CHANNEL[label] ?? label})` : label;
+  const [, ...rest] = actor.id.split(':');
+  if (actor.side === 'buyer') {
+    const channel = actor.channel ?? (rest.join(':') || actor.id);
+    return `Buyer's assistant (${BUYER_CHANNEL[channel] ?? channel})`;
+  }
+  // Older records: "agent:<label>:<key id>", where the label may itself hold a colon.
+  return actor.label ?? ((rest.length > 1 ? rest.slice(0, -1).join(':') : rest[0]) || actor.id);
 }
 
 /** Where a buyer's assistant came from, as an owner would say it. */

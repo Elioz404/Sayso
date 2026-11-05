@@ -2,7 +2,7 @@
 // models), schema.org JSON-LD on each shop page (what search engines and shopping crawlers read), and
 // the sitemap. All three are built here from the same catalogs and links.
 
-import { available, type Catalog, type Product, type Variant } from './catalog.ts';
+import { available, type Catalog, type Product, type Variant, variantLabel } from './catalog.ts';
 import type { Links } from './links.ts';
 import { formatMoney, toMoney } from './money.ts';
 
@@ -61,7 +61,7 @@ export function shopJsonLd(catalog: Catalog, links: Links): Record<string, unkno
         ...offer(catalog, product, variant, links, terms),
         itemOffered: {
           '@type': 'Product',
-          name: variant.title && variant.title !== 'Default' ? `${product.name} (${variant.title})` : product.name,
+          name: variantLabel(product.name, variant.title),
           description: product.description,
           category: product.category,
           image: product.imageUrl && links.asset(product.imageUrl),

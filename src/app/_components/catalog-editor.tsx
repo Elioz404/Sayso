@@ -5,11 +5,14 @@
 // prices. The shared demo shows them read-only.
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { callApi } from './api.ts';
+import { Modal } from './modal.tsx';
 import { shrink } from './images.ts';
 import { useAction } from './use-action.ts';
 import { MAX_STOCK } from '@/core/limits.ts';
+import { variantTitle } from '@/core/catalog.ts';
+import { currencySymbol } from '@/core/money.ts';
 
 export interface EditableProduct {
   id: string;
@@ -28,36 +31,34 @@ export interface EditableShipping {
   freeAbove: string;
 }
 
-export function currencySymbol(currency: string): string {
-  try {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency }).formatToParts(0).find((p) => p.type === 'currency')?.value ?? currency;
-  } catch {
-    return currency;
-  }
-}
-
 /** One product to edit in full, in a modal over the catalog list. */
 export function ProductEditDialog({ product, currency, onClose }: { product: EditableProduct; currency: string; onClose: () => void }) {
-  const dialog = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    if (dialog.current && !dialog.current.open) dialog.current.showModal();
-  }, []);
+  // Escape or a click outside never throws edits away; the close button still does.
+  const [dirty, setDirty] = useState(false);
   return (
-    <dialog ref={dialog} className="modal modal-wide" aria-label={`Edit ${product.name}`} onClose={onClose} onClick={(e) => e.target === dialog.current && dialog.current.close()}>
-      <div className="modal-body">
-        <button type="button" className="modal-close" aria-label="Close" onClick={() => dialog.current?.close()}>
-          ×
-        </button>
-        <h2 className="h3">Edit product</h2>
-        <ul className="sell-cards modal-product">
-          <ProductCard product={product} currency={currency} readOnly={false} onDone={() => dialog.current?.close()} />
-        </ul>
-      </div>
-    </dialog>
+    <Modal onClose={onClose} dismissible={!dirty} label={`Edit ${product.name}`} wide>
+      <h2 className="h3">Edit product</h2>
+      <ul className="sell-cards modal-product">
+        <ProductCard product={product} currency={currency} readOnly={false} onDone={onClose} onDirty={setDirty} />
+      </ul>
+    </Modal>
   );
 }
 
-export function ProductCard({ product, currency, readOnly, onDone }: { product: EditableProduct; currency: string; readOnly: boolean; onDone?: () => void }) {
+export function ProductCard({
+  product,
+  currency,
+  readOnly,
+  onDone,
+  onDirty,
+}: {
+  product: EditableProduct;
+  currency: string;
+  readOnly: boolean;
+  onDone?: () => void;
+  /** Told whenever the card goes from saved to edited and back. */
+  onDirty?: (dirty: boolean) => void;
+}) {
   const router = useRouter();
   const symbol = currencySymbol(currency);
   const start = () => ({
@@ -82,6 +83,8 @@ export function ProductCard({ product, currency, readOnly, onDone }: { product: 
       const e = edit.variants[v.id];
       return e.title !== v.title || e.price !== v.price || (v.stock !== null && e.stock !== v.stock);
     });
+  useEffect(() => onDirty?.(dirty), [dirty, onDirty]);
+  const [photoError, setPhotoError] = useState<string>();
 
   const save = () =>
     run(async () => {
@@ -128,13 +131,25 @@ export function ProductCard({ product, currency, readOnly, onDone }: { product: 
               accept="image/*,.heic,.heif"
               className="sr-only"
               onChange={async (e) => {
-                const file = e.target.files?.[0];
+                const input = e.currentTarget;
+                const file = input.files?.[0];
+                input.value = ''; // the same file can be picked again
                 if (!file) return;
                 setSaved(false);
-                setPhoto(await shrink(file));
+                setPhotoError(undefined);
+                try {
+                  setPhoto(await shrink(file));
+                } catch {
+                  setPhotoError('That photo could not be read. Try a JPEG or PNG.');
+                }
               }}
             />
           </label>
+        )}
+        {photoError && (
+          <p className="error small" role="alert">
+            {photoError}
+          </p>
         )}
       </div>
       <div className="sell-card-body">
@@ -153,7 +168,7 @@ export function ProductCard({ product, currency, readOnly, onDone }: { product: 
             const e = edit.variants[v.id];
             return (
               <li key={v.id} className="sell-variant">
-                {product.variants.length > 1 || v.title !== 'Default' ? (
+                {product.variants.length > 1 || variantTitle(v.title) ? (
                   <input className="sell-vtitle" value={e.title} readOnly={readOnly} onChange={(x) => setVariant(v.id, { title: x.target.value })} maxLength={80} aria-label="Option" />
                 ) : (
                   <span className="sell-vtitle small soft">Price and stock</span>

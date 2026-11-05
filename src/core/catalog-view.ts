@@ -1,7 +1,7 @@
 // The catalog as rows, one per variant: what the owner's grid shows and edits. Framework-free so the
 // page, the API route and tests share it.
 
-import { findVariant, pricesToConfirm, type Catalog } from './catalog.ts';
+import { type Catalog, findVariant, pricesToConfirm, variantTitle } from './catalog.ts';
 import { formatMoney, toMoney } from './money.ts';
 
 export interface VariantRow {
@@ -44,7 +44,7 @@ function toRow(catalog: Catalog, product: string, siblings: number, variantId: s
     id: variant.id,
     productId: found.product.id,
     product,
-    title: siblings > 1 || variant.title !== 'Default' ? variant.title : '',
+    title: siblings > 1 || variantTitle(variant.title) ? variant.title : '',
     currency: catalog.shop.currency,
     price: variant.price,
     stock: variant.madeToOrderDays === undefined ? variant.inventory : null,

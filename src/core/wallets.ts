@@ -18,7 +18,8 @@ import { HttpError, notFound } from './errors.ts';
 import type { Guard } from './guard/engine.ts';
 import type { Policy } from './guard/policy.ts';
 import type { PolicyStore } from './guard/policy-store.ts';
-import type { Actor, Executor, GuardRecord } from './guard/types.ts';
+import { buyerAgentActor } from './actors.ts';
+import type { Executor, GuardRecord } from './guard/types.ts';
 import type { Links } from './links.ts';
 import { DEFAULT_CURRENCY, formatMoney, majorUnits, parseAmount, toMinor } from './money.ts';
 import type { PayPalClient } from './paypal/client.ts';
@@ -279,7 +280,7 @@ export class Wallets {
       return { outcome: 'needs_approval', approvalUrl: cart.payment_method.approval_url };
     }
 
-    const actor: Actor = { type: 'agent', id: `buyer-agent:${channel}`, side: 'buyer' };
+    const actor = buyerAgentActor(channel);
     const record = await this.deps.guard.submit(
       {
         kind: 'checkout.create',

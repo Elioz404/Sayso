@@ -9,7 +9,8 @@ import { formatMoney, toMinor } from '@/core/money.ts';
 import { callApi } from './api.ts';
 import { cartStore, useCarts, type ShopCart } from './cart-store.ts';
 import { PayPalCheckout, type Paid } from './paypal-checkout.tsx';
-import { PurchaseCard, paymentWords, type Purchase } from './purchase-card.tsx';
+import { paymentWords } from '@/core/order-words.ts';
+import { PurchaseCard, type Purchase } from './purchase-card.tsx';
 
 type Money = { currency_code: string; value: string };
 type Priced = {

@@ -11,6 +11,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { itemCount, OPEN_CART_EVENT, useCarts } from './cart-store.ts';
 import { CartPanel } from './cart-panel.tsx';
 import { DOCK_OPEN_KEY as OPEN_KEY, NOT_HERE } from './dock-restore.ts';
+import { useDockFocus } from './use-dock.ts';
 import { OrderList } from './order-list.tsx';
 import { ShopperChat } from './shopper-chat.tsx';
 
@@ -85,19 +86,8 @@ export function ShopperDock({ paypalClientId }: { paypalClientId?: string }) {
     };
   }, [here]);
 
-  // Esc closes; focus goes to the message box on opening and back to what opened it on closing.
-  useEffect(() => {
-    if (!open) return;
-    if (tab === 'ai') panel.current?.querySelector<HTMLInputElement>('.shopper-input')?.focus({ preventScroll: true });
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      opener.current?.focus({ preventScroll: true });
-    };
-    // Focus follows the tab only when the panel opens.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  // Focus goes to the message box on opening (on the assistant tab) and back to what opened it on closing.
+  useDockFocus(open, () => setOpen(false), { panel, focus: tab === 'ai' ? '.shopper-input' : undefined, reopen: '.dock-fab', opener });
 
   // The page makes room in the same frame the panel starts to move (before paint), never a frame later.
   useLayoutEffect(() => {

@@ -3,7 +3,7 @@
 // and validation issues with resolution options an agent can apply on its own.
 // No I/O here, so every rule is unit-tested (tests/cart.test.ts).
 
-import { available, findVariant, type Catalog, type ShippingRule } from '../catalog.ts';
+import { available, type Catalog, findVariant, lineName, type ShippingRule } from '../catalog.ts';
 import { addDays, dayOf } from '../days.ts';
 import { applyBps, formatMoney, toMinor, toMoney } from '../money.ts';
 import type {
@@ -113,7 +113,7 @@ export function priceCart(catalog: Catalog, input: PayPalCart, options: PriceCar
       quantity,
       variant_id: variant.id,
       parent_id: product.id,
-      name: `${product.name} - ${variant.title}`,
+      name: lineName(product.name, variant.title),
       description: product.description.slice(0, 120),
       price: toMoney(variant.price, currency),
       selected_attributes: Object.entries(variant.attributes).map(([name, value]) => ({ name, value })),

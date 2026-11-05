@@ -71,6 +71,15 @@ export function parseAmount(input: string | number, currency: string): number | 
   }
 }
 
+/** The sign written before an amount ("$", "€"), or the code itself where there is none. */
+export function currencySymbol(currency: string): string {
+  try {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency }).formatToParts(0).find((p) => p.type === 'currency')?.value ?? currency;
+  } catch {
+    return currency;
+  }
+}
+
 /** Human-readable amount for UIs, audit messages and agent replies. */
 export function formatMoney(minor: number, currency: string): string {
   const decimals = decimalsFor(currency);

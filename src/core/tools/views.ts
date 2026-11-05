@@ -7,6 +7,7 @@ import type { Links } from '../links.ts';
 import type { PayPalCart } from '../cart/spec.ts';
 import type { GuardRecord, RecordStatus } from '../guard/types.ts';
 import { DEFAULT_CURRENCY, formatMoney } from '../money.ts';
+import { PAYMENT_FOR_BUYER } from '../order-words.ts';
 import type { PriceReference } from '../market.ts';
 import { searchCatalog, type ProductQuery } from '../search.ts';
 import type { ToolContext } from './context.ts';
@@ -76,12 +77,6 @@ export function cartForAgent(cart: PayPalCart) {
     next,
   };
 }
-
-export const PAYMENT_FOR_BUYER: Record<string, string> = {
-  paid: 'Charged. The shop is preparing the order.',
-  awaiting_owner: 'Authorized in PayPal. The shop confirms it before charging.',
-  released: 'Cancelled by the shop. The buyer was not charged and the PayPal hold was released.',
-};
 
 /** What a buyer's assistant may know about a paid order. */
 export async function orderForBuyer(ctx: ToolContext, shopId: string, cartId: string) {
