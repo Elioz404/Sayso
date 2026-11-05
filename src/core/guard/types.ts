@@ -138,7 +138,12 @@ export interface RecordQuery {
   cartId?: string;
   /** Records about any of these carts: an order list's history in one read. */
   cartIds?: readonly string[];
-  limit?: number;
+  /** Only actions toward this counterparty (an invoice's recipient, say). */
+  counterparty?: string;
+  /** Only records the owner answered (approved or rejected). */
+  answered?: boolean;
+  /** The most records to read, newest first. Every read says how many, so no store cuts it short unasked. */
+  limit: number;
 }
 
 export interface GuardStore {
@@ -150,7 +155,7 @@ export interface GuardStore {
   updateIf(record: GuardRecord, expected: RecordStatus): Promise<boolean>;
   get(id: string): Promise<GuardRecord | undefined>;
   /** An owner's records, newest first. */
-  list(ownerId: string, query?: RecordQuery): Promise<GuardRecord[]>;
+  list(ownerId: string, query: RecordQuery): Promise<GuardRecord[]>;
 }
 
 export function matchesQuery(record: GuardRecord, query: RecordQuery): boolean {
@@ -160,6 +165,8 @@ export function matchesQuery(record: GuardRecord, query: RecordQuery): boolean {
     (!statuses || statuses.includes(record.status)) &&
     (!query.kind || record.action.kind === query.kind) &&
     (!query.cartId || record.action.params?.cartId === query.cartId) &&
-    (!query.cartIds || query.cartIds.includes(String(record.action.params?.cartId)))
+    (!query.cartIds || query.cartIds.includes(String(record.action.params?.cartId))) &&
+    (!query.counterparty || record.action.counterparty === query.counterparty) &&
+    (!query.answered || record.events.some((e) => e.type === 'approved' || e.type === 'rejected'))
   );
 }

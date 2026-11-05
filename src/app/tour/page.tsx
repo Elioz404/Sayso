@@ -75,22 +75,31 @@ export default async function JudgesPage({ searchParams }: { searchParams: Promi
   const seen = new Set(((await cookies()).get(SEEN_COOKIE)?.value ?? '').split('.'));
 
   // The buyer's side: the orders this browser paid for, newest first.
-  const deps = { carts, catalogs, orders, links };
-  const paid = (await Promise.all((await paidHere()).map((id) => buyerOrder(deps, id)))).filter((o): o is BuyerOrder => Boolean(o));
-  const order = paid.sort((a, b) => b.placedAt.localeCompare(a.placedAt))[0];
+  const buyerSide = async () => {
+    const deps = { carts, catalogs, orders, links };
+    const paid = (await Promise.all((await paidHere()).map((id) => buyerOrder(deps, id)))).filter((o): o is BuyerOrder => Boolean(o));
+    return paid.sort((a, b) => b.placedAt.localeCompare(a.placedAt))[0];
+  };
 
   // The seller's side: the shop this browser is signed in to, if a judge opened it; else a draft in progress.
-  const view = await ownerView();
-  const tour = view ? await tours?.forShop(view.shopId) : undefined;
-  const signedIn = tour?.kind === 'seller' && view ? { view, tour } : undefined;
-  // Signed in elsewhere now (the demo shop's dashboard, say), the judge's own shop is still theirs through
-  // their PayPal sign-in: show where it stands, and offer to switch back to it.
-  const elsewhere = signedIn ? undefined : await judgeShopOfSeller(context);
-  const mine = signedIn ? { shopId: signedIn.view.shopId, catalog: signedIn.view.catalog, tour: signedIn.tour } : elsewhere;
-  const draftId = mine ? undefined : await claimedShop();
-  const drafting = draftId && (await tours?.forShop(draftId))?.kind === 'seller' ? await catalogs.byShopId(draftId) : undefined;
-  const steps = mine ? await tourProgress(context, mine.tour) : [];
-  const passkey = signedIn ? await signedIn.view.passkeys.required(signedIn.view.shopId) : false;
+  const sellerSide = async () => {
+    const view = await ownerView();
+    const tour = view ? await tours?.forShop(view.shopId) : undefined;
+    const signedIn = tour?.kind === 'seller' && view ? { view, tour } : undefined;
+    // Signed in elsewhere now (the demo shop's dashboard, say), the judge's own shop is still theirs through
+    // their PayPal sign-in: show where it stands, and offer to switch back to it.
+    const elsewhere = signedIn ? undefined : await judgeShopOfSeller(context);
+    const mine = signedIn ? { shopId: signedIn.view.shopId, catalog: signedIn.view.catalog, tour: signedIn.tour } : elsewhere;
+    const draftId = mine ? undefined : await claimedShop();
+    const [drafting, steps, passkey] = await Promise.all([
+      draftId ? tours?.forShop(draftId).then((t) => (t?.kind === 'seller' ? catalogs.byShopId(draftId) : undefined)) : undefined,
+      mine ? tourProgress(context, mine.tour) : [],
+      signedIn ? signedIn.view.passkeys.required(signedIn.view.shopId) : false,
+    ]);
+    return { signedIn, elsewhere, mine, drafting, steps, passkey };
+  };
+
+  const [order, { signedIn, elsewhere, mine, drafting, steps, passkey }] = await Promise.all([buyerSide(), sellerSide()]);
   const redact = signedIn?.view.redact ?? ((text: string) => text);
 
   const buying: Row[] = [

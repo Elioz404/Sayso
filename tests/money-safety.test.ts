@@ -145,7 +145,7 @@ test('a purchase over the buyer\'s limits goes to PayPal approval and leaves not
   assert.equal(paid.data.status, 'needs_buyer_approval');
   assert.match(paid.data.approval_url, /checkoutnow/);
 
-  assert.deepEqual(await s.guard.list(walletId, { status: 'pending_approval' }), [], 'no request the buyer could never answer');
+  assert.deepEqual(await s.guard.list(walletId, { status: 'pending_approval', limit: 100 }), [], 'no request the buyer could never answer');
   assert.deepEqual(s.approvals, [], 'the shop owner is not asked about a buyer\'s limits');
 });
 
@@ -168,7 +168,7 @@ test("a purchase the shop never charged stops counting toward the buyer's daily 
   assert.equal(first.status, 'authorized_waiting_for_shop', JSON.stringify(first));
   const [capture] = await s.saySo.pending('shop_maya');
   await s.saySo.decide('shop_maya', capture.id, 'reject', 'owner:shop_maya');
-  const [allowed] = await s.guard.list(walletId, { status: 'verified' });
+  const [allowed] = await s.guard.list(walletId, { status: 'verified', limit: 100 });
   assert.ok(allowed.events.some((e) => e.type === 'released'), "the buyer's record says so, in its audit chain");
 
   // Another $44.99 today is still inside $80: the first one was never charged.

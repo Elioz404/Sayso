@@ -56,7 +56,7 @@ test('a charge the rules allow, a refund blocked before PayPal, and a rule chang
   const s = await stack();
   const cartId = await paidOrder(s);
 
-  const [capture] = await s.guard.list('shop_maya', { cartId, kind: 'payment.capture' });
+  const [capture] = await s.guard.list('shop_maya', { cartId, kind: 'payment.capture', limit: 100 });
   const charged = await view(s, capture.id);
   assert.equal(charged.outcome, 'Allowed by your rules');
   assert.equal(charged.by, 'Sayso checkout');
@@ -64,7 +64,7 @@ test('a charge the rules allow, a refund blocked before PayPal, and a rule chang
   assert.equal(whyNow(charged), charged.reason);
 
   await s.call('refund_order', { order_id: cartId, amount: '500.00', reason: 'Everything twice' }, s.owner);
-  const [refund] = await s.guard.list('shop_maya', { cartId, kind: 'refund.create' });
+  const [refund] = await s.guard.list('shop_maya', { cartId, kind: 'refund.create', limit: 100 });
   const blocked = await view(s, refund.id);
   assert.equal(blocked.outcome, 'Blocked by a rule');
   assert.ok(blocked.stopped);
@@ -82,7 +82,7 @@ test('a charge the rules allow, a refund blocked before PayPal, and a rule chang
 test('personal details are masked for the shared demo session', async () => {
   const s = await stack();
   const cartId = await paidOrder(s);
-  const [capture] = await s.guard.list('shop_maya', { cartId, kind: 'payment.capture' });
+  const [capture] = await s.guard.list('shop_maya', { cartId, kind: 'payment.capture', limit: 100 });
   const masked = recordView(await s.saySo.record('shop_maya', capture.id), () => '•••');
   assert.ok([masked.reason, ...masked.effects].every((t) => t === '•••'));
   if (masked.counterparty) assert.equal(masked.counterparty, '•••');

@@ -71,6 +71,8 @@ export interface ProductionDeps {
 const MAX_PLAN_DAYS = 365;
 /** How many placed orders and sent invoices the board looks at, newest first. */
 const SCANNED = 100;
+/** Refunds read for those orders (a few per order at most). */
+const REFUNDS_READ = 2_000;
 const INVOICE_STATE: Record<string, PaymentState | 'gone'> = {
   PAID: 'paid',
   MARKED_AS_PAID: 'paid',
@@ -99,13 +101,14 @@ export class Production {
 
   /** Everything still to make: blocked work first, then by when it has to be done. */
   async jobs(shopId: string): Promise<ProductionJob[]> {
-    const [catalog, carts, refunds, invoices, notes] = await Promise.all([
+    const [catalog, carts, invoices, notes] = await Promise.all([
       this.catalog(shopId),
       this.deps.carts.listPlaced(shopId, { limit: SCANNED }),
-      this.deps.guard.list(shopId, { kind: 'refund.create', status: 'verified' }),
       this.deps.guard.list(shopId, { kind: 'invoice.send', status: ['verified', 'unverified'], limit: SCANNED }),
       this.deps.jobs.list(shopId),
     ]);
+    // Refunds for the orders on the board only, however many other refunds the shop has.
+    const refunds = carts.length ? await this.deps.guard.list(shopId, { kind: 'refund.create', status: 'verified', cartIds: carts.map((c) => c.id), limit: REFUNDS_READ }) : [];
     const jobs = [
       ...carts.flatMap((cart) => orderJobs(cart, catalog, refunds)),
       // Each invoice's status is read from PayPal: a few at a time, not a hundred at once.
@@ -146,7 +149,7 @@ export class Production {
     } else if (kind === 'order' && ref && line) {
       const cart = await this.deps.carts.get(ref);
       if (cart?.shopId === shopId) {
-        const [catalog, refunds] = await Promise.all([this.catalog(shopId), this.deps.guard.list(shopId, { kind: 'refund.create', status: 'verified', cartId: ref })]);
+        const [catalog, refunds] = await Promise.all([this.catalog(shopId), this.deps.guard.list(shopId, { kind: 'refund.create', status: 'verified', cartId: ref, limit: REFUNDS_READ })]);
         job = orderJobs(cart, catalog, refunds).find((j) => j.id === jobId);
       }
     }

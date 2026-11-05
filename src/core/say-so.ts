@@ -42,6 +42,10 @@ export type AuditedRecord = GuardRecord & { chainIntact: boolean };
 /** Rule drafts per shop per hour: each one is an AI call on the server's daily budget. */
 const DRAFTS_PER_HOUR = 20;
 const RULES_DRAFT = 'rules-draft';
+/** What waits for the owner, at most: more than anyone answers in one sitting. */
+const PENDING_READ = 200;
+/** The most owner answers read for earned autonomy. */
+const AUTONOMY_RECORDS = 5_000;
 const DRAFT_TTL_MS = 30 * 60_000;
 
 export class SaySo {
@@ -53,7 +57,7 @@ export class SaySo {
   }
 
   pending(shopId: string): Promise<GuardRecord[]> {
-    return this.deps.guard.list(shopId, { status: 'pending_approval' });
+    return this.deps.guard.list(shopId, { status: 'pending_approval', limit: PENDING_READ });
   }
 
   /** The shop's records, newest first, each with its hash chain checked. `since`: only those created since then. */
@@ -119,8 +123,13 @@ export class SaySo {
 
   /** Rules the owner's own approvals support, and how close the others are. Recomputed every time. */
   async autonomy(shopId: string, now = new Date()): Promise<Autonomy> {
-    const history = await this.deps.guard.list(shopId, { since: new Date(now.getTime() - LOOKBACK_DAYS * 86_400_000) });
-    return earnedAutonomy(await this.policy(shopId), history, now);
+    // Only what earned autonomy counts: the owner's answers in the window, as many as there are up to a cap.
+    const [history, policy] = await Promise.all([
+      this.deps.guard.list(shopId, { since: new Date(now.getTime() - LOOKBACK_DAYS * 86_400_000), answered: true, limit: AUTONOMY_RECORDS }),
+      this.policy(shopId),
+    ]);
+    const autonomy = earnedAutonomy(policy, history, now);
+    return history.length >= AUTONOMY_RECORDS ? { ...autonomy, partial: true } : autonomy;
   }
 
   /**

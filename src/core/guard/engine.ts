@@ -160,7 +160,7 @@ export class Guard {
     return this.deps.store.get(recordId);
   }
 
-  list(ownerId: string, query?: RecordQuery): Promise<GuardRecord[]> {
+  list(ownerId: string, query: RecordQuery): Promise<GuardRecord[]> {
     return this.deps.store.list(ownerId, query);
   }
 
@@ -316,11 +316,11 @@ export class MemoryGuardStore implements GuardStore {
     const r = this.records.get(id);
     return r && structuredClone(r);
   }
-  async list(ownerId: string, query: RecordQuery = {}): Promise<GuardRecord[]> {
+  async list(ownerId: string, query: RecordQuery): Promise<GuardRecord[]> {
     return [...this.records.values()]
       .filter((r) => r.action.ownerId === ownerId && matchesQuery(r, query))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      .slice(0, query.limit ?? Infinity)
+      .slice(0, query.limit)
       .map((r) => structuredClone(r));
   }
 }

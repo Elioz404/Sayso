@@ -48,6 +48,15 @@ test('a turn runs the buyer tools the model picks and returns what happened', as
   assert.deepEqual(reply, { text: 'Maya Ceramics has mugs for $34.' });
   assert.equal(seen[1].messages.at(-1)?.role, 'tool', 'the tool result goes back to the model');
   assert.ok(seen[0].tools.every((t) => !['refund_order', 'update_variant', 'propose_policy'].includes(t.name)), 'never the seller tools');
+  assert.equal(turn.changed, false, 'a search changes nothing, so pages following the orders stay as they are');
+});
+
+test('a turn that makes a cart says it changed something', async () => {
+  const { tools, run } = await buyerTools();
+  const { model } = scripted([{ toolCalls: [call('c1', 'create_cart', { shop: 'maya-ceramics', items: [{ variant_id: 'var_mug_sage', quantity: 1 }] })] }, { content: 'Your cart is ready.' }]);
+  const turn = await shopperTurn({ model, tools, run }, [], 'One sage mug please');
+  assert.ok('tool' in turn.steps[0] && !turn.steps[0].isError, JSON.stringify(turn.steps[0]));
+  assert.equal(turn.changed, true);
 });
 
 test('a tool the shopper side does not have is refused, not run', async () => {

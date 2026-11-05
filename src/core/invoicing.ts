@@ -42,6 +42,8 @@ export interface InvoiceView {
   at: string;
 }
 
+/** A client's invoices read to tell whether they have paid the shop before. */
+const INVOICES_PER_CLIENT = 50;
 const PAID = new Set(['PAID', 'MARKED_AS_PAID', 'PARTIALLY_PAID']);
 /** No further change expected: cached for good. Anything else is re-read after STATUS_TTL_MS. */
 const FINAL = new Set(['PAID', 'MARKED_AS_PAID', 'CANCELLED', 'REFUNDED', 'MARKED_AS_REFUNDED']);
@@ -112,7 +114,7 @@ export class Invoicing {
   /** Has this person paid the shop before: a paid order, or a paid invoice? */
   private async hasPaid(shopId: string, email: string): Promise<boolean> {
     if (await this.deps.carts.paidBy(shopId, email)) return true;
-    const sent = (await this.deps.guard.list(shopId, { kind: 'invoice.send', status: 'verified' })).filter((r) => r.action.counterparty === email);
+    const sent = await this.deps.guard.list(shopId, { kind: 'invoice.send', status: 'verified', counterparty: email, limit: INVOICES_PER_CLIENT });
     const statuses = await mapLimit(sent, PAYPAL_READS, async (record) => (await this.liveStatus(record))?.status ?? '');
     return statuses.some((status) => PAID.has(status));
   }

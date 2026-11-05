@@ -268,7 +268,18 @@ export function Decision({ id, big = false, passkey = false, onDone }: { id: str
   const router = useRouter();
   const [note, setNote] = useState('');
   const { busy, error, run } = useAction();
-  const signing = usePasskeyChallenge(passkey ? { purpose: 'approve', record: id } : undefined);
+  // A list can hold many of these: each fetches its passkey challenge only once its button is on screen,
+  // hovered or focused, which still lands before the tap that needs it.
+  const approve = useRef<HTMLButtonElement>(null);
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    const el = approve.current;
+    if (!passkey || armed || !el) return;
+    const seen = new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && setArmed(true));
+    seen.observe(el);
+    return () => seen.disconnect();
+  }, [passkey, armed]);
+  const signing = usePasskeyChallenge(passkey && armed ? { purpose: 'approve', record: id } : undefined);
 
   const decide = (decision: 'approve' | 'reject') =>
     run(async () => {
@@ -296,7 +307,14 @@ export function Decision({ id, big = false, passkey = false, onDone }: { id: str
         </div>
       )}
       <div className={`decide${big ? ' decide-big' : ''}`}>
-        <button className={`btn btn-primary${big ? ' btn-big' : ''}`} disabled={Boolean(busy)} onClick={() => void decide('approve')}>
+        <button
+          ref={approve}
+          className={`btn btn-primary${big ? ' btn-big' : ''}`}
+          disabled={Boolean(busy)}
+          onPointerEnter={() => setArmed(true)}
+          onFocus={() => setArmed(true)}
+          onClick={() => void decide('approve')}
+        >
           <Icon name={passkey ? 'fingerprint' : 'check'} size={18} />
           {busy === 'approve' ? (passkey ? 'Waiting for your passkey...' : 'Approving...') : 'Say OK'}
         </button>
@@ -305,7 +323,11 @@ export function Decision({ id, big = false, passkey = false, onDone }: { id: str
         </button>
       </div>
       {passkey && big && <p className="small muted">Confirm with your fingerprint, face or PIN. Your device signs this exact request.</p>}
-      {error && <p className="error small">{error}</p>}
+      {error && (
+        <p className="error small" role="alert">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

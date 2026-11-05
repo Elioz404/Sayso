@@ -190,7 +190,7 @@ export class PgCartStore implements CartStore {
   async put(cart: StoredCart) {
     await this.db.put({ kind: 'cart', id: cart.id, owner: cart.shopId, slug: cart.merchantOrderNumber, createdAt: cart.createdAt, data: cart });
   }
-  listByShop(shopId: string, limit?: number) {
+  listByShop(shopId: string, limit: number) {
     return this.db.list<StoredCart>('cart', shopId, { limit });
   }
   listPlaced(shopId: string, query: PlacedQuery) {
@@ -256,7 +256,7 @@ export class PgGuardStore implements GuardStore {
   get(id: string) {
     return this.db.get<GuardRecord>('guard', id);
   }
-  list(ownerId: string, query: RecordQuery = {}) {
+  list(ownerId: string, query: RecordQuery) {
     const where: string[] = [];
     const params: unknown[] = [];
     const add = (sql: (n: string) => string, value: unknown) => {
@@ -268,6 +268,8 @@ export class PgGuardStore implements GuardStore {
     if (query.kind) add((n) => `data->'action'->>'kind' = ${n}`, query.kind);
     if (query.cartId) add((n) => `data->'action'->'params'->>'cartId' = ${n}`, query.cartId);
     if (query.cartIds) add((n) => `data->'action'->'params'->>'cartId' = any(${n}::text[])`, query.cartIds);
+    if (query.counterparty) add((n) => `data->'action'->>'counterparty' = ${n}`, query.counterparty);
+    if (query.answered) where.push(`(data->'events' @> '[{"type":"approved"}]' or data->'events' @> '[{"type":"rejected"}]')`);
     return this.db.list<GuardRecord>('guard', ownerId, { where, params, limit: query.limit });
   }
   private doc(record: GuardRecord): Doc {

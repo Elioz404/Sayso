@@ -43,6 +43,8 @@ export interface Learning {
 export interface Autonomy {
   suggestions: RuleSuggestion[];
   learning: Learning[];
+  /** Only the most recent answers were read: older ones in the window were left out. */
+  partial?: boolean;
 }
 
 interface Decided {

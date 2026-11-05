@@ -243,12 +243,12 @@ export function ShopperChat({ paypalClientId, request, compact = false, onTurns,
     const told = untold;
     const note = told.length ? `(I cancelled ${told.length === 1 ? 'the cart' : 'the carts'} ${told.join(', ')} before paying; don't offer ${told.length === 1 ? 'it' : 'them'} again unless I ask.) ` : '';
     try {
-      const reply = await callApi<{ messages: unknown[]; steps: Step[] }>('/api/shopper', 'POST', { messages: history, text: (note + said).slice(0, 600), orders: ordersInView() });
+      const reply = await callApi<{ messages: unknown[]; steps: Step[]; changed: boolean }>('/api/shopper', 'POST', { messages: history, text: (note + said).slice(0, 600), orders: ordersInView() });
       if (told.length) setUntold((u) => u.filter((id) => !told.includes(id)));
       setHistory(reply.messages);
       setTurns((t) => [...t.slice(0, -1), { user: said, steps: reply.steps, ...(hidden ? { hidden } : {}) }]);
-      // A page that follows the shopper's orders (For Judges) refreshes: a payment, a refund request.
-      window.dispatchEvent(new Event('sayso:changed'));
+      // A page that follows the shopper's orders (For Judges) refreshes when the turn changed one.
+      if (reply.changed) window.dispatchEvent(new Event('sayso:changed'));
     } catch (err) {
       setError((err as Error).message);
       setTurns((t) => t.slice(0, -1));

@@ -34,41 +34,35 @@ export interface TourProgressDeps {
   saySo: SaySo;
 }
 
-/** Every step of `tour`, in order, with where it stands now. */
+/** Every step of `tour`, in order, with where it stands now. The steps are read at the same time. */
 export async function tourProgress(deps: TourProgressDeps, tour: Tour): Promise<StepView[]> {
   const { shopId } = tour;
   const buy = tour.steps.buy;
-  const order = buy?.cartId ? (await deps.orders.get(shopId, buy.cartId)).order : undefined;
+  // The order and its Guard history in one read: the purchase step shows its captures from it.
+  const bought = buy?.cartId ? await deps.orders.get(shopId, buy.cartId) : undefined;
+  const order = bought?.order;
   const paid = order?.status === 'paid';
 
-  const views: StepView[] = [];
-  for (const step of tour.kind === 'seller' ? SELLER_STEPS : TOUR_STEPS) {
-    const result = tour.steps[step];
-    if (step === 'buy') {
-      const captures = buy?.cartId ? await deps.guard.list(shopId, { cartId: buy.cartId, kind: 'payment.capture' }) : [];
-      views.push(
-        !result
-          ? { step, state: 'next', records: [], decide: [] }
-          : paid
-            ? { step, state: 'done', result, records: captures, decide: [], outcome: `Paid ${order!.total}. Guard checked the stock and captured it in PayPal.` }
-            : { step, state: 'needs-you', result, records: captures, decide: [], outcome: 'The cart is ready. Pay for it in PayPal sandbox to place the order.', payUrl: result.approvalUrl },
-      );
-      continue;
-    }
-    if (step === 'earn') {
-      views.push(await earnView(deps, tour, result));
-      continue;
-    }
-    if (!result) {
-      const blocked = step === 'refund' && Boolean(buy) && !paid;
-      views.push({ step, state: blocked ? 'unavailable' : 'next', records: [], decide: [], why: blocked ? 'The purchase has to be paid first: there is nothing to refund yet.' : undefined });
-      continue;
-    }
-    const r = result.recordId ? await deps.guard.get(result.recordId) : undefined;
-    const pending = r?.status === 'pending_approval';
-    views.push({ step, state: pending ? 'needs-you' : 'done', result, records: r ? [r] : [], decide: pending ? [r] : [], outcome: r && outcome(step, r) });
-  }
-  return views;
+  return Promise.all(
+    (tour.kind === 'seller' ? SELLER_STEPS : TOUR_STEPS).map(async (step): Promise<StepView> => {
+      const result = tour.steps[step];
+      if (step === 'buy') {
+        const captures = (bought?.records ?? []).filter((r) => r.action.kind === 'payment.capture');
+        if (!result) return { step, state: 'next', records: [], decide: [] };
+        return paid
+          ? { step, state: 'done', result, records: captures, decide: [], outcome: `Paid ${order!.total}. Guard checked the stock and captured it in PayPal.` }
+          : { step, state: 'needs-you', result, records: captures, decide: [], outcome: 'The cart is ready. Pay for it in PayPal sandbox to place the order.', payUrl: result.approvalUrl };
+      }
+      if (step === 'earn') return earnView(deps, tour, result);
+      if (!result) {
+        const blocked = step === 'refund' && Boolean(buy) && !paid;
+        return { step, state: blocked ? 'unavailable' : 'next', records: [], decide: [], why: blocked ? 'The purchase has to be paid first: there is nothing to refund yet.' : undefined };
+      }
+      const r = result.recordId ? await deps.guard.get(result.recordId) : undefined;
+      const pending = r?.status === 'pending_approval';
+      return { step, state: pending ? 'needs-you' : 'done', result, records: r ? [r] : [], decide: pending ? [r] : [], outcome: r && outcome(step, r) };
+    }),
+  );
 }
 
 async function earnView(deps: TourProgressDeps, tour: Tour, result: StepResult | undefined): Promise<StepView> {
@@ -90,7 +84,7 @@ async function earnView(deps: TourProgressDeps, tour: Tour, result: StepResult |
   }
   const [suggestion] = (await deps.saySo.autonomy(tour.shopId)).suggestions;
   if (suggestion) return { step, state: 'needs-you', result, records, decide: [], suggestion, outcome: `You approved all ${records.length}. Your approvals earned a rule:` };
-  const adopted = (await deps.guard.list(tour.shopId, { kind: 'policy.update' })).find((r) => r.action.actor.type === 'human' && r.status === 'verified' && r.createdAt >= result.at);
+  const adopted = (await deps.guard.list(tour.shopId, { kind: 'policy.update', since: new Date(result.at), limit: 20 })).find((r) => r.action.actor.type === 'human' && r.status === 'verified' && r.createdAt >= result.at);
   return adopted
     ? { step, state: 'done', result, records: [...records, adopted], decide: [], outcome: 'Adopted. Refunds like these now go through on their own; bigger ones still wait for you. See it in Rules.' }
     : { step, state: 'done', result, records, decide: [], outcome: 'Your agent already had room for these refunds, so none needed you.' };

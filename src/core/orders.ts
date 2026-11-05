@@ -42,6 +42,8 @@ export interface OrderSummary {
   createdAt: string;
 }
 
+/** One order's Guard history: its capture, refunds, voids and any requests about it. */
+const ORDER_HISTORY = 200;
 /** Validation issues that mean a buyer wanted something the shop could not sell them. */
 const MISSED = new Set(['INVENTORY_ISSUE', 'DATA_ERROR', 'SHIPPING_ERROR', 'BUSINESS_RULE_ERROR']);
 const DEFAULT_LIMIT = 200;
@@ -83,7 +85,7 @@ export class Orders {
   /** One order with its Guard history. `ref` is the cart id or the order number people see (SAY-...). */
   async get(shopId: string, ref: string): Promise<{ order: OrderSummary; cart: StoredCart; records: GuardRecord[] }> {
     const cart = await this.cart(shopId, ref);
-    const records = await this.deps.guard.list(shopId, { cartId: cart.id });
+    const records = await this.deps.guard.list(shopId, { cartId: cart.id, limit: ORDER_HISTORY });
     return { order: summarize(cart, records), cart, records };
   }
 

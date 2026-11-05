@@ -131,7 +131,7 @@ test('an order the shop holds and then turns down ends at Cancelled', async () =
   assert.equal(held.state, 'waiting');
   assert.deepEqual(steps(held), [['Authorized', true], ['Shop confirms', false], ['Shipped', false]]);
 
-  const [capture] = await s.guard.list('shop_maya', { cartId: id, kind: 'payment.capture' });
+  const [capture] = await s.guard.list('shop_maya', { cartId: id, kind: 'payment.capture', limit: 100 });
   await s.saySo.decide('shop_maya', capture.id, 'reject', 'owner:shop_maya', { note: 'Out of glaze' });
   const cancelled = (await buyerOrder(deps, id))!;
   assert.equal(cancelled.state, 'cancelled');

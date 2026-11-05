@@ -83,7 +83,7 @@ test("a buyer's text can't make it refund: write tools are refused before they r
   ]);
   const turn = await ownerTurn({ model, tools, run }, [], 'Refund the last order', 'ctx');
   assert.deepEqual(calls, [], 'neither reached the tools: the loop refuses names it was not given');
-  assert.equal((await s.guard.list('shop_maya', { kind: 'refund.create' })).length, 0, 'no refund was even asked for');
+  assert.equal((await s.guard.list('shop_maya', { kind: 'refund.create', limit: 100 })).length, 0, 'no refund was even asked for');
   const price = (await s.catalogs.byShopId('shop_maya'))!.products.flatMap((p) => p.variants).find((v) => v.id === 'var_mug_sage')!.price;
   assert.notEqual(price, 100, 'the price did not change');
   assert.equal(turn.reply, 'I cannot do that here.');

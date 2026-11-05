@@ -7,7 +7,8 @@ import type { ChatMessage, ChatModel, ToolCall } from './llm.ts';
 import { toolLoop, type LoopStep, type LoopTool, type RunTool } from './tool-loop.ts';
 
 export type { RunTool } from './tool-loop.ts';
-export type ShopperTool = LoopTool;
+/** A buyer tool as the loop sees it; `readOnlyHint` tells the tools that change nothing from the rest. */
+export type ShopperTool = LoopTool & { annotations?: { readOnlyHint?: boolean } };
 export type ShopperStep = LoopStep;
 
 export const SHOPPER_LIMITS = { messages: 40, userChars: 600, toolChars: 8_000, rounds: 6 } as const;
@@ -59,5 +60,9 @@ export function cleanHistory(raw: unknown): ChatMessage[] {
 /** `context`: what the site knows for this turn only (the shopper's own orders), never kept in the history. */
 export async function shopperTurn(deps: { model: ChatModel; tools: ShopperTool[]; run: RunTool }, history: ChatMessage[], text: string, context?: string) {
   const messages: ChatMessage[] = [...history, { role: 'user', content: text.slice(0, SHOPPER_LIMITS.userChars) }];
-  return toolLoop(deps, [SHOPPER_PROMPT, ...(context ? [context] : [])], messages, SHOPPER_LIMITS);
+  const turn = await toolLoop(deps, [SHOPPER_PROMPT, ...(context ? [context] : [])], messages, SHOPPER_LIMITS);
+  // Whether the turn changed anything (a cart, a payment, a refund request): pages that follow the
+  // shopper's orders refresh only then.
+  const writes = new Set(deps.tools.filter((t) => !t.annotations?.readOnlyHint).map((t) => t.name));
+  return { ...turn, changed: turn.steps.some((s) => 'tool' in s && !s.isError && writes.has(s.tool)) };
 }

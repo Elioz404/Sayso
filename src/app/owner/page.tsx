@@ -15,13 +15,14 @@ import { RevenueChart } from '@/app/_components/revenue-chart.tsx';
 import { TrustReportView } from '@/app/_components/trust-report-view.tsx';
 import { findVariant } from '@/core/catalog.ts';
 import { shopMetrics } from '@/core/shop-metrics.ts';
-import { trustReport } from '@/core/trust-report.ts';
-import { approvalLimit } from '@/core/guard/policy.ts';
 import { ownerView, pendingFor } from '@/server/owner.ts';
 
-/** The in-depth report's window, and the most records it reads in it. */
-const REPORT_DAYS = 90;
-const REPORT_RECORDS = 2_000;
+/** The week's numbers compare the last 7 days with the 7 before. */
+const METRIC_DAYS = 7;
+/** The most Guard records read for those two weeks. */
+const WEEK_RECORDS = 2_000;
+/** Latest orders listed. */
+const RECENT_ORDERS = 5;
 
 /** What PayPal's payout onboarding came back with, as /owner?payouts=... */
 const PUBLISHED: Record<string, string> = {
@@ -39,25 +40,23 @@ const PAYOUT_OUTCOMES: Record<string, string> = {
 export default async function Overview({ searchParams }: { searchParams: Promise<{ payouts?: string; published?: string }> }) {
   const view = await ownerView();
   if (!view) return null;
-  const { shop, shopId, orders: shopOrders, catalog, redact, saySo, payouts, demo } = view;
+  const { shop, shopId, orders: shopOrders, catalog, redact, saySo, guard, payouts, demo } = view;
   const asked = await searchParams;
   const outcome = PAYOUT_OUTCOMES[asked.payouts ?? ''] ?? PUBLISHED[asked.published ?? ''];
   const onTour = shop.visibility === 'private';
-  // One window for everything below: the in-depth report covers it, the week's numbers sit at its end.
-  const since = new Date(Date.now() - REPORT_DAYS * 86_400_000);
-  const [approvals, orders, { suggestions }, passkey, devices, records, policy] = await Promise.all([
+  // Only the two weeks the numbers below compare (a day more, for the shop's time zone); the in-depth
+  // report reads its own 90 days when it comes into view.
+  const since = new Date(Date.now() - (2 * METRIC_DAYS + 1) * 86_400_000);
+  const [approvals, orders, latest, { suggestions }, passkey, devices, records] = await Promise.all([
     pendingFor(shopId),
     shopOrders.list(shopId, { since }),
+    shopOrders.list(shopId, { limit: RECENT_ORDERS }),
     saySo.autonomy(shopId),
     view.passkeys.required(shopId),
     view.push.list(shopId),
-    saySo.audit(shopId, REPORT_RECORDS, since),
-    saySo.policy(shopId),
+    guard.list(shopId, { since, limit: WEEK_RECORDS }),
   ]);
-  const report = trustReport(records, orders, shop.currency, approvalLimit(policy, 'refund.create'));
-  const week = shopMetrics(orders, records, { zone: shop.timeZone });
-  // The shared demo shows people's details masked, as everywhere else in it.
-  const inDepth = { ...report, decisions: report.decisions.map((d) => ({ ...d, why: redact(d.why) })), trail: report.trail.map((t) => ({ ...t, buyer: redact(t.buyer) })) };
+  const week = shopMetrics(orders, records, { zone: shop.timeZone, days: METRIC_DAYS });
   const pictureOf = (variantId?: string) => {
     const found = variantId ? findVariant(catalog, variantId) : undefined;
     return found?.product.imageUrl;
@@ -66,7 +65,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
   const money = (minor: number) => formatMoney(minor, shop.currency);
   const unconfirmed = pricesToConfirm(catalog);
   const low = catalog.products.flatMap((p) => p.variants).filter((v) => v.madeToOrderDays === undefined && v.inventory <= 1).length;
-  const recent = orders.filter((o) => o.number).slice(0, 5);
+  const recent = latest.filter((o) => o.number);
   const isDraft = (shop.status ?? 'live') === 'draft';
 
   // Setting up is one short checklist, not a stack of notices. Done steps stay ticked until all are done.
@@ -312,7 +311,7 @@ export default async function Overview({ searchParams }: { searchParams: Promise
           <h2 id="depth">In depth</h2>
           <span className="note">Every request, every sale, every money move, checked against PayPal · AG Studio</span>
         </div>
-        <TrustReportView data={inDepth} licenseKey={process.env.AG_STUDIO_LICENSE_KEY || undefined} />
+        <TrustReportView licenseKey={process.env.AG_STUDIO_LICENSE_KEY || undefined} />
       </section>
     </>
   );

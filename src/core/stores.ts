@@ -49,7 +49,7 @@ export interface CartStore {
   get(id: string): Promise<StoredCart | undefined>;
   put(cart: StoredCart): Promise<void>;
   /** Carts of a shop, newest first. */
-  listByShop(shopId: string, limit?: number): Promise<StoredCart[]>;
+  listByShop(shopId: string, limit: number): Promise<StoredCart[]>;
   /**
    * Placed orders, newest first: completed, and still standing unless `released` asks for cancelled ones
    * too. `since`: placed (created) at or after then. `limit` is required, so every caller says how many.
@@ -109,7 +109,7 @@ export class MemoryCartStore implements CartStore {
   async put(cart: StoredCart) {
     this.carts.set(cart.id, structuredClone(cart));
   }
-  async listByShop(shopId: string, limit = Infinity) {
+  async listByShop(shopId: string, limit: number) {
     return this.ofShop(shopId).slice(0, limit).map((c) => structuredClone(c));
   }
   async listPlaced(shopId: string, query: PlacedQuery) {
