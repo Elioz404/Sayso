@@ -1,6 +1,7 @@
 // The owner's say-so screen, built for a phone: this is where the push notification lands. It needs
 // the owner session; an agent holding an agent key has no way in. The request shows as its receipt, the
 // same one Activity opens, with the OK and Reject buttons while it waits.
+import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { connection } from 'next/server';
 import { Decision, LoginForm } from '@/app/_components/owner-actions.tsx';
@@ -29,15 +30,7 @@ export default async function Approve({ params }: { params: Promise<{ id: string
 
   const onTour = Boolean(await view.tours?.forShop(view.shopId));
   const record = await view.saySo.record(view.shopId, id).catch(() => undefined);
-  if (!record) {
-    return (
-      <main className="wrap wrap-narrow page stack">
-        <h1>Request not found</h1>
-        <p className="soft">It doesn&apos;t belong to the shop you&apos;re signed in to.</p>
-        <a href="/owner">Back to your shop</a>
-      </main>
-    );
-  }
+  if (!record) notFound();
 
   const [passkey, signed] = await Promise.all([view.passkeys.required(view.shopId), view.passkeys.checkApproval(record)]);
   const receipt = recordView(record, view.redact, signed);

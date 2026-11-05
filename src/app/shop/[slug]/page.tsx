@@ -1,6 +1,7 @@
 // Public shop page: what people see, and where AI shopping assistants are pointed. The shop's job is to
 // sell, and here selling happens through the visitor's own assistant: the page leads with the shop and
 // its work, and the one action is handing the assistant this shop.
+import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { connection } from 'next/server';
 import { CopyField } from '@/app/_components/client-ui.tsx';
@@ -24,14 +25,7 @@ export default async function ShopPage({ params }: { params: Promise<{ slug: str
   const { slug } = await params;
   const { links } = await ready();
   const catalog = await shopBySlug(slug);
-  if (!catalog || !isLive(catalog)) {
-    return (
-      <main className="wrap wrap-narrow page stack">
-        <h1>Shop not found</h1>
-        <p className="soft">It may not be published yet.</p>
-      </main>
-    );
-  }
+  if (!catalog || !isLive(catalog)) notFound();
   const { shop, products } = catalog;
   const money = (minor: number) => formatMoney(minor, shop.currency);
   const freeOver = shop.shipping.find((s) => s.freeAbove && s.countries.includes(shop.country))?.freeAbove;

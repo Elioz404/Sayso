@@ -8,6 +8,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import type { BuyerOrder } from '@/core/buyer-orders.ts';
 import { ORDER_STATE_LABEL } from '@/core/order-words.ts';
 import { callApi } from './api.ts';
+import { Day } from './time.tsx';
 
 export interface PurchaseLine {
   name: string;
@@ -72,7 +73,11 @@ export function PurchaseCard({ data: given, state, children, onCancel, onDismiss
         </span>
         <span className="purchase-meta">
           {data.order && <span className="mono">{data.order}</span>}
-          {paid && data.paidAt && <span>{new Date(data.paidAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>}
+          {paid && data.paidAt && (
+            <span>
+              <Day iso={data.paidAt} />
+            </span>
+          )}
         </span>
         {onCancel && !paid && (
           <button type="button" className="purchase-cancel" onClick={onCancel} title="Nothing is charged until you approve in PayPal">

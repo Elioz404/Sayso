@@ -10,6 +10,7 @@ import { callApi } from './api.ts';
 import { shrink } from './images.ts';
 import { Icon } from './ui.tsx';
 import { useAction } from './use-action.ts';
+import { ErrorText } from './error-text.tsx';
 
 interface Reading {
   carrier: string | null;
@@ -72,7 +73,7 @@ export function LabelScanner({ orderId }: { orderId: string }) {
       <button type="button" className="btn btn-primary scan-save" disabled={Boolean(busy) || number.replace(/[\s-]/g, '').length < 8} onClick={() => void save()}>
         {busy === 'save' ? 'Adding to PayPal…' : 'Mark as shipped'}
       </button>
-      {error && <p className="error small">{error}</p>}
+      <ErrorText>{error}</ErrorText>
     </div>
   );
 }

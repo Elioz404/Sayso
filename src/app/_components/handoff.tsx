@@ -8,6 +8,7 @@ import { callApi } from './api.ts';
 import { signChallenge, usePasskeyChallenge } from './passkey-client.ts';
 import { useAction } from './use-action.ts';
 import { Icon } from './ui.tsx';
+import { ErrorText } from './error-text.tsx';
 
 /** The QR code: shown at once right after signing in, otherwise after a passkey confirmation. */
 export function PhoneLink({ fresh, hasPasskey }: { fresh: boolean; hasPasskey: boolean }) {
@@ -44,7 +45,7 @@ export function PhoneLink({ fresh, hasPasskey }: { fresh: boolean; hasPasskey: b
           </button>
         )}
         {!link && !fresh && !hasPasskey && <p className="small soft">For your safety, the code shows for 30 minutes after you sign in. Sign out and in again to see it.</p>}
-        {error && <p className="error small">{error}</p>}
+        <ErrorText>{error}</ErrorText>
       </div>
     </section>
   );
@@ -73,7 +74,7 @@ export function OpenHere() {
       >
         {busy ? 'Opening...' : 'Open my shop here'}
       </button>
-      {error && <p className="error small">{error}</p>}
+      <ErrorText>{error}</ErrorText>
     </div>
   );
 }

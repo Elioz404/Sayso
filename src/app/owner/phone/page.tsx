@@ -9,8 +9,6 @@ import { ownerView } from '@/server/owner.ts';
 
 export const metadata: Metadata = { title: 'On your phone' };
 
-const day = (iso?: string) => (iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : undefined);
-
 export default async function Phone({ searchParams }: { searchParams: Promise<{ handoff?: string }> }) {
   const [view, session] = await Promise.all([ownerView(), ownerSession()]);
   if (!view || !session) return null;
@@ -47,7 +45,7 @@ export default async function Phone({ searchParams }: { searchParams: Promise<{ 
             pushKey={pushKey}
             fresh={fresh}
             devices={devices.map((d) => d.label)}
-            passkeys={keys.map((k) => ({ id: k.id, label: k.label, added: day(k.createdAt)!, used: day(k.lastUsedAt), synced: k.backedUp }))}
+            passkeys={keys.map((k) => ({ id: k.id, label: k.label, added: k.createdAt, used: k.lastUsedAt, synced: k.backedUp }))}
           />
           <section className="block" aria-labelledby="sessions">
             <h2 id="sessions">Lost a phone?</h2>

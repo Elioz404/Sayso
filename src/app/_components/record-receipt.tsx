@@ -4,17 +4,9 @@
 
 import type { ReactNode } from 'react';
 import type { RecordView } from '@/core/record-view.ts';
+import { OUTCOME_TONE } from '@/core/trust-report.ts';
 import { When } from './time.tsx';
 import { Icon } from './ui.tsx';
-
-export const OUTCOME_TONE: Record<string, string> = {
-  'Allowed by your rules': 'ok',
-  'You said OK': 'ok',
-  'Waiting for you': 'hold',
-  'You said no': 'quiet',
-  'Blocked by a rule': 'stop',
-  Failed: 'stop',
-};
 
 export function RecordReceipt({ record: v, children }: { record: RecordView; children?: ReactNode }) {
   const waiting = v.status === 'pending_approval';
@@ -35,7 +27,7 @@ export function RecordReceipt({ record: v, children }: { record: RecordView; chi
         {v.amount && <span className={`amount${v.stopped ? ' receipt-stopped' : ''}`}>{v.amount}</span>}
         {v.counterparty && <span className="small soft">to {v.counterparty}</span>}
         {v.chainIntact ? (
-          <span className={`status status-${OUTCOME_TONE[v.outcome] ?? 'quiet'}`}>{v.outcome}</span>
+          <span className={`status status-${OUTCOME_TONE[v.outcome]}`}>{v.outcome}</span>
         ) : (
           <span className="status status-stop">Edited after the fact</span>
         )}

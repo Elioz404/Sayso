@@ -73,13 +73,12 @@ export function OrderList({ pageSize, active = true, signIn = false, more = 'but
       ) : (
         <>
           {listed.orders.length > 1 && (
-            <div className="dock-tabs olist-views" role="tablist" aria-label="Show orders">
+            <div className="dock-tabs olist-views" role="group" aria-label="Show orders">
               {VIEWS.filter((v) => v.id === 'all' || counts[v.id] > 0).map((v) => (
                 <button
                   key={v.id}
                   type="button"
-                  role="tab"
-                  aria-selected={view === v.id}
+                  aria-pressed={view === v.id}
                   className="dock-tab"
                   onClick={() => {
                     setView(v.id);

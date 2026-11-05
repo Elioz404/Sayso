@@ -1,5 +1,6 @@
 // One order, as the owner works it: where it stands (the same steps the buyer sees), the one thing to do
 // next if there is one, what was bought, who it goes to, and every money movement on it.
+import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { actionAmount } from '@/core/guard/describe.ts';
 import type { Metadata } from 'next';
@@ -35,14 +36,7 @@ export default async function OrderDetail({ params }: { params: Promise<{ id: st
     if (err instanceof HttpError && err.status === 404) return undefined;
     throw err;
   });
-  if (!found) {
-    return (
-      <div className="stack">
-        <h1>Order not found</h1>
-        <Link href="/owner/orders">Back to orders</Link>
-      </div>
-    );
-  }
+  if (!found) notFound();
   const { order, cart, records } = found;
   const totals = cart.cart.totals;
   const money = (m?: { value: string; currency_code: string }) => (m ? formatMoney(toMinor(m), m.currency_code) : '-');

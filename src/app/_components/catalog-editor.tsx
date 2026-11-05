@@ -8,11 +8,13 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { callApi } from './api.ts';
 import { Modal } from './modal.tsx';
-import { shrink } from './images.ts';
+import { readPhotos, unreadPhotos } from './images.ts';
 import { useAction } from './use-action.ts';
 import { MAX_STOCK } from '@/core/limits.ts';
 import { variantTitle } from '@/core/catalog.ts';
 import { currencySymbol } from '@/core/money.ts';
+import { ErrorText } from './error-text.tsx';
+import { fieldNames } from './field-names.ts';
 
 export interface EditableProduct {
   id: string;
@@ -136,24 +138,17 @@ export function ProductCard({
                 input.value = ''; // the same file can be picked again
                 if (!file) return;
                 setSaved(false);
-                setPhotoError(undefined);
-                try {
-                  setPhoto(await shrink(file));
-                } catch {
-                  setPhotoError('That photo could not be read. Try a JPEG or PNG.');
-                }
+                const { read, failed } = await readPhotos([file]);
+                setPhotoError(unreadPhotos(failed));
+                if (read[0]) setPhoto(read[0]);
               }}
             />
           </label>
         )}
-        {photoError && (
-          <p className="error small" role="alert">
-            {photoError}
-          </p>
-        )}
+        <ErrorText>{photoError}</ErrorText>
       </div>
       <div className="sell-card-body">
-        <input className="sell-card-name" value={edit.name} readOnly={readOnly} onChange={(e) => (setSaved(false), setEdit((x) => ({ ...x, name: e.target.value })))} maxLength={120} aria-label="Name" />
+        <input className="sell-card-name" value={edit.name} readOnly={readOnly} onChange={(e) => (setSaved(false), setEdit((x) => ({ ...x, name: e.target.value })))} maxLength={120} aria-label={fieldNames.name()} />
         <textarea
           className="sell-card-desc"
           value={edit.description}
@@ -161,7 +156,7 @@ export function ProductCard({
           onChange={(e) => (setSaved(false), setEdit((x) => ({ ...x, description: e.target.value })))}
           rows={3}
           maxLength={2000}
-          aria-label={`Description of ${edit.name}`}
+          aria-label={fieldNames.description(edit.name)}
         />
         <ul className="sell-variants">
           {product.variants.map((v) => {
@@ -169,19 +164,19 @@ export function ProductCard({
             return (
               <li key={v.id} className="sell-variant">
                 {product.variants.length > 1 || variantTitle(v.title) ? (
-                  <input className="sell-vtitle" value={e.title} readOnly={readOnly} onChange={(x) => setVariant(v.id, { title: x.target.value })} maxLength={80} aria-label="Option" />
+                  <input className="sell-vtitle" value={e.title} readOnly={readOnly} onChange={(x) => setVariant(v.id, { title: x.target.value })} maxLength={80} aria-label={fieldNames.option(edit.name)} />
                 ) : (
                   <span className="sell-vtitle small soft">Price and stock</span>
                 )}
                 <label className={v.toConfirm ? 'sell-price sell-price-waiting' : 'sell-price'}>
                   <span aria-hidden="true">{symbol}</span>
-                  <input value={e.price} readOnly={readOnly} onChange={(x) => setVariant(v.id, { price: x.target.value })} inputMode="decimal" maxLength={12} aria-label={`Price of ${e.title}`} />
+                  <input value={e.price} readOnly={readOnly} onChange={(x) => setVariant(v.id, { price: x.target.value })} inputMode="decimal" maxLength={12} aria-label={fieldNames.price(edit.name, e.title)} />
                 </label>
                 {v.stock === null ? (
                   <span className="small soft sell-qty">{v.madeDays} days to make</span>
                 ) : (
                   <label className={`sell-qty${v.stock === 0 ? ' sell-qty-out' : ''}`}>
-                    <input type="number" min={0} max={MAX_STOCK} value={e.stock} readOnly={readOnly} onChange={(x) => setVariant(v.id, { stock: Math.max(0, Math.floor(Number(x.target.value) || 0)) })} aria-label={`Stock of ${e.title}`} />
+                    <input type="number" min={0} max={MAX_STOCK} value={e.stock} readOnly={readOnly} onChange={(x) => setVariant(v.id, { stock: Math.max(0, Math.floor(Number(x.target.value) || 0)) })} aria-label={fieldNames.stock(edit.name, e.title)} />
                     <span>{v.stock === 0 && e.stock === 0 ? 'sold out' : 'in stock'}</span>
                   </label>
                 )}
@@ -222,7 +217,7 @@ export function ProductCard({
             )}
           </div>
         )}
-        {error && <p className="error small">{error}</p>}
+        <ErrorText>{error}</ErrorText>
       </div>
     </li>
   );
@@ -252,13 +247,13 @@ export function ShippingEditor({ rules, currency, readOnly }: { rules: EditableS
           </span>
           <label className="sell-price">
             <span aria-hidden="true">{symbol}</span>
-            <input value={edit[r.id].price} readOnly={readOnly} onChange={(e) => set(r.id, { price: e.target.value })} inputMode="decimal" maxLength={12} aria-label={`${r.name} price`} />
+            <input value={edit[r.id].price} readOnly={readOnly} onChange={(e) => set(r.id, { price: e.target.value })} inputMode="decimal" maxLength={12} aria-label={fieldNames.shippingPrice(r.name)} />
           </label>
           <label className="sell-free small soft">
             free over
             <span className="sell-price">
               <span aria-hidden="true">{symbol}</span>
-              <input value={edit[r.id].freeAbove} readOnly={readOnly} onChange={(e) => set(r.id, { freeAbove: e.target.value })} inputMode="decimal" maxLength={12} aria-label="Free shipping above" placeholder="—" />
+              <input value={edit[r.id].freeAbove} readOnly={readOnly} onChange={(e) => set(r.id, { freeAbove: e.target.value })} inputMode="decimal" maxLength={12} aria-label={fieldNames.freeAbove(r.name)} placeholder="—" />
             </span>
           </label>
         </div>

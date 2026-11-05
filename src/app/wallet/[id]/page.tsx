@@ -1,5 +1,6 @@
 // A buyer's saved PayPal for their assistant: set limits and connect, or see and disconnect it.
 // The link is what the assistant handed the buyer; the PayPal approval is what makes it real.
+import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { connection } from 'next/server';
 import { ConnectForm, DisconnectButton } from '@/app/_components/wallet-actions.tsx';
@@ -7,6 +8,7 @@ import { Status } from '@/app/_components/ui.tsx';
 import { formatMoney, toMoney } from '@/core/money.ts';
 import { ready } from '@/server/context.ts';
 import { holdsWallet } from '@/server/wallet-session.ts';
+import { When } from '@/app/_components/time.tsx';
 
 export const metadata: Metadata = { title: 'Saved PayPal' };
 
@@ -15,14 +17,7 @@ export default async function WalletPage({ params, searchParams }: { params: Pro
   const { id } = await params;
   const { cancelled } = await searchParams;
   const wallet = await (await ready()).wallets.get(id).catch(() => undefined);
-  if (!wallet) {
-    return (
-      <main className="wrap wrap-narrow page stack">
-        <h1>Link not found</h1>
-        <p className="soft">Ask your assistant to set up PayPal again.</p>
-      </main>
-    );
-  }
+  if (!wallet) notFound();
   const money = (minor: number) => formatMoney(minor, wallet.limits.currency);
   const plain = (minor: number) => toMoney(minor, wallet.limits.currency).value;
   const holder = await holdsWallet(wallet.id);
@@ -48,7 +43,7 @@ export default async function WalletPage({ params, searchParams }: { params: Pro
             <dt>Above that</dt>
             <dd>You approve each order in PayPal</dd>
             <dt>Connected</dt>
-            <dd>{wallet.connectedAt ? new Date(wallet.connectedAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : '-'}</dd>
+            <dd>{wallet.connectedAt ? <When iso={wallet.connectedAt} /> : '-'}</dd>
           </dl>
         </div>
         {holder ? (

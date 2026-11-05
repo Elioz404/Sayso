@@ -33,9 +33,9 @@ import type { PayPalCheck } from '@/core/record-view.ts';
 import { ProductEditDialog, type EditableProduct } from './catalog-editor.tsx';
 import { ChannelBadge, Thumb } from './owner-bits.tsx';
 import { RecordModal } from './record-modal.tsx';
-import { OUTCOME_TONE } from './record-receipt.tsx';
 import { formatWhen } from './time.tsx';
 import { Status } from './ui.tsx';
+import { OUTCOME_TONE, type Outcome } from '@/core/trust-report.ts';
 
 // Only the features these grids use, so the bundle carries nothing else.
 ModuleRegistry.registerModules([
@@ -173,6 +173,7 @@ function StatusCell({ value }: ICellRendererParams) {
 
 export function OrdersGrid({ rows }: { rows: OrderRow[] }) {
   const router = useRouter();
+  const openOrder = (id: string) => router.push(`/owner/orders/${id}`);
   const grid = useRef<AgGridReact<OrderRow>>(null);
   const [filter, setFilter] = useState('');
   const [viewId, setViewId] = useState<(typeof ORDER_VIEWS)[number]['id']>('all');
@@ -204,11 +205,11 @@ export function OrdersGrid({ rows }: { rows: OrderRow[] }) {
   return (
     <div className="stack" style={{ gap: 'var(--s3)' }}>
       <div className="row grid-toolbar">
-        <div className="dock-tabs" role="tablist" aria-label="Show orders">
+        <div className="dock-tabs" role="group" aria-label="Show orders">
           {ORDER_VIEWS.map((v) => {
             const n = rows.filter(v.test).length;
             return (
-              <button key={v.id} type="button" role="tab" aria-selected={viewId === v.id} className="dock-tab" onClick={() => setViewId(v.id)}>
+              <button key={v.id} type="button" aria-pressed={viewId === v.id} className="dock-tab" onClick={() => setViewId(v.id)}>
                 {v.label}
                 {v.id !== 'all' && n > 0 && <span className="dock-tab-count">{n}</span>}
               </button>
@@ -237,7 +238,9 @@ export function OrdersGrid({ rows }: { rows: OrderRow[] }) {
             quickFilterText={filter}
             domLayout="autoHeight"
             containerStyle={{ height: 'auto' }}
-            onRowClicked={(e) => e.data && router.push(`/owner/orders/${e.data.id}`)}
+            // The whole row opens the order, by mouse, or with Enter on any of its cells.
+            onRowClicked={(e) => e.data && openOrder(e.data.id)}
+            onCellKeyDown={(e) => e.data && (e.event as KeyboardEvent | null)?.key === 'Enter' && openOrder(e.data.id)}
             pagination={rows.length > 20}
             paginationPageSize={20}
             paginationPageSizeSelector={[20, 50, 100]}
@@ -266,7 +269,7 @@ export interface AuditRow {
   why: string;
   tampered: boolean;
   /** What happened, in the owner's words (Allowed by your rules, You said OK, Waiting for you...). */
-  outcome: string;
+  outcome: Outcome;
   paypal: PayPalCheck;
 }
 
@@ -297,7 +300,7 @@ function ByCell({ data }: ICellRendererParams<AuditRow>) {
 function AuditStatusCell({ data }: ICellRendererParams<AuditRow>) {
   if (!data) return null;
   if (data.tampered) return <span className="status status-stop">Edited after the fact</span>;
-  return <span className={`status status-${OUTCOME_TONE[data.outcome] ?? 'quiet'}`}>{data.outcome}</span>;
+  return <span className={`status status-${OUTCOME_TONE[data.outcome]}`}>{data.outcome}</span>;
 }
 
 const PAYPAL_CHECK: Record<PayPalCheck, { mark: string; className: string; title: string }> = {
@@ -359,7 +362,9 @@ export function AuditGrid({ rows }: { rows: AuditRow[] }) {
           onGridSizeChanged={(e) => e.api.sizeColumnsToFit()}
           domLayout="autoHeight"
           containerStyle={{ height: 'auto' }}
+          // The whole row opens the record, by mouse, or with Enter on any of its cells.
           onRowClicked={(e) => e.data && setOpen(e.data.id)}
+          onCellKeyDown={(e) => e.data && (e.event as KeyboardEvent | null)?.key === 'Enter' && setOpen(e.data.id)}
           getRowId={(p) => p.data.id}
           pagination={rows.length > 15}
           paginationPageSize={15}

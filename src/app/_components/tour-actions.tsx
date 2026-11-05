@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { callApi } from './api.ts';
 import { markSeen } from './judges-seen.ts';
+import { ErrorText } from './error-text.tsx';
 
 
 /** `screen`: where to come back to, e.g. /tour#sell. */
@@ -35,7 +36,7 @@ export function RunStep({ step, label, screen }: { step: string; label: string; 
       >
         {busy ? 'The agent is working…' : label}
       </button>
-      {error && <p className="error small">{error}</p>}
+      <ErrorText>{error}</ErrorText>
     </div>
   );
 }
@@ -88,7 +89,7 @@ export function OpenDemoShop() {
       >
         {busy ? 'Opening…' : "Open the shop's dashboard ↗"}
       </button>
-      {error && <p className="error small">{error}</p>}
+      <ErrorText>{error}</ErrorText>
     </div>
   );
 }
@@ -116,7 +117,7 @@ export function SwitchToShop({ slug }: { slug: string }) {
       >
         {busy ? 'Switching…' : 'Switch back to your shop'}
       </button>
-      {error && <p className="error small">{error}</p>}
+      <ErrorText>{error}</ErrorText>
     </div>
   );
 }

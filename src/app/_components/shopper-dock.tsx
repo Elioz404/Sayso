@@ -14,6 +14,7 @@ import { DOCK_OPEN_KEY as OPEN_KEY, NOT_HERE } from './dock-restore.ts';
 import { useDockFocus } from './use-dock.ts';
 import { OrderList } from './order-list.tsx';
 import { ShopperChat } from './shopper-chat.tsx';
+import { Tabs, tabPanel } from './tabs.tsx';
 
 /** The floating button is the way in; not on the seller's onboarding, which is about something else. */
 const NO_BUTTON = /^\/start/;
@@ -115,17 +116,17 @@ export function ShopperDock({ paypalClientId }: { paypalClientId?: string }) {
       <div className={open ? 'dock-scrim dock-on' : 'dock-scrim'} onClick={() => setOpen(false)} aria-hidden="true" />
       <aside ref={panel} className={open ? 'dock dock-on' : 'dock'} role="dialog" aria-modal="false" aria-label="Shop with AI" aria-hidden={!open} inert={!open}>
         <header className="dock-head">
-          <div className="dock-tabs" role="tablist" aria-label="Shop with AI">
-            <button type="button" role="tab" aria-selected={tab === 'ai'} className="dock-tab" onClick={() => setTab('ai')}>
-              Ask AI
-            </button>
-            <button type="button" role="tab" aria-selected={tab === 'cart'} className="dock-tab" onClick={() => setTab('cart')}>
-              Cart{items > 0 && <span className="dock-tab-count">{items}</span>}
-            </button>
-            <button type="button" role="tab" aria-selected={tab === 'orders'} className="dock-tab" onClick={() => setTab('orders')}>
-              Orders
-            </button>
-          </div>
+          <Tabs
+            label="Shop with AI"
+            idBase="dock"
+            value={tab}
+            onChange={setTab}
+            tabs={[
+              { id: 'ai', label: 'Ask AI' },
+              { id: 'cart', label: <>Cart{items > 0 && <span className="dock-tab-count">{items}</span>}</> },
+              { id: 'orders', label: 'Orders' },
+            ]}
+          />
           <span className="dock-head-end">
             {tab === 'ai' && chatting && (
               <button type="button" className="btn btn-quiet btn-small" onClick={() => setReset(Date.now())}>
@@ -138,13 +139,13 @@ export function ShopperDock({ paypalClientId }: { paypalClientId?: string }) {
           </span>
         </header>
         {/* Both stay mounted, so the conversation and a half-done checkout survive switching tabs. */}
-        <div className="dock-body" role="tabpanel" hidden={tab !== 'ai'}>
+        <div className="dock-body" {...tabPanel('dock', 'ai')} hidden={tab !== 'ai'}>
           <ShopperChat paypalClientId={paypalClientId} request={request} compact onTurns={setChatting} reset={reset} />
         </div>
-        <div className="dock-body dock-scroll" role="tabpanel" hidden={tab !== 'cart'}>
+        <div className="dock-body dock-scroll" {...tabPanel('dock', 'cart')} hidden={tab !== 'cart'}>
           <CartPanel paypalClientId={paypalClientId} onAskAi={() => setTab('ai')} />
         </div>
-        <div className="dock-body dock-scroll" role="tabpanel" hidden={tab !== 'orders'}>
+        <div className="dock-body dock-scroll" {...tabPanel('dock', 'orders')} hidden={tab !== 'orders'}>
           <div className="orders-panel">
             <OrderList pageSize={5} active={open && tab === 'orders'} signIn more="link" />
           </div>

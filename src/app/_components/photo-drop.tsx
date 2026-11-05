@@ -3,23 +3,25 @@
 // Where photos go in: drop them or tap to choose (a phone offers its camera), shrunk in the browser so they
 // upload fast, then shown as thumbnails with "Add more". Start selling and "Add from a photo" share it.
 
-import { useState } from 'react';
-import { shrink } from './images.ts';
+import { useState, type Dispatch, type SetStateAction } from 'react';
+import { ErrorText } from './error-text.tsx';
+import { readPhotos, unreadPhotos } from './images.ts';
 import { Icon } from './ui.tsx';
 
 /** Pictures of real-looking pieces, for trying the flow without photos of your own. */
 const SAMPLES = ['/photos/mugs.webp', '/photos/bowl.webp', '/photos/vase.webp'];
 
-export function PhotoDrop({ photos, setPhotos, max, samples = false, disabled = false }: { photos: string[]; setPhotos: (p: string[]) => void; max: number; samples?: boolean; disabled?: boolean }) {
+export function PhotoDrop({ photos, setPhotos, max, samples = false, disabled = false }: { photos: string[]; setPhotos: Dispatch<SetStateAction<string[]>>; max: number; samples?: boolean; disabled?: boolean }) {
   const [over, setOver] = useState(false);
   const [unread, setUnread] = useState(0);
   const room = max - photos.length;
 
   async function add(files: File[]) {
     const images = files.filter((f) => f.type.startsWith('image/') || /\.(heic|heif)$/i.test(f.name)).slice(0, room);
-    const read = await Promise.all(images.map((f) => shrink(f).catch(() => undefined)));
-    setUnread(read.filter((r) => !r).length);
-    setPhotos([...photos, ...read.filter((r): r is string => Boolean(r))]);
+    const { read, failed } = await readPhotos(images);
+    setUnread(failed);
+    // Against the photos as they are when these are read, not as they were when picked.
+    setPhotos((now) => [...now, ...read].slice(0, max));
   }
   const drag = {
     onDragOver: (e: React.DragEvent) => {
@@ -51,7 +53,7 @@ export function PhotoDrop({ photos, setPhotos, max, samples = false, disabled = 
             <li key={i}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={src} alt={`Photo ${i + 1}`} />
-              <button type="button" className="sell-thumb-x" aria-label={`Remove photo ${i + 1}`} disabled={disabled} onClick={() => setPhotos(photos.filter((_, k) => k !== i))}>
+              <button type="button" className="sell-thumb-x" aria-label={`Remove photo ${i + 1}`} disabled={disabled} onClick={() => setPhotos((now) => now.filter((_, k) => k !== i))}>
                 <Icon name="x" size={14} />
               </button>
             </li>
@@ -79,7 +81,7 @@ export function PhotoDrop({ photos, setPhotos, max, samples = false, disabled = 
           No photos at hand? Use sample photos
         </button>
       )}
-      {unread > 0 && <p className="small error">{unread === 1 ? "One photo couldn't be read here" : `${unread} photos couldn't be read here`}; try a JPEG or PNG.</p>}
+      <ErrorText>{unreadPhotos(unread)}</ErrorText>
     </div>
   );
 }

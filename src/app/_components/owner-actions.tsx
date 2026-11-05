@@ -14,6 +14,7 @@ import { signChallenge, usePasskeyChallenge } from './passkey-client.ts';
 import { RulesTable } from './rules-table.tsx';
 import { Icon } from './ui.tsx';
 import { useAction } from './use-action.ts';
+import { ErrorText } from './error-text.tsx';
 
 /** What PayPal sign-in came back with, as /owner?signin=... */
 const SIGN_IN_OUTCOMES: Record<string, string> = {
@@ -87,7 +88,7 @@ export function LoginForm({ demo, paypal, next }: { demo: boolean; paypal: boole
       ) : (
         <div className="panel panel-raised">{secretForm}</div>
       )}
-      {error && <p className="error small">{error}</p>}
+      <ErrorText>{error}</ErrorText>
       {demo && (
         <div className="panel panel-tight spread">
           <div className="stack" style={{ gap: 2 }}>
@@ -125,8 +126,9 @@ function ShopAvatar({ shop }: { shop: ShopChoice }) {
 export function ShopSwitcher({ shops, current }: { shops: ShopChoice[]; current: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState<string>();
+  const { busy, error, setError, run } = useAction();
   const box = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   // The menu floats over the page, placed under the button, so it never makes the rail scroll.
   const [place, setPlace] = useState<{ top: number; left: number; width: number }>();
   useEffect(() => {
@@ -137,7 +139,11 @@ export function ShopSwitcher({ shops, current }: { shops: ShopChoice[]; current:
       setPlace({ top: rect.bottom + 6, left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)), width });
     }
     const outside = (e: MouseEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setOpen(false);
+      trigger.current?.focus();
+    };
     const away = () => setOpen(false);
     document.addEventListener('mousedown', outside);
     document.addEventListener('keydown', esc);
@@ -153,7 +159,17 @@ export function ShopSwitcher({ shops, current }: { shops: ShopChoice[]; current:
   const here = shops.find((s) => s.slug === current) ?? shops[0];
   return (
     <div className="shop-switch" ref={box}>
-      <button type="button" className="shop-switch-btn" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <button
+        ref={trigger}
+        type="button"
+        className="shop-switch-btn"
+        aria-expanded={open}
+        aria-controls="shop-list"
+        onClick={() => {
+          setError(undefined);
+          setOpen(!open);
+        }}
+      >
         <ShopAvatar shop={here} />
         <b className="shop-switch-name">{here.name}</b>
         <svg className="shop-switch-chev" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
@@ -161,22 +177,22 @@ export function ShopSwitcher({ shops, current }: { shops: ShopChoice[]; current:
         </svg>
       </button>
       {open && (
-        <div className="shop-menu" role="menu" aria-label="Your shops" style={place ? { position: 'fixed', top: place.top, left: place.left, width: place.width } : undefined}>
+        // A plain list of buttons (no menu role, so no menu keyboard contract to break): Tab moves through it.
+        <div id="shop-list" className="shop-menu" aria-label="Your shops" style={place ? { position: 'fixed', top: place.top, left: place.left, width: place.width } : undefined}>
           {shops.map((s) => (
             <button
               key={s.slug}
               type="button"
-              role="menuitemradio"
-              aria-checked={s.slug === current}
+              aria-current={s.slug === current ? 'true' : undefined}
               className="shop-menu-item"
               disabled={Boolean(busy)}
-              onClick={async () => {
+              onClick={() => {
                 if (s.slug === current) return setOpen(false);
-                setBusy(s.slug);
-                await callApi('/api/owner/session', 'POST', { shop: s.slug, paypal: true }).catch(() => {});
-                setOpen(false);
-                setBusy(undefined);
-                router.refresh();
+                void run(async () => {
+                  await callApi('/api/owner/session', 'POST', { shop: s.slug, paypal: true });
+                  setOpen(false);
+                  router.refresh();
+                }, s.slug);
               }}
             >
               <ShopAvatar shop={s} />
@@ -189,7 +205,8 @@ export function ShopSwitcher({ shops, current }: { shops: ShopChoice[]; current:
               {s.slug === current && <Icon name="check" size={16} />}
             </button>
           ))}
-          <a className="shop-menu-item shop-menu-new" role="menuitem" href="/start">
+          <ErrorText>{error}</ErrorText>
+          <a className="shop-menu-item shop-menu-new" href="/start">
             <span className="shop-avatar" aria-hidden="true">
               <Icon name="plus" size={16} />
             </span>
@@ -241,24 +258,31 @@ export function SignOutEverywhere() {
       >
         {busy ? 'Signing out...' : 'Sign out on every device'}
       </button>
-      {error && <p className="error small">{error}</p>}
+      <ErrorText>{error}</ErrorText>
     </div>
   );
 }
 
 export function SignOut() {
   const router = useRouter();
+  const { busy, error, run } = useAction();
   return (
-    <button
-      className="btn btn-quiet btn-small"
-      onClick={async () => {
-        await callApi('/api/owner/session', 'DELETE').catch(() => {});
-        forgetOwnerChats();
-        router.refresh();
-      }}
-    >
-      <Icon name="out" size={16} /> Sign out
-    </button>
+    <>
+      <button
+        className="btn btn-quiet btn-small"
+        disabled={Boolean(busy)}
+        onClick={() =>
+          run(async () => {
+            await callApi('/api/owner/session', 'DELETE');
+            forgetOwnerChats();
+            router.refresh();
+          })
+        }
+      >
+        <Icon name="out" size={16} /> Sign out
+      </button>
+      <ErrorText>{error}</ErrorText>
+    </>
   );
 }
 
@@ -323,11 +347,7 @@ export function Decision({ id, big = false, passkey = false, onDone }: { id: str
         </button>
       </div>
       {passkey && big && <p className="small muted">Confirm with your fingerprint, face or PIN. Your device signs this exact request.</p>}
-      {error && (
-        <p className="error small" role="alert">
-          {error}
-        </p>
-      )}
+      <ErrorText>{error}</ErrorText>
     </div>
   );
 }
@@ -587,11 +607,7 @@ export function ConnectAgent({ endpoint, quiet = false, passkey = false }: { end
               <label htmlFor="agent-name">Name</label>
               <input id="agent-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="My laptop, a script…" maxLength={60} autoComplete="off" />
             </div>
-            {error && (
-              <p className="error small" role="alert">
-                {error}
-              </p>
-            )}
+            <ErrorText>{error}</ErrorText>
             <div className="connect-actions">
               <button type="button" className="btn btn-quiet" onClick={() => setStep('choose')}>
                 Back
@@ -637,7 +653,7 @@ export function RevokeKey({ id, label }: { id: string; label: string }) {
       <button className="btn btn-quiet btn-small" onClick={() => setConfirming(false)}>
         Keep
       </button>
-      {error && <span className="error small">{error}</span>}
+      <ErrorText inline>{error}</ErrorText>
     </span>
   );
 }
@@ -706,7 +722,7 @@ export function RulesEditor({ passkey = false, example }: { passkey?: boolean; e
             {busy === 'save' ? (passkey ? 'Waiting for your passkey…' : 'Saving…') : 'Save these rules'}
           </button>
         </div>
-        {error && <p className="error small">{error}</p>}
+        <ErrorText>{error}</ErrorText>
       </div>
     );
   }
@@ -736,7 +752,7 @@ export function RulesEditor({ passkey = false, example }: { passkey?: boolean; e
         </button>
       </div>
       {saved && <p className="small ok-text">Saved. Your agents follow the new rules from now on.</p>}
-      {error && <p className="error small">{error}</p>}
+      <ErrorText>{error}</ErrorText>
     </form>
   );
 }
@@ -762,7 +778,7 @@ export function AdoptRule({ id, passkey = false }: { id: string; passkey?: boole
         {passkey && <Icon name="fingerprint" size={18} />}
         {busy ? 'Saving...' : 'Use this rule'}
       </button>
-      {error && <p className="error small">{error}</p>}
+      <ErrorText>{error}</ErrorText>
     </div>
   );
 }
@@ -789,7 +805,7 @@ export function ConnectPayouts({ again = false }: { again?: boolean }) {
       >
         {busy ? 'Opening PayPal...' : again ? 'Connect a different account' : 'Set up payments'}
       </button>
-      {error && <p className="error small">{error}</p>}
+      <ErrorText>{error}</ErrorText>
     </div>
   );
 }
@@ -818,7 +834,7 @@ export function KeepPrice({ variantId, price, label }: { variantId: string; pric
       >
         {busy ? 'Saving...' : label}
       </button>
-      {error && <span className="error small">{error}</span>}
+      <ErrorText inline>{error}</ErrorText>
     </span>
   );
 }

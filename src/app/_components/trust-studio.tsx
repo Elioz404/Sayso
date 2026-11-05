@@ -8,6 +8,7 @@ import { AgStudio, AgStudioProvider } from 'ag-studio-react';
 import { studioTheme, type AgDataSourcesDefinition, type AgReportState } from 'ag-studio';
 import { useEffect, useMemo, useState } from 'react';
 import type { TrustReport } from '@/core/trust-report.ts';
+import { Tabs, tabPanel } from './tabs.tsx';
 
 const LAYOUT_KEY = 'sayso-trust-layout-v1';
 
@@ -393,13 +394,7 @@ export default function TrustStudio({ data, licenseKey }: { data: TrustReport; l
   return (
     <div className="trust">
       <div className="trust-tools">
-        <div className="dock-tabs trust-pages" role="tablist" aria-label="Report pages">
-          {PAGES.map((p) => (
-            <button key={p.id} type="button" role="tab" aria-selected={page === p.id} className="dock-tab" onClick={() => setPage(p.id)}>
-              {p.label}
-            </button>
-          ))}
-        </div>
+        <Tabs label="Report pages" idBase="trust" className="trust-pages" value={page} onChange={setPage} tabs={PAGES} />
         <span style={{ flex: 1 }} />
         {!phone && (
           <button type="button" className="btn btn-small" onClick={() => setMode(mode === 'view' ? 'edit' : 'view')}>
@@ -423,23 +418,25 @@ export default function TrustStudio({ data, licenseKey }: { data: TrustReport; l
           </button>
         )}
       </div>
-      {empty ? (
-        <div className="trust-empty">
-          <b>{page === 'sayso' ? 'No agent has asked for anything yet.' : 'No orders yet.'}</b>
-          <span className="soft">
-            {page === 'sayso'
-              ? 'When your agent or a buyer\'s assistant asks to refund, charge, invoice or change your rules, every request lands here with what Guard did about it.'
-              : 'Orders from assistants, Shop with AI and the cart land here by channel, each with its money trail.'}
-          </span>
-          <span className="small muted">
-            To see it fill up, open a shop from <a href="/tour">For Judges</a> and let the agents at it.
-          </span>
-        </div>
-      ) : (
-        <div className="trust-canvas ag-theme-mode" data-ag-theme-mode={dark ? 'dark' : 'light'}>
-          {licenseKey ? <AgStudioProvider licenseKey={licenseKey}>{studio}</AgStudioProvider> : studio}
-        </div>
-      )}
+      <div {...tabPanel('trust', page)}>
+        {empty ? (
+          <div className="trust-empty">
+            <b>{page === 'sayso' ? 'No agent has asked for anything yet.' : 'No orders yet.'}</b>
+            <span className="soft">
+              {page === 'sayso'
+                ? 'When your agent or a buyer\'s assistant asks to refund, charge, invoice or change your rules, every request lands here with what Guard did about it.'
+                : 'Orders from assistants, Shop with AI and the cart land here by channel, each with its money trail.'}
+            </span>
+            <span className="small muted">
+              To see it fill up, open a shop from <a href="/tour">For Judges</a> and let the agents at it.
+            </span>
+          </div>
+        ) : (
+          <div className="trust-canvas ag-theme-mode" data-ag-theme-mode={dark ? 'dark' : 'light'}>
+            {licenseKey ? <AgStudioProvider licenseKey={licenseKey}>{studio}</AgStudioProvider> : studio}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

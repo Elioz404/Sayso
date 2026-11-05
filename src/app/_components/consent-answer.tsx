@@ -7,6 +7,7 @@
 import { useAction } from './use-action.ts';
 import { callApi } from './api.ts';
 import { signChallenge, usePasskeyChallenge } from './passkey-client.ts';
+import { ErrorText } from './error-text.tsx';
 
 export function ConsentAnswer({ request, passkey }: { request: string; passkey: boolean }) {
   const { busy, error, run } = useAction();
@@ -32,11 +33,7 @@ export function ConsentAnswer({ request, passkey }: { request: string; passkey: 
           {busy === 'allow' ? (passkey ? 'Waiting for your passkey…' : 'Allowing…') : 'Allow'}
         </button>
       </div>
-      {error && (
-        <p className="error small" role="alert">
-          {error}
-        </p>
-      )}
+      <ErrorText>{error}</ErrorText>
     </div>
   );
 }

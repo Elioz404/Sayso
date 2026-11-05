@@ -6,7 +6,7 @@
 // counts once the owner keeps it or types their own. Publish: signing in with PayPal claims the shop and
 // publishes it in one go.
 
-import { useState } from 'react';
+import { useState, type Dispatch, type SetStateAction } from 'react';
 import type { DraftView } from '@/core/catalog-view.ts';
 import { MAX_ONBOARDING_PHOTOS, MAX_STOCK } from '@/core/limits.ts';
 import { callApi } from './api.ts';
@@ -15,6 +15,7 @@ import { PhotoDrop } from './photo-drop.tsx';
 import { Icon } from './ui.tsx';
 import { variantTitle } from '@/core/catalog.ts';
 import { currencySymbol } from '@/core/money.ts';
+import { fieldNames } from './field-names.ts';
 
 interface Created {
   shop: { slug: string; name: string };
@@ -105,7 +106,7 @@ function Steps({ step, drafting, paypalLogin }: { step: 1 | 2; drafting: boolean
 }
 
 /** Step 1: the photos, the shop's name and where it ships from; notes only if they want. */
-function Upload({ photos, setPhotos, onDraft }: { photos: string[]; setPhotos: (p: string[]) => void; onDraft: (body: Record<string, unknown>) => Promise<void> }) {
+function Upload({ photos, setPhotos, onDraft }: { photos: string[]; setPhotos: Dispatch<SetStateAction<string[]>>; onDraft: (body: Record<string, unknown>) => Promise<void> }) {
   const [text, setText] = useState('');
   const [error, setError] = useState<string>();
 
@@ -256,7 +257,7 @@ function Review({ created, paypalLogin, onStartOver }: { created: Created; paypa
       </div>
 
       <ul className="sell-cards">
-        {draft.products.map((p) =>
+        {draft.products.map((p, n) =>
           products[p.id].remove ? (
             <li key={p.id} className="sell-card sell-card-removed">
               <span className="small soft">{products[p.id].name} won&apos;t be in your shop.</span>
@@ -269,14 +270,14 @@ function Review({ created, paypalLogin, onStartOver }: { created: Created; paypa
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <div className="sell-card-photo">{p.image && <img src={p.image} alt="" />}</div>
               <div className="sell-card-body">
-                <input className="sell-card-name" value={products[p.id].name} onChange={(e) => setProducts((all) => ({ ...all, [p.id]: { ...all[p.id], name: e.target.value } }))} maxLength={120} aria-label="Name" />
+                <input className="sell-card-name" value={products[p.id].name} onChange={(e) => setProducts((all) => ({ ...all, [p.id]: { ...all[p.id], name: e.target.value } }))} maxLength={120} aria-label={fieldNames.name(n + 1)} />
                 <textarea
                   className="sell-card-desc"
                   value={products[p.id].description}
                   onChange={(e) => setProducts((all) => ({ ...all, [p.id]: { ...all[p.id], description: e.target.value } }))}
                   rows={3}
                   maxLength={2000}
-                  aria-label={`Description of ${products[p.id].name}`}
+                  aria-label={fieldNames.description(products[p.id].name)}
                 />
                 <ul className="sell-variants">
                   {p.variants.map((v) => {
@@ -285,19 +286,19 @@ function Review({ created, paypalLogin, onStartOver }: { created: Created; paypa
                     return (
                       <li key={v.id} className="sell-variant">
                         {p.variants.length > 1 || variantTitle(v.title) ? (
-                          <input className="sell-vtitle" value={edit.title} onChange={(e) => setVariant(v.id, { title: e.target.value })} maxLength={80} aria-label="Variant" />
+                          <input className="sell-vtitle" value={edit.title} onChange={(e) => setVariant(v.id, { title: e.target.value })} maxLength={80} aria-label={fieldNames.option(products[p.id].name)} />
                         ) : (
                           <span className="sell-vtitle small soft">Price and stock</span>
                         )}
                         <label className={waiting ? 'sell-price sell-price-waiting' : 'sell-price'}>
                           <span aria-hidden="true">{symbol}</span>
-                          <input value={edit.price} onChange={(e) => setVariant(v.id, { price: e.target.value, confirmed: true })} inputMode="decimal" maxLength={12} aria-label={`Price of ${edit.title}`} placeholder="0.00" />
+                          <input value={edit.price} onChange={(e) => setVariant(v.id, { price: e.target.value, confirmed: true })} inputMode="decimal" maxLength={12} aria-label={fieldNames.price(products[p.id].name, edit.title)} placeholder="0.00" />
                         </label>
                         {v.made_to_order_days !== undefined ? (
                           <span className="small soft sell-qty">{v.made_to_order_days} days to make</span>
                         ) : (
                           <label className="sell-qty">
-                            <input type="number" min={0} max={MAX_STOCK} value={edit.stock} onChange={(e) => setVariant(v.id, { stock: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} aria-label={`Stock of ${edit.title}`} />
+                            <input type="number" min={0} max={MAX_STOCK} value={edit.stock} onChange={(e) => setVariant(v.id, { stock: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} aria-label={fieldNames.stock(products[p.id].name, edit.title)} />
                             <span>in stock</span>
                           </label>
                         )}
@@ -330,13 +331,13 @@ function Review({ created, paypalLogin, onStartOver }: { created: Created; paypa
           </span>
           <label className="sell-price">
             <span aria-hidden="true">{symbol}</span>
-            <input value={shipping[s.id].price} onChange={(e) => setShipping((all) => ({ ...all, [s.id]: { ...all[s.id], price: e.target.value } }))} inputMode="decimal" maxLength={12} aria-label="Shipping price" />
+            <input value={shipping[s.id].price} onChange={(e) => setShipping((all) => ({ ...all, [s.id]: { ...all[s.id], price: e.target.value } }))} inputMode="decimal" maxLength={12} aria-label={fieldNames.shippingPrice(s.name)} />
           </label>
           <label className="sell-free small soft">
             free over
             <span className="sell-price">
               <span aria-hidden="true">{symbol}</span>
-              <input value={shipping[s.id].free_above} onChange={(e) => setShipping((all) => ({ ...all, [s.id]: { ...all[s.id], free_above: e.target.value } }))} inputMode="decimal" maxLength={12} aria-label="Free shipping above" placeholder="—" />
+              <input value={shipping[s.id].free_above} onChange={(e) => setShipping((all) => ({ ...all, [s.id]: { ...all[s.id], free_above: e.target.value } }))} inputMode="decimal" maxLength={12} aria-label={fieldNames.freeAbove(s.name)} placeholder="—" />
             </span>
           </label>
         </div>

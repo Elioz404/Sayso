@@ -8,6 +8,17 @@ import { formatMoney, toMoney } from './money.ts';
 import type { OrderSummary } from './orders.ts';
 
 export type Outcome = 'Allowed by your rules' | 'You said OK' | 'Waiting for you' | 'You said no' | 'Blocked by a rule' | 'Failed';
+
+/** The colour an outcome shows in (the status-* classes). */
+export type Tone = 'ok' | 'hold' | 'stop' | 'quiet';
+export const OUTCOME_TONE: Readonly<Record<Outcome, Tone>> = {
+  'Allowed by your rules': 'ok',
+  'You said OK': 'ok',
+  'Waiting for you': 'hold',
+  'You said no': 'quiet',
+  'Blocked by a rule': 'stop',
+  Failed: 'stop',
+};
 export type Who = 'Your agents' | "Buyers' assistants" | 'You' | 'Sayso checkout';
 
 /** One request Guard handled, with one money column per outcome so totals by outcome are simple sums. */

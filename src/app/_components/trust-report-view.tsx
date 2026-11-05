@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic';
 import { useEffect, useRef, useState } from 'react';
 import type { TrustReport } from '@/core/trust-report.ts';
 import { callApi } from './api.ts';
+import { ErrorText } from './error-text.tsx';
 
 const TrustStudio = dynamic(() => import('./trust-studio.tsx'), {
   ssr: false,
@@ -52,9 +53,7 @@ export function TrustReportView({ licenseKey }: { licenseKey?: string }) {
       {data ? (
         <TrustStudio data={data} licenseKey={licenseKey} />
       ) : error ? (
-        <p className="error small" role="alert">
-          The report could not load: {error}
-        </p>
+        <ErrorText>The report could not load: {error}</ErrorText>
       ) : (
         <Placeholder />
       )}

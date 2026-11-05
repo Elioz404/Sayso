@@ -1,5 +1,6 @@
 // One product: its photo, its variants with price and stock, and the exact thing to ask an assistant
 // for. Its own URL and schema.org Product markup, so agents and search can point at it directly.
+import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { connection } from 'next/server';
 import { CopyField } from '@/app/_components/client-ui.tsx';
@@ -37,16 +38,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const { slug, product: productId } = await params;
   const found = await find(slug, productId);
   const { links } = await ready();
-  if (!found) {
-    return (
-      <main className="wrap wrap-narrow page stack">
-        <h1>Product not found</h1>
-        <p className="soft">
-          It may have been removed. <a href={links.shopPage(slug)}>See the shop</a>.
-        </p>
-      </main>
-    );
-  }
+  if (!found) notFound();
   const { catalog, index } = found;
   const { shop } = catalog;
   const product = catalog.products[index];

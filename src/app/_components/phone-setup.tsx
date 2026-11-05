@@ -14,10 +14,13 @@ import { callApi } from './api.ts';
 import { fromB64url, makePasskey, signChallenge, usePasskeyChallenge } from './passkey-client.ts';
 import { Icon } from './ui.tsx';
 import { useAction } from './use-action.ts';
+import { ErrorText } from './error-text.tsx';
+import { Day } from './time.tsx';
 
 export interface PasskeyRowView {
   id: string;
   label: string;
+  /** When it was added and last used (ISO). */
   added: string;
   used?: string;
   synced: boolean;
@@ -327,11 +330,16 @@ function PasskeyRow({ passkey, fresh, onRemoved }: { passkey: PasskeyRowView; fr
           <Icon name="fingerprint" size={16} /> {passkey.label}
         </b>
         <span className="small muted">
-          Added {passkey.added}
-          {passkey.used ? ` · last OK ${passkey.used}` : ''}
+          Added <Day iso={passkey.added} />
+          {passkey.used && (
+            <>
+              {' · last OK '}
+              <Day iso={passkey.used} />
+            </>
+          )}
           {passkey.synced ? ' · synced with your account' : ''}
         </span>
-        {error && <span className="error small">{error}</span>}
+        <ErrorText inline>{error}</ErrorText>
       </span>
       {fresh || armed ? (
         <button className="btn btn-quiet btn-small" disabled={Boolean(busy) || (!fresh && !confirm.challenge)} onClick={() => void remove()}>

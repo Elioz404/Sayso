@@ -6,6 +6,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { callApi } from './api.ts';
+import { ErrorText } from './error-text.tsx';
 
 interface Line {
   role: 'user' | 'assistant';
@@ -130,7 +131,7 @@ export function OwnerAssistant({ chat, compact = false }: { chat: string; compac
         )}
         {busy && <p className="assistant-bot small muted">Reading your shop…</p>}
       </div>
-      {error && <p className="error small">{error}</p>}
+      <ErrorText>{error}</ErrorText>
       <form
         className="assistant-box"
         onSubmit={(e) => {

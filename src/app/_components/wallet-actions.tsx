@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { callApi } from './api.ts';
 import { Icon } from './ui.tsx';
+import { ErrorText } from './error-text.tsx';
 
 export function ConnectForm({ walletId, perOrder, daily, label }: { walletId: string; perOrder: string; daily: string; label: string }) {
   const [busy, setBusy] = useState(false);
@@ -47,7 +48,7 @@ export function ConnectForm({ walletId, perOrder, daily, label }: { walletId: st
         </button>
         <span className="small muted">You approve once, in PayPal.</span>
       </div>
-      {error && <p className="error small">{error}</p>}
+      <ErrorText>{error}</ErrorText>
     </form>
   );
 }
@@ -84,7 +85,7 @@ export function DisconnectButton({ walletId, label }: { walletId: string; label:
           Keep it
         </button>
       </div>
-      {error && <p className="error small">{error}</p>}
+      <ErrorText>{error}</ErrorText>
     </div>
   );
 }

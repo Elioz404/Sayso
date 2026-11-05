@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import type { RecordView } from '@/core/record-view.ts';
 import { callApi } from './api.ts';
+import { ErrorText } from './error-text.tsx';
 import { Modal } from './modal.tsx';
 import { Decision } from './owner-actions.tsx';
 import { RecordReceipt } from './record-receipt.tsx';
@@ -46,9 +47,7 @@ export function RecordModal({ id, onClose }: { id: string; onClose: () => void }
           )}
         </RecordReceipt>
       ) : error ? (
-        <p className="error small" role="alert">
-          {error}
-        </p>
+        <ErrorText>{error}</ErrorText>
       ) : (
         <div className="receipt-loading" aria-busy="true">
           <span />

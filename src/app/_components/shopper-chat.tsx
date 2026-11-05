@@ -14,6 +14,7 @@ import { PayPalCheckout, type Paid } from './paypal-checkout.tsx';
 import { paymentWords } from '@/core/order-words.ts';
 import { PurchaseCard, type Purchase } from './purchase-card.tsx';
 import { splitLineName } from '@/core/catalog.ts';
+import { ErrorText } from './error-text.tsx';
 
 type Money = { currency_code: string; value: string };
 /** What create_cart, update_cart and get_cart return, as far as the chat reads it. */
@@ -450,7 +451,7 @@ export function ShopperChat({ paypalClientId, request, compact = false, onTurns,
         })}
         {busy && <div className="shopper-tool shopper-thinking">{busy === 'confirming' ? 'Confirming your order with the shop…' : "Using Sayso's tools…"}</div>}
       </div>
-      {error && <p className="error">{error}</p>}
+      <ErrorText small={false}>{error}</ErrorText>
       <form
         className="shopper-box"
         onSubmit={(e) => {

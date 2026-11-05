@@ -9,11 +9,13 @@ import { useEffect, useState } from 'react';
 import { MAX_DRAFT_PHOTOS, MAX_STOCK } from '@/core/limits.ts';
 import { callApi } from './api.ts';
 import { currencySymbol } from '@/core/money.ts';
-import { shrink } from './images.ts';
+import { readPhotos, unreadPhotos } from './images.ts';
 import { PhotoDrop } from './photo-drop.tsx';
 import { Icon } from './ui.tsx';
 import { useAction } from './use-action.ts';
 import { variantTitle } from '@/core/catalog.ts';
+import { ErrorText } from './error-text.tsx';
+import { fieldNames } from './field-names.ts';
 
 /** Must match the cache public/sw.js puts shared photos in. */
 const SHARE_CACHE = 'sayso-share';
@@ -41,10 +43,13 @@ export function PhotoDrafter({ drafts, sharedCount, currency }: { drafts: DraftV
     (async () => {
       const cache = await caches.open(SHARE_CACHE);
       const keys = await cache.keys();
-      const blobs = await Promise.all(keys.map(async (k) => (await cache.match(k))!.blob()));
-      await Promise.all(keys.map((k) => cache.delete(k)));
-      const read = await Promise.all(blobs.filter((b) => b.type.startsWith('image/')).map((b) => shrink(b)));
+      const blobs = (await Promise.all(keys.map(async (k) => (await cache.match(k))?.blob()))).filter((b): b is Blob => Boolean(b?.type.startsWith('image/')));
+      const { read, failed } = await readPhotos(blobs);
       setPhotos((now) => [...now, ...read].slice(0, MAX_DRAFT_PHOTOS));
+      // Gone from the share cache only once they are here (or could never be read).
+      await Promise.all(keys.map((k) => cache.delete(k)));
+      const unread = unreadPhotos(failed);
+      if (unread) setError(unread);
     })().catch(() => setError('Could not read the shared photos; pick them here instead.'));
   }, [sharedCount, setError]);
 
@@ -167,18 +172,18 @@ function DraftCard({ draft, currency }: { draft: DraftView; currency: string }) 
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <div className="sell-card-photo">{draft.image && <img src={draft.image} alt="" />}</div>
       <div className="sell-card-body">
-        <input className="sell-card-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} aria-label="Name" />
-        <textarea className="sell-card-desc" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} maxLength={2000} aria-label={`Description of ${name}`} />
+        <input className="sell-card-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} aria-label={fieldNames.name()} />
+        <textarea className="sell-card-desc" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} maxLength={2000} aria-label={fieldNames.description(name)} />
         <ul className="sell-variants">
           {draft.variants.map((v, i) => (
             <li key={v.id} className="sell-variant">
               {draft.variants.length > 1 || variantTitle(v.title) ? <span className="sell-vtitle small">{v.title}</span> : <span className="sell-vtitle small soft">Price and stock</span>}
               <label className={variants[i].price.trim() ? 'sell-price' : 'sell-price sell-price-waiting'}>
                 <span aria-hidden="true">{symbol}</span>
-                <input value={variants[i].price} onChange={(e) => edit(i, { price: e.target.value })} inputMode="decimal" maxLength={12} aria-label={`Price of ${v.title}`} placeholder="0.00" />
+                <input value={variants[i].price} onChange={(e) => edit(i, { price: e.target.value })} inputMode="decimal" maxLength={12} aria-label={fieldNames.price(name, v.title)} placeholder="0.00" />
               </label>
               <label className="sell-qty">
-                <input type="number" min={0} max={MAX_STOCK} value={variants[i].inventory} onChange={(e) => edit(i, { inventory: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} aria-label={`Stock of ${v.title}`} />
+                <input type="number" min={0} max={MAX_STOCK} value={variants[i].inventory} onChange={(e) => edit(i, { inventory: Math.max(0, Math.floor(Number(e.target.value) || 0)) })} aria-label={fieldNames.stock(name, v.title)} />
                 <span>{v.madeToOrder ? 'ready now' : 'in stock'}</span>
               </label>
             </li>
@@ -193,7 +198,7 @@ function DraftCard({ draft, currency }: { draft: DraftView; currency: string }) 
             {busy === 'sell' ? 'Putting it on sale…' : 'Put it on sale'}
           </button>
         </div>
-        {error && <p className="error small">{error}</p>}
+        <ErrorText>{error}</ErrorText>
       </div>
     </li>
   );
