@@ -209,6 +209,11 @@ export class Access {
     return `${payload}.${this.hmac(`${purpose}:${payload}`)}`;
   }
 
+  /** A signature over `data` for `purpose`, for values the browser keeps and sends back unchanged. */
+  seal(purpose: string, data: string): string {
+    return this.hmac(`${purpose}:${data}`);
+  }
+
   /** The value, or undefined if the token is forged, expired or for another purpose. */
   verifyValue(purpose: string, token: unknown, now = Date.now()): string | undefined {
     const parts = typeof token === 'string' ? token.split('.') : [];

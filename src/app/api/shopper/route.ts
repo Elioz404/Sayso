@@ -1,7 +1,7 @@
 // The site's own shopping assistant. POST { messages, text } -> { messages, steps }: the browser keeps the
 // conversation; each turn runs the buyer tools on the all-shops endpoint, exactly as an outside assistant
 // would over MCP, under the same per-address limits.
-import { cleanHistory, shopperTurn } from '@/core/ai/shopper.ts';
+import { cleanHistory, SANDBOX_NOTE, sealHistory, shopperTurn, type Seal } from '@/core/ai/shopper.ts';
 import { buyerOrder, buyerOrders, ordersForAssistant, type BuyerOrder } from '@/core/buyer-orders.ts';
 import { LlmError } from '@/core/ai/llm.ts';
 import { ConfigError, fromLlmError, HttpError } from '@/core/errors.ts';
@@ -28,7 +28,8 @@ export async function POST(request: Request) {
     const { messages, text, orders: here } = await readBody(request, TURN, 256 * 1024);
     const caller = clientAddress(request);
     if (!costlyCalls.ai.allow(caller)) throw new HttpError(429, "That's a lot of messages from here for one hour; try again in a few minutes.");
-    const { model, tools, carts, catalogs, orders, links } = await ready();
+    const { model, tools, carts, catalogs, orders, links, access } = await ready();
+    const seal: Seal = (data) => access.seal('shopper-tool', data);
     if (!model?.chat) throw new ConfigError('The shopping assistant needs an AI key on this server (OPENAI_API_KEY or DEEPSEEK_API_KEY).');
 
     const ctx: ToolContext = { services: tools, marketplace: true, channel: 'sayso-assistant', allow: (cost) => costlyCalls[cost].allow(caller) };
@@ -53,10 +54,12 @@ export async function POST(request: Request) {
     const mine = who ? await buyerOrders(deps, who, 10) : [];
     const ids = [...new Set([...(await paidHere()), ...(here ?? [])])].filter((id) => !mine.some((o) => o.id === id)).slice(0, 10);
     const local = await Promise.all(ids.map((id) => buyerOrder(deps, id)));
-    const context = ordersForAssistant([...mine, ...local.filter((o): o is BuyerOrder => Boolean(o))]);
-    const turn = await shopperTurn({ model, tools: toolsFor(ctx), run }, cleanHistory(messages), text, context).catch((err: unknown) => {
+    const known = ordersForAssistant([...mine, ...local.filter((o): o is BuyerOrder => Boolean(o))]);
+    // The test address only on the sandbox; anywhere else the assistant asks for a real one.
+    const context = [process.env.PAYPAL_ENV === 'live' ? '' : SANDBOX_NOTE, known ?? ''].filter(Boolean).join('\n\n') || undefined;
+    const turn = await shopperTurn({ model, tools: toolsFor(ctx), run }, cleanHistory(messages, seal), text, context).catch((err: unknown) => {
       throw err instanceof LlmError ? fromLlmError(err, 'The assistant failed') : err;
     });
-    return Response.json(turn);
+    return Response.json({ ...turn, messages: sealHistory(turn.messages, seal) });
   });
 }

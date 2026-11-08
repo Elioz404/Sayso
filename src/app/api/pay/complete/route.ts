@@ -16,8 +16,9 @@ export async function POST(request: Request) {
     assertSameOrigin(request);
     limitPayPal(request);
     const { cart, token } = await readBody(request, APPROVED);
-    const result = await (await ready()).commerce.checkout(cart, { items: [], payment_method: { type: 'paypal', token } });
-    await rememberPaidHere(cart);
+    const { result, settledNow } = await (await ready()).commerce.complete(cart, { items: [], payment_method: { type: 'paypal', token } });
+    // A cart that was already paid proves nothing about who is asking: only the call that took the payment counts.
+    if (settledNow) await rememberPaidHere(cart);
     return Response.json({
       order: result.payment_confirmation?.merchant_order_number,
       status: result.payment_confirmation?.payment_status,

@@ -5,15 +5,16 @@ import { PaidHere } from '@/app/_components/paid-here.tsx';
 import { Icon } from '@/app/_components/ui.tsx';
 import { HttpError } from '@/core/errors.ts';
 import { formatMoney, toMinor } from '@/core/money.ts';
+import { PAID_CLAIM, PAID_CLAIM_TTL_MS } from '@/server/buyer-session.ts';
 import { ready } from '@/server/context.ts';
 import { logError } from '@/server/log.ts';
 
 export const metadata: Metadata = { title: 'Order' };
 
-type Search = { cart?: string; token?: string; PayerID?: string };
+type Search = { cart?: string; token?: string };
 
 export default async function PayReturn({ searchParams }: { searchParams: Promise<Search> }) {
-  const { cart, token, PayerID } = await searchParams;
+  const { cart, token } = await searchParams;
   if (!cart || !token) {
     return (
       <main className="wrap wrap-narrow page stack">
@@ -24,15 +25,16 @@ export default async function PayReturn({ searchParams }: { searchParams: Promis
   }
 
   try {
-    const result = await (await ready()).commerce.checkout(cart, {
-      items: [],
-      payment_method: { type: 'paypal', token, payer_id: PayerID },
-    });
+    const services = await ready();
+    const { result, settledNow } = await services.commerce.complete(cart, { items: [], payment_method: { type: 'paypal', token } });
+    // Only the visit that took the payment may mark this browser as the buyer (a page can't set cookies, so
+    // it hands the browser a signed claim that works once, for a few minutes).
+    const claim = settledNow ? services.access.signValue(PAID_CLAIM, cart, PAID_CLAIM_TTL_MS) : undefined;
     const pending = result.payment_confirmation?.payment_status !== 'CAPTURED';
     const total = result.totals?.total;
     return (
       <main className="wrap wrap-narrow page">
-        <PaidHere cart={cart} token={token} />
+        {claim && <PaidHere claim={claim} />}
         <article className="sayso-card" style={{ maxWidth: 'none' }}>
           <span className="row ok-text" style={{ gap: 8, fontWeight: 650 }}>
             <Icon name="check" size={20} /> Order placed

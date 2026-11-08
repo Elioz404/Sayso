@@ -3,6 +3,7 @@
 // writes replies; the tools (and Guard behind them) decide what happens. Stateless: the browser keeps the
 // conversation and sends it back, so each turn is checked and capped here before the model sees it.
 
+import { timingSafeEqual } from 'node:crypto';
 import type { ChatMessage, ChatModel, ToolCall } from './llm.ts';
 import { toolLoop, type LoopStep, type LoopTool, type RunTool } from './tool-loop.ts';
 
@@ -25,13 +26,32 @@ export const SHOPPER_PROMPT = [
   'When the shopper asks to buy something specific, build the cart right away instead of asking first; they still approve the total in PayPal.',
   "If a cart has validation_issues, explain them and offer the shop's resolution_options.",
   "When a cart is ready, this page shows PayPal's button right under it: say in one short sentence that it's ready to pay, with the total. Don't paste the link. The shopper approves in PayPal; you never pay for them.",
-  'This is a PayPal sandbox demo. If the shopper has not given a shipping address, use: Alex Rivera, 1450 Mission St, San Francisco, CA 94103, US, alex@example.com, and say so.',
+  'If the shopper has not given a shipping address, ask for it before building the cart (a name, an email, street, city, state, postal code and country).',
   "For a problem with a paid order, use request_refund with the shopper's own words as the reason and, when only some items are affected, just their price as the amount. If they ask for a refund without saying what went wrong, ask what happened first, in one short question. The shop owner decides; say that plainly.",
   'Never invent products, prices, shops, order numbers or links.',
 ].join('\n');
 
 /** Keeps only well-formed turns, trims what is too long, and starts at a user turn so tool calls stay paired. */
-export function cleanHistory(raw: unknown): ChatMessage[] {
+/** On the PayPal sandbox only: a test address, so trying the demo takes two taps (see SANDBOX_NOTE). */
+export const SANDBOX_NOTE =
+  'This is a PayPal sandbox demo. If the shopper has not given a shipping address, use: Alex Rivera, 1450 Mission St, San Francisco, CA 94103, US, alex@example.com, and say so.';
+
+/** Signs one tool result (the server's secret, never the browser's). */
+export type Seal = (data: string) => string;
+
+const sealed = (seal: Seal, m: { tool_call_id: string; content: string }) => seal(`${m.tool_call_id}\n${m.content}`);
+
+/** The conversation as the browser keeps it: each tool result carries the server's seal (`sig`). */
+export function sealHistory(messages: readonly ChatMessage[], seal: Seal): (ChatMessage & { sig?: string })[] {
+  return messages.map((m) => (m.role === 'tool' ? { ...m, sig: sealed(seal, m) } : m));
+}
+
+/**
+ * The browser-kept history, checked: only the shopper's and the assistant's words, and tool results that
+ * carry the server's seal (a browser can't make up what a tool said). Tool calls left without their
+ * result are dropped too.
+ */
+export function cleanHistory(raw: unknown, seal?: Seal): ChatMessage[] {
   if (!Array.isArray(raw)) return [];
   const out: ChatMessage[] = [];
   for (const m of raw.slice(-SHOPPER_LIMITS.messages)) {
@@ -41,7 +61,14 @@ export function cleanHistory(raw: unknown): ChatMessage[] {
     else if (msg.role === 'assistant') {
       const calls = Array.isArray(msg.tool_calls) ? (msg.tool_calls as ToolCall[]).filter((c) => typeof c?.id === 'string' && typeof c?.function?.name === 'string') : [];
       out.push({ role: 'assistant', content: typeof msg.content === 'string' ? msg.content.slice(0, 4_000) : null, ...(calls.length ? { tool_calls: calls.map((c) => ({ id: c.id, type: 'function' as const, function: { name: c.function.name, arguments: String(c.function.arguments ?? '{}').slice(0, 4_000) } })) } : {}) });
-    } else if (msg.role === 'tool' && typeof msg.tool_call_id === 'string' && typeof msg.content === 'string') out.push({ role: 'tool', tool_call_id: msg.tool_call_id, content: msg.content.slice(0, SHOPPER_LIMITS.toolChars) });
+    } else if (
+      msg.role === 'tool' &&
+      typeof msg.tool_call_id === 'string' &&
+      typeof msg.content === 'string' &&
+      seal &&
+      typeof msg.sig === 'string' &&
+      sameSeal(msg.sig, sealed(seal, { tool_call_id: msg.tool_call_id, content: msg.content }))
+    ) out.push({ role: 'tool', tool_call_id: msg.tool_call_id, content: msg.content.slice(0, SHOPPER_LIMITS.toolChars) });
   }
   // Every tool result must answer a call just before it; drop anything left dangling by the cut above.
   const paired: ChatMessage[] = [];
@@ -52,8 +79,22 @@ export function cleanHistory(raw: unknown): ChatMessage[] {
     }
     paired.push(m);
   }
-  const first = paired.findIndex((m) => m.role === 'user');
-  return first < 0 ? [] : paired.slice(first);
+  // A tool call whose result didn't survive (unsealed, or cut off) would leave the model waiting on it.
+  const answered = new Set(paired.flatMap((m) => (m.role === 'tool' ? [m.tool_call_id] : [])));
+  const whole = paired.flatMap((m): ChatMessage[] => {
+    if (m.role !== 'assistant' || !m.tool_calls?.length) return [m];
+    const calls = m.tool_calls.filter((c) => answered.has(c.id));
+    if (calls.length) return [{ ...m, tool_calls: calls }];
+    return m.content ? [{ role: 'assistant', content: m.content }] : [];
+  });
+  const first = whole.findIndex((m) => m.role === 'user');
+  return first < 0 ? [] : whole.slice(first);
+}
+
+function sameSeal(a: string, b: string): boolean {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && timingSafeEqual(x, y);
 }
 
 /** One shopper turn: the model calls tools until it has an answer (or runs out of rounds). */

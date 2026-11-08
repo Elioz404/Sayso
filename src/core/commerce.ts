@@ -62,7 +62,6 @@ export class Commerce {
     return view(stored);
   }
 
-  /** A cart, optionally only if it belongs to `shopId` (routes scoped to one shop pass it). */
   /** The cart as it is now; once paid, with the order it became (as checkout answered), so a page that
    *  paid elsewhere can show the receipt. */
   async getCart(cartId: string, shopId?: string): Promise<PayPalCart> {
@@ -91,16 +90,24 @@ export class Commerce {
   }
 
   checkout(cartId: string, body: unknown, shopId?: string): Promise<CheckoutResult> {
+    return this.complete(cartId, body, shopId).then((done) => done.result);
+  }
+
+  /**
+   * Checkout, and whether this very call took the payment (`settledNow`) rather than replaying a cart
+   * that was already completed. Only the call that settled may treat its caller as the buyer.
+   */
+  complete(cartId: string, body: unknown, shopId?: string): Promise<{ result: CheckoutResult; settledNow: boolean }> {
     const input = parseCartInput(body);
     return this.lock.run(cartId, async () => {
       const stored = await this.stored(cartId, shopId);
-      // Return-URL refreshes and platform retries must not charge twice.
-      if (stored.cart.status === 'COMPLETED') return completed(stored);
-
       const token = input.payment_method?.token;
       if (!token || token !== stored.orderId) {
         throw new HttpError(422, 'payment_method.token does not match this cart', issueBody(stored, paymentIssue('Payment token does not match this cart.')));
       }
+      // Return-URL refreshes and platform retries must not charge twice.
+      if (stored.cart.status === 'COMPLETED') return { result: completed(stored), settledNow: false };
+
       const order = await getOrder(this.deps.paypal, token);
       if (order.status !== 'APPROVED') {
         throw new HttpError(422, `PayPal order is ${order.status}`, issueBody(stored, paymentIssue('The buyer has not approved the payment in PayPal yet.')));
@@ -110,7 +117,8 @@ export class Commerce {
       const authorized = await authorizeOrder(this.deps.paypal, token, `${stored.id}-authorize`);
       const authorization = authorized.purchase_units[0]?.payments?.authorizations?.[0];
       if (!authorization) throw new HttpError(502, 'PayPal returned no authorization');
-      return this.settle(stored, authorization, order.payer?.email_address, order.payer?.payer_id ?? input.payment_method?.payer_id);
+      // Who paid comes from PayPal's order only, never from the request (or the return URL's PayerID).
+      return { result: await this.settle(stored, authorization, order.payer?.email_address, order.payer?.payer_id), settledNow: true };
     });
   }
 

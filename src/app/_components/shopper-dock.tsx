@@ -19,7 +19,7 @@ import { Tabs, tabPanel } from './tabs.tsx';
 /** The floating button is the way in; not on the seller's onboarding, which is about something else. */
 const NO_BUTTON = /^\/start/;
 
-export function ShopperDock({ paypalClientId }: { paypalClientId?: string }) {
+export function ShopperDock({ paypalClientId, sandbox }: { paypalClientId?: string; sandbox: boolean }) {
   const path = usePathname();
   const here = !NOT_HERE.test(path);
   const [open, setOpen] = useState(false);
@@ -143,7 +143,7 @@ export function ShopperDock({ paypalClientId }: { paypalClientId?: string }) {
           <ShopperChat paypalClientId={paypalClientId} request={request} compact onTurns={setChatting} reset={reset} />
         </div>
         <div className="dock-body dock-scroll" {...tabPanel('dock', 'cart')} hidden={tab !== 'cart'}>
-          <CartPanel paypalClientId={paypalClientId} onAskAi={() => setTab('ai')} />
+          <CartPanel paypalClientId={paypalClientId} sandbox={sandbox} onAskAi={() => setTab('ai')} />
         </div>
         <div className="dock-body dock-scroll" {...tabPanel('dock', 'orders')} hidden={tab !== 'orders'}>
           <div className="orders-panel">

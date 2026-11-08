@@ -75,7 +75,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </div>
         </header>
         {children}
-        <ShopperDock paypalClientId={process.env.PAYPAL_CLIENT_ID || undefined} />
+        <ShopperDock paypalClientId={process.env.PAYPAL_CLIENT_ID || undefined} sandbox={process.env.PAYPAL_ENV !== 'live'} />
         <footer className="site-footer">
           <div className="wrap footer-grid">
             <div className="footer-about">

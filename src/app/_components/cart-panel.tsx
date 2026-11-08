@@ -25,6 +25,8 @@ type Address = { name: string; email: string; line1: string; city: string; state
 // A PayPal sandbox demo: a test address so judges can pay in two taps; anyone can change it.
 const SANDBOX_ADDRESS: Address = { name: 'Alex Rivera', email: 'alex@example.com', line1: '1450 Mission St', city: 'San Francisco', state: 'CA', zip: '94103', country: 'US' };
 
+const EMPTY_ADDRESS: Address = { name: '', email: '', line1: '', city: '', state: '', zip: '', country: 'US' };
+
 const show = (m?: Money) => (m ? formatMoney(toMinor(m), m.currency_code) : '');
 
 // Receipts for what was paid from the cart, kept in this browser (the newest few) until dismissed.
@@ -54,7 +56,7 @@ function useReceipts() {
   return { list, add: (r: Receipt) => update((l) => [r, ...l.filter((x) => x.id !== r.id)]), drop: (id: string) => update((l) => l.filter((x) => x.id !== id)) };
 }
 
-export function CartPanel({ paypalClientId, onAskAi }: { paypalClientId?: string; onAskAi: () => void }) {
+export function CartPanel({ paypalClientId, sandbox, onAskAi }: { paypalClientId?: string; sandbox: boolean; onAskAi: () => void }) {
   const carts = useCarts();
   const receipts = useReceipts();
   const shops = Object.entries(carts);
@@ -85,6 +87,7 @@ export function CartPanel({ paypalClientId, onAskAi }: { paypalClientId?: string
           slug={slug}
           cart={cart}
           paypalClientId={paypalClientId}
+          sandbox={sandbox}
           onPaid={(receipt) => {
             receipts.add(receipt);
             cartStore.clear(slug);
@@ -97,9 +100,9 @@ export function CartPanel({ paypalClientId, onAskAi }: { paypalClientId?: string
   );
 }
 
-function ShopCartView({ slug, cart, paypalClientId, onPaid }: { slug: string; cart: ShopCart; paypalClientId?: string; onPaid: (receipt: Receipt) => void }) {
+function ShopCartView({ slug, cart, paypalClientId, sandbox, onPaid }: { slug: string; cart: ShopCart; paypalClientId?: string; sandbox: boolean; onPaid: (receipt: Receipt) => void }) {
   const [step, setStep] = useState<'items' | 'address'>('items');
-  const [address, setAddress] = useState<Address>(SANDBOX_ADDRESS);
+  const [address, setAddress] = useState<Address>(sandbox ? SANDBOX_ADDRESS : EMPTY_ADDRESS);
   const [priced, setPriced] = useState<{ cart: Priced; key: string }>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();

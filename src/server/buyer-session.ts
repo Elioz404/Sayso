@@ -65,6 +65,10 @@ export async function endBuyerSession(): Promise<void> {
   (await cookies()).delete(BUYER_COOKIE);
 }
 
+/** What the PayPal return page hands the browser when its visit took the payment (see /api/orders/claim). */
+export const PAID_CLAIM = 'paid-claim';
+export const PAID_CLAIM_TTL_MS = 10 * 60_000;
+
 /** This browser just paid for `cartId` (only call it once the payment went through). */
 export async function rememberPaidHere(cartId: string): Promise<void> {
   const ids = [cartId, ...(await paidHere()).filter((id) => id !== cartId)].slice(0, PAID_HERE_MAX);

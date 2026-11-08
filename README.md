@@ -6,6 +6,15 @@ Sayso turns a few photos and a price list into a shop that any AI shopping assis
 
 Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/) (2026). Runs on the PayPal **sandbox**; no real money moves.
 
+### In 30 seconds
+
+- **The problem:** one-person shops can't sell to AI shoppers, and no owner should hand an AI agent their PayPal login.
+- **Who it's for:** small makers who sell through DMs, markets or a PayPal button, and the AI assistants their buyers use.
+- **What it does:** any assistant (ChatGPT, Claude, any MCP client) buys from the shop and pays with PayPal; the owner's own agent runs the shop; **Guard** holds every money move past the owner's rules until they approve, with a passkey if they set one up.
+- **PayPal:** Orders v2, Payments, Vault, Invoicing, Partner Referrals, Log in with PayPal and webhooks, plus PayPal's merchant-cart spec. [Details](#how-it-uses-paypal).
+- **AI:** a vision model drafts the shop from photos, plain-word rules become exact rules, two assistants (one for shoppers, one read-only for the owner), and MCP for any outside agent. The model never decides whether money moves. [Details](#how-it-uses-ai).
+- **Try it in 2 minutes:** [For Judges](https://sayso-ovph.onrender.com/tour), or add `https://sayso-ovph.onrender.com/api/shopping/mcp` to ChatGPT ([how](#add-sayso-to-chatgpt)).
+
 | | |
 |---|---|
 | **Live demo** | [sayso-ovph.onrender.com](https://sayso-ovph.onrender.com) (start with **[For Judges: try it for real](https://sayso-ovph.onrender.com/tour)**) |
@@ -132,7 +141,7 @@ The owner's agent connects with OAuth: in **Agents → Connect an agent**, pick 
 
 | PayPal | Used for |
 |---|---|
-| **Agentic Commerce merchant-cart API v1** | `POST/PUT/GET /merchant-cart` and `/checkout` per shop, with validation issues and resolution options an agent can apply |
+| **Agentic Commerce merchant-cart spec (v1)** | Sayso implements it as the merchant: `POST/PUT/GET /merchant-cart` and `/checkout` per shop, with validation issues and resolution options an agent can apply |
 | **Orders v2** | `intent: AUTHORIZE` orders from priced carts, buyer approval, authorization, shipment tracking |
 | **Payments v2** | Capture and void authorizations, refunds, captures and refunds read back to verify |
 | **Partner Referrals + multiparty** | Owners connect their own PayPal; orders carry them as `payee`; refunds of their sales use `PayPal-Auth-Assertion` with the permissions they granted, checked with PayPal before Sayso relies on them |
@@ -252,8 +261,17 @@ tests/                 Unit and end-to-end tests (see tests/money-safety.test.ts
 - **A shared link can't steal a PayPal approval.** The key an assistant gets when it starts connecting saved PayPal can't spend until the person who approved hands it the pairing code shown only to them; wrong guesses burn the code. Only the browser that set up a wallet can see its PayPal account or disconnect it.
 - **The public demo is shared, so it's masked and read-only.** The demo session and its shared agent key see buyers' emails masked and their town instead of their street. The demo session can decide refunds and invoices but can't change the shop (rules, prices, keys, phone setup); judges get a private tour copy for that. Phone notifications use fixed templates (what, how much, who asked), never a buyer's words or details.
 - **Approvals can be signed.** With a passkey, approving needs a WebAuthn signature over the exact request. Every passkey challenge works once and only for what it was made for (this record, removing that passkey, adopting that rule). The first passkey needs a fresh sign-in, so an old stolen session can't lock the owner out. The phone link is single-use, travels in the URL fragment (never in a server log), and its session ends with the one that made it. Push subscriptions are only accepted for real browser push services, so the server can't be pointed at other addresses.
-- **Headers.** A Content-Security-Policy, no framing (so nobody can dress a page up around the approve button), `nosniff`, a referrer policy that never sends paths (some carry personal MCP keys) and HSTS.
+- **Headers.** A Content-Security-Policy, no framing (so nobody can dress a page up around the approve button), `nosniff`, a referrer policy that never sends paths to other sites (some carry personal MCP keys) and HSTS.
 - **Abuse and cost limits.** MCP calls are limited per address; calls that reach PayPal on the app's credentials or the AI have their own hourly share per address, on MCP and REST alike. Onboarding is limited per address, photo reads and rule drafts per shop. The AI budget is kept in the database (a deploy doesn't reset it) and every call reserves its cost first, so parallel calls can't overshoot it. Guard reads only what counts as spent, and if a window holds more than it reads at once, the owner decides instead of a guess. The hourly sweep deletes expired tours with everything they made, abandoned carts and spent one-time codes. Logs never print PayPal's response bodies or generated secrets.
+
+## What's production-ready, and what needs PayPal
+
+Everything here runs end to end on the sandbox. Going live needs PayPal's side as much as Sayso's:
+
+- **Paying owners directly** (Partner Referrals, orders with the owner as `payee`, refunds with `PayPal-Auth-Assertion`) needs a live Platform app approved by PayPal as a partner.
+- **Invoices** come from Sayso's own account: PayPal only lets approved partners invoice on a seller's behalf.
+- **Saved PayPal for buyers** pays into one merchant account in this demo; with every shop on its own account it would use PayPal's multiparty vaulting.
+- **One instance.** Rate limits and per-cart locks live in the process (fine on one Render instance); a horizontally scaled deploy would move them to Postgres. PayPal's idempotency keys still prevent double charges either way.
 
 ## Run it locally
 

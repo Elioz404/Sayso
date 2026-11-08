@@ -110,3 +110,32 @@ test('every PayPal write carried an idempotency key', async () => {
   assert.equal(pp.requestIds.length, 3); // create order, authorize, capture
   assert.equal(new Set(pp.requestIds).size, 3);
 });
+
+test("a completed cart proves nothing about who asks: the token must still match, and only the call that paid settles", async () => {
+  const { pp, commerce } = setup();
+  const cart = await commerce.createCart('maya-ceramics', { items: [{ variant_id: 'var_mug_sage', quantity: 1 }], shipping_address: address }, 'chatgpt');
+  const token = cart.payment_method!.token!;
+  pp.approve(token);
+
+  const first = await commerce.complete(cart.id!, { items: [], payment_method: { type: 'paypal', token } });
+  assert.equal(first.settledNow, true);
+  assert.equal(first.result.status, 'COMPLETED');
+
+  // A refresh or a retry replays the order, but doesn't count as paying for it.
+  const again = await commerce.complete(cart.id!, { items: [], payment_method: { type: 'paypal', token } });
+  assert.equal(again.settledNow, false);
+  assert.equal(again.result.payment_confirmation?.merchant_order_number, first.result.payment_confirmation?.merchant_order_number);
+
+  // Someone with only the order's link, guessing the token: refused, even though the cart is paid.
+  await assert.rejects(commerce.complete(cart.id!, { items: [], payment_method: { type: 'paypal', token: 'x' } }), (e: HttpError) => e.status === 422);
+});
+
+test("who paid comes from PayPal's order, never from the request", async () => {
+  const { pp, commerce } = setup();
+  const cart = await commerce.createCart('maya-ceramics', { items: [{ variant_id: 'var_mug_sage', quantity: 1 }], shipping_address: address }, 'chatgpt');
+  const token = cart.payment_method!.token!;
+  pp.approve(token); // the fake PayPal reports BUYER123 as the payer
+  await commerce.checkout(cart.id!, { items: [], payment_method: { type: 'paypal', token, payer_id: 'ATTACKER' } });
+  const stored = await commerce['deps'].carts.get(cart.id!);
+  assert.equal(stored?.payerId, 'BUYER123');
+});
